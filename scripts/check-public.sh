@@ -7,7 +7,9 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 self=scripts/check-public.sh
-mapfile -t files < <(git ls-files --cached --others --exclude-standard | grep -vxF "$self")
+# Regular files only: a submodule is checked in its own repo.
+mapfile -t files < <(git ls-files --cached --others --exclude-standard | grep -vxF "$self" \
+  | while IFS= read -r f; do [[ -f $f && ! -L $f ]] && printf '%s\n' "$f"; done)
 
 # Each entry: what it catches, a pipe, then an extended regex.
 checks=(
