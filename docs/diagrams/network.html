@@ -23,7 +23,7 @@
   <header class="mast">
     <p class="eyebrow"><span class="wordmark">Valhallowed</span><span>Planning</span><span>Network exposure</span><span>Proposal</span></p>
     <h1>What an install exposes, and to whom</h1>
-    <p class="lede">An install opens as little as it can: the game ports for each world, the web map when it is on, and nothing else beyond the host. Every port and address on this page is a default; the manifest can change any of them, and reconcile rejects a clash.</p>
+    <p class="lede">An install opens as little as it can: the game ports for each world, the web map when it is on, and nothing else beyond the host. Every port and address on this page is a default; the manifest can change any of them, and reconcile rejects a clash. Whether an open port reaches the internet is up to the host's network: behind a home router it takes a port forward, and on a server with its own public address it is public unless a firewall closes it.</p>
     <div class="legend">
       <span class="z-people"><i></i>People</span>
       <span class="z-runtime"><i></i>Game runtime</span>
@@ -74,7 +74,7 @@
           <g class="n z-runtime" data-k="gr"><rect x="460" y="80" width="200" height="46" rx="6"/><text class="t" x="474" y="100">Game runtime × worlds</text><text class="s" x="474" y="117">udp, one port pair each</text></g>
           <g class="n z-data" data-k="wm" id="wm"><rect x="460" y="180" width="200" height="46" rx="6"/><text class="t" x="474" y="200">Web map</text>
             <text class="s" x="474" y="217" data-p="lan">tcp 8456, LAN</text>
-            <text class="s" x="474" y="217" data-p="direct">tcp 8456, port-forwarded</text>
+            <text class="s" x="474" y="217" data-p="direct">tcp 8456, public</text>
             <text class="s" x="474" y="217" data-p="tls">127.0.0.1:8456 behind TLS</text>
             <text class="s" x="474" y="217" data-p="game">off</text>
           </g>
@@ -104,20 +104,20 @@
 
   <section id="direct" aria-labelledby="direct-h">
     <h2 id="direct-h">Exposing the web map directly</h2>
-    <p>A server manager can forward the game ports and the web map's port on their router and give players <span class="mono">http://&lt;public IP&gt;:8456</span>. Steam sign-in works there: the player's browser goes to Steam's own HTTPS page and comes back to the address the manifest names as <code>web_map.public_url</code>, and the web map confirms the result with Steam directly. Players see the same flow as behind TLS. What changes is around that flow.</p>
+    <p>A server manager can open the game ports and the web map's port to the internet (a port forward on a home router, or a firewall rule on a server with its own public address) and give players <span class="mono">http://&lt;public IP&gt;:8456</span>. Steam sign-in works there: the player's browser goes to Steam's own HTTPS page and comes back to the address the manifest names as <code>web_map.public_url</code>, and the web map confirms the result with Steam directly. Players see the same flow as behind TLS. What changes is around that flow.</p>
     <div class="tbl">
       <table>
         <thead><tr><th>What players notice</th><th>Public, direct (HTTP)</th><th>Public with TLS</th></tr></thead>
         <tbody>
           <tr><td>Sign in through Steam and land back on the map</td><td><span class="chip yes">same</span> Works</td><td><span class="chip yes">same</span> Works</td></tr>
-          <tr><td>Browser on the first visit</td><td><span class="chip meh">differs</span> Chrome plans a one-time, skippable warning before a public HTTP site, on by default from Chrome 154, scheduled for October 2026. Addresses on the LAN are excluded.</td><td>No warning</td></tr>
+          <tr><td>Browser on the first visit</td><td><span class="chip meh">differs</span> Browsers increasingly show a one-time, skippable warning before a public plain-HTTP site.</td><td>No warning</td></tr>
           <tr><td>Session in transit</td><td><span class="chip meh">differs</span> The session cookie travels unencrypted, so someone on the same network can take over a signed-in session. The Steam password never touches VHD either way.</td><td>Encrypted</td></tr>
           <tr><td>The address</td><td><span class="chip meh">differs</span> A residential IP can change. The map's address, the sign-in return address, bookmarks and sessions all break with it; a dynamic-DNS hostname avoids that.</td><td>A hostname, or a bare IP certificate that renews itself</td></tr>
-          <tr><td>Players on the host's own LAN</td><td><span class="chip meh">depends</span> Reaching the public address from inside needs the router to support NAT loopback. Otherwise they sign in on the LAN address instead.</td><td>Same caveat</td></tr>
+          <tr><td>Players on the host's own LAN</td><td><span class="chip meh">depends</span> On a home network, reaching the public address from inside needs the router to support NAT loopback. Otherwise they sign in on the LAN address instead.</td><td>Same caveat</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="note">So yes: direct exposure gives players the normal experience, with a weaker session and a brittler address. The control plane says both in status when <code>web_map.public_url</code> is plain HTTP. Bundled TLS (O12) closes the gap without a domain: Let's Encrypt has issued six-day certificates for bare IP addresses since January 2026, renewed automatically, provided port 80 or 443 reaches the install for the challenge.</p>
+    <p class="note">Direct exposure gives players the normal experience, with a weaker session and a more fragile address. The control plane says both in status when <code>web_map.public_url</code> is plain HTTP. Bundled TLS (O12) closes the gap without a domain: Let's Encrypt has issued six-day certificates for bare IP addresses since January 2026, renewed automatically, provided port 80 or 443 reaches the install for the challenge.</p>
   </section>
 
   <section id="inbound" aria-labelledby="inbound-h">
@@ -126,8 +126,8 @@
       <table>
         <thead><tr><th>Endpoint</th><th>Default port</th><th>LAN</th><th>Public, direct</th><th>Public with TLS</th><th>Game only</th><th>Set by</th></tr></thead>
         <tbody>
-          <tr><td>Game, per world</td><td class="num">udp 2456–2457; next world 2466–2467</td><td>all interfaces</td><td>all, forwarded</td><td>all, forwarded</td><td>all interfaces</td><td><code>world.&lt;name&gt;.port</code>; reconcile rejects overlapping pairs, the host check flags a port already in use</td></tr>
-          <tr><td>Web map</td><td class="num">tcp 8456</td><td>all interfaces, HTTP</td><td>all, forwarded, HTTP</td><td>127.0.0.1, behind TLS on 443</td><td>off</td><td><code>web_map.listen</code>, <code>web_map.public_url</code></td></tr>
+          <tr><td>Game, per world</td><td class="num">udp 2456–2457; next world 2466–2467</td><td>all interfaces</td><td>all, public</td><td>all, public</td><td>all interfaces</td><td><code>world.&lt;name&gt;.port</code>; reconcile rejects overlapping pairs, the host check flags a port already in use</td></tr>
+          <tr><td>Web map</td><td class="num">tcp 8456</td><td>all interfaces, HTTP</td><td>all, public, HTTP</td><td>127.0.0.1, behind TLS on 443</td><td>off</td><td><code>web_map.listen</code>, <code>web_map.public_url</code></td></tr>
           <tr><td>Admin console and control API</td><td class="num">tcp 9456</td><td>127.0.0.1</td><td>127.0.0.1</td><td>127.0.0.1</td><td>127.0.0.1</td><td><code>admin_console.listen</code></td></tr>
           <tr><td>TUI and CLI</td><td class="num">none</td><td colspan="4">Inside the control plane container, or the CLI against the loopback control API</td><td>n/a</td></tr>
           <tr><td>Intake, broker, world render</td><td class="num">none on the host</td><td colspan="4">Install network only; the plugin is their only caller</td><td>n/a</td></tr>
@@ -200,7 +200,7 @@
     proxy: N('Bundled or yours', 'TLS', [['Does', 'terminates TLS on 443 and forwards to the web map on loopback'], ['Options', 'bundled TLS with automatic certificates for a hostname or a bare public IP, or your own reverse proxy (O12)']]),
     docker: N('Host', 'Docker engine', [['Does', 'pulls VHD images from the registry and runs the install'], ['Not', 'part of VHD; the host’s own']]),
     gr: N('Game runtime', 'Game runtime × worlds', [['Listens', 'one udp port pair per world, on all interfaces; defaults, set per world'], ['Outbound', 'Steam CDN for the server download and updates']]),
-    wm: N('Data layer', 'Web map', [['LAN', 'tcp 8456 on all interfaces, plain HTTP'], ['Public, direct', 'the same port, forwarded by the router'], ['Public with TLS', '127.0.0.1:8456 behind TLS'], ['Game only', 'off']]),
+    wm: N('Data layer', 'Web map', [['LAN', 'tcp 8456 on all interfaces, plain HTTP'], ['Public, direct', 'the same port, open to the internet'], ['Public with TLS', '127.0.0.1:8456 behind TLS'], ['Game only', 'off']]),
     cp: N('Control plane', 'Control plane', [['Listens', 'admin console and control API on 127.0.0.1:9456 by default'], ['Outbound', 'Steam, for the game update check']]),
     ib: N('Data layer', 'Intake · broker', [['Listens', 'install network only'], ['Callers', 'the plugin; the web map and chat relay through the broker']]),
     wr: N('Data layer', 'World render', [['Listens', 'nowhere; reads the map export from a shared volume']]),
@@ -216,8 +216,8 @@
   VHD.details(document.getElementById('net'), netData, document.getElementById('detail'), { first: 'wm' });
 
   const summaries = {
-    lan: 'Players reach the game from anywhere you forward the udp ports. The web map answers on tcp 8456 over plain HTTP on your network, and sign-in works for players there; status warns that sessions are unencrypted. The admin console answers only on the host.',
-    direct: 'You forward the game ports and tcp 8456 on your router and hand out http://<public IP>:8456. Sign-in works for everyone with the same flow as behind TLS. Status warns that sessions are unencrypted, and Chrome shows players a one-time warning on their first visit.',
+    lan: 'Players reach the game wherever the udp ports are open. The web map answers on tcp 8456 over plain HTTP on your network, and sign-in works for players there; status warns that sessions are unencrypted. The admin console answers only on the host.',
+    direct: 'You open the game ports and tcp 8456 to the internet and hand out http://<public IP>:8456. Sign-in works for everyone with the same flow as behind TLS. Status warns that sessions are unencrypted, and browsers may show players a one-time warning on their first visit.',
     tls: 'TLS terminates on 443, bundled or your own proxy, and forwards to the web map on loopback. With an https public URL, sign-in carries no warnings. The game ports stay public, and the admin console stays on the host.',
     game: 'Only the game ports are reachable. The web map and sign-in are off; telemetry and commands still run. The admin console stays on the host.'
   };

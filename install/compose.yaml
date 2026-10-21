@@ -5,6 +5,7 @@ name: valhallowed
 services:
   skeleton:
     image: ghcr.io/valhallowed/skeleton:@VHD_VERSION@
+    # The web map's default port (G9). The manifest takes it over once it exists.
     ports:
       - "8456:8456"
     restart: unless-stopped

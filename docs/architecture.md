@@ -10,7 +10,9 @@ draw this document; where they disagree, this document wins.
 Someone with only Docker installs a Valheim dedicated server that carries the
 VHD plugin, telemetry, governed in-game commands and the web map. They write
 one manifest and, optionally, a secrets file. Everything else is defaulted,
-derived or generated.
+derived or generated. The host is x86-64, because the dedicated server ships for
+nothing else: a Linux machine, or Docker Desktop on Windows or macOS with an
+Intel or AMD processor.
 
 ## Ground rules
 
@@ -142,12 +144,17 @@ address in a profile is a default (G9).
 | Profile | Game | Web map | Sign-in |
 |---|---|---|---|
 | LAN (default) | Reachable | Plain HTTP on the LAN | Works for LAN players; warns that sessions are unencrypted |
-| Public, direct | Port-forwarded | Plain HTTP, port-forwarded | Works for everyone; same warning, plus a browser warning on a player's first visit |
-| Public with TLS | Port-forwarded | HTTPS through bundled TLS or the server manager's own proxy (O12) | Works for everyone, with no warnings |
+| Public, direct | Open to the internet | Plain HTTP, open to the internet | Works for everyone; same warning, plus a browser warning on a player's first visit |
+| Public with TLS | Open to the internet | HTTPS through bundled TLS or the server manager's own proxy (O12) | Works for everyone, with no warnings |
 | Game only | Reachable | Off | Off |
 
 In every profile the admin console stays on loopback unless the manifest opens
 it, and no data-layer service or database gets a host port.
+
+A profile sets what the install opens on the host. Whether that reaches the
+internet is up to the host's network: behind a home router it takes a port
+forward, and on a server with its own public address everything the LAN profile
+opens is public unless a firewall closes it.
 
 ## Lanes
 
@@ -199,6 +206,8 @@ Follows from G4 and G12.
 
 What any design here must respect about the game.
 
+- The dedicated server ships for x86-64 only, so every VHD image is
+  `linux/amd64`. An ARM host is not supported.
 - Two save formats are live: a single pre-1.0 file and the 1.0+ chunked
   directory. Save numbers wrap; the game picks the newest by modification time.
 - The world-name setting must equal the save name, or the server creates a new,

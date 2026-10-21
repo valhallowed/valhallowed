@@ -175,6 +175,6 @@ three in docs and agent instructions.
 | sidecar | data layer |
 | basemap | world render output |
 | write path | commands (broker plus plugin execution) |
-| stack | install, or world when it means one game server |
+| stack, for a running copy of VHD | install, or world when it means one game server |
 | fleet | consumers, or the worlds of one install |
-| operator | server manager |
+| operator, for the person | server manager ("operator action" keeps its name) |

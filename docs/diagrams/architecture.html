@@ -264,7 +264,7 @@
     ]),
     sm: N('People', 'Server manager', 'Operates an install through the control plane: writes the manifest, supplies secrets, takes operator actions.'),
     manifest: N('Ingress', 'Manifest', 'The one typed file of settings. Safe to commit and share: it never holds secrets.'),
-    secrets: N('Ingress', 'Secrets', 'Values for outside services only. Key names come from a closed list; an unknown key is rejected.'),
+    secrets: N('Ingress', 'Secrets', 'Sensitive values kept apart from the manifest, such as world passwords and credentials for outside services. Key names come from a closed list; an unknown key is rejected.'),
     actions: N('Ingress', 'Operator actions', 'One-off requests through the control API: import a world, back up now, read logs. Validated like the manifest.'),
     validate: N('Ingress', 'Validate', 'Checks the manifest against its schema and secrets against the key list, before anything changes.'),
     reject: N('Ingress', 'Reject', 'Reports what failed and where. Nothing is applied; the last good generation keeps running.'),

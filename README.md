@@ -25,7 +25,8 @@ and gates are in [Architecture § Releases](docs/architecture.md#releases).
 
 ## Building locally
 
-Needs Docker with Buildx and Compose, `jq` and `curl`.
+Needs a Unix-like shell (Linux, macOS, or WSL on Windows), Docker with Buildx
+and Compose, `make`, `jq` and `curl`.
 
 ```bash
 make accept
