@@ -13,7 +13,8 @@ pipeline and a stand-in image. Nothing here is useful to install yet.
 |---|---|
 | [Architecture](docs/architecture.md) | The target, ground rules, the model, boundaries, exposure, releases, open decisions |
 | [Glossary](docs/glossary.md) | Every term, with exactly one meaning |
-| [Brand](docs/brand.md) | The name, the two voices, design tokens |
+| [Brand](docs/brand.md) | The name, the two voices, what the colours mean |
+| [Design](design/README.md) | The design system: tokens and fonts |
 | [Diagrams](docs/diagrams/README.md) | Interactive pages that draw the architecture |
 
 ## Releases

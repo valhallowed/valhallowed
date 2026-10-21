@@ -39,7 +39,7 @@ done
 
 # Docs and agent instructions use glossary terms; the glossary itself lists
 # the retired words, so it is exempt.
-mapfile -t prose < <(printf '%s\n' "${files[@]}" | grep -E '^(docs/.*\.(md|html)|[A-Z]+\.md)$' | grep -vxF docs/glossary.md)
+mapfile -t prose < <(printf '%s\n' "${files[@]}" | grep -E '^((docs|design)/.*\.(md|html)|[A-Z]+\.md)$' | grep -vxF docs/glossary.md)
 if (( ${#prose[@]} )); then
   hits=$(grep -nHIoiwE 'sidecar|basemap|write path' "${prose[@]}" || true)
   if [[ -n $hits ]]; then

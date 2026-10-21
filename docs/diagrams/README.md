@@ -14,16 +14,14 @@ any current browser; it needs no build step.
 
 ## Standard
 
-- **One stylesheet.** [`vhd.css`](vhd.css) holds the design tokens
-  ([brand.md](../brand.md)) and the shared figure vocabulary. A page defines no
-  colour of its own.
+- **One stylesheet.** [`vhd.css`](vhd.css) imports the design system
+  ([design/](../../design/README.md)) and adds the shared page frame and figure
+  vocabulary. A page defines no colour of its own.
 - **One script.** [`vhd.js`](vhd.js) gives every page the same detail panel and
   step-through behaviour.
 - **Both themes.** Dark is the home theme; every page also reads correctly in
   light, and at phone width without horizontal scrolling.
 - **Glossary terms only,** and the trademark line from brand.md in every
   footer.
-- **Self-contained.** No build step and no outside requests. The fonts ship in
-  [`fonts/`](fonts/): Alegreya SC, Alegreya Sans and IBM Plex Mono, Latin
-  subset, from the Fontsource 5.3.0 packages, each under the SIL Open Font
-  License (`fonts/OFL-*.txt`).
+- **Self-contained.** No build step and no outside requests; the fonts come
+  with the design system.

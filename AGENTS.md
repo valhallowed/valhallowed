@@ -10,7 +10,8 @@ restate the docs.
 |---|---|
 | What VHD is, its ground rules and open decisions | [docs/architecture.md](docs/architecture.md) |
 | What a word means | [docs/glossary.md](docs/glossary.md) |
-| Names, voices, design tokens | [docs/brand.md](docs/brand.md) |
+| Names, voices, what the colours mean | [docs/brand.md](docs/brand.md) |
+| Design tokens and fonts | [design/README.md](design/README.md) |
 | The diagram pages and their standard | [docs/diagrams/README.md](docs/diagrams/README.md) |
 
 ## Rules that hold everywhere
@@ -35,6 +36,8 @@ restate the docs.
 - **Everything here is public:** the repo, its history and its images. Never
   commit host names, private addresses, personal paths, credentials or real
   player data. Acceptance material is synthesized or anonymized.
+- **Colours and type come from design/tokens.css.** A surface never hard-codes
+  a colour or a font.
 - **Every public page carries the trademark line** in docs/brand.md.
 
 ## Verify

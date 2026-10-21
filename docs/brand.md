@@ -31,11 +31,11 @@ player reads in game always does.
 
 ## Design system seed
 
-Status: proposed. The design system grows from here once the product has its
-own interfaces.
+Status: proposed. It grows as the product's own interfaces are built.
 
-- **Tokens:** [`diagrams/vhd.css`](diagrams/vhd.css) is the single source until
-  then. Every diagram page uses it.
+- **Tokens:** [`design/tokens.css`](../design/tokens.css), with its fonts, is the
+  single source ([design/README.md](../design/README.md)). Every surface uses
+  it: the diagrams today, the product's interfaces and the site as they come.
 - **Palette:** night surfaces with a hearth-gold accent. Dark is the home theme;
   the light theme is derived from it.
 - **Zone colours:** one colour per part of the architecture, identical in every
