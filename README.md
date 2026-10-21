@@ -2,7 +2,7 @@
 
 A self-hosted Valheim dedicated server with a server-side plugin, telemetry,
 governed in-game commands and a web map, configured through one manifest. VHD
-for short. Home: [valhallowed.com](https://valhallowed.com).
+for short. Its home will be valhallowed.com; the site is not up yet.
 
 **Status: pre-release.** This repository holds the design, the release
 pipeline and a stand-in image. Nothing here is useful to install yet.

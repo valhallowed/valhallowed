@@ -23,5 +23,7 @@ any current browser; it needs no build step.
   light, and at phone width without horizontal scrolling.
 - **Glossary terms only,** and the trademark line from brand.md in every
   footer.
-- **Self-contained.** No build step and no data fetched at runtime; the only
-  outside requests are the fonts.
+- **Self-contained.** No build step and no outside requests. The fonts ship in
+  [`fonts/`](fonts/): Alegreya SC, Alegreya Sans and IBM Plex Mono, Latin
+  subset, from the Fontsource 5.3.0 packages, each under the SIL Open Font
+  License (`fonts/OFL-*.txt`).

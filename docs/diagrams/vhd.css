@@ -1,6 +1,17 @@
 /* Valhallowed seed tokens and the shared page frame for the planning diagrams.
    Layout: one reading column, max 1160px; figures scroll sideways inside their own frame.
    Dark (night surfaces, hearth gold) is the home theme; light is derived from it. */
+
+/* The fonts ship in fonts/ (SIL Open Font License), so a page makes no outside requests. */
+@font-face { font-family: "Alegreya SC"; font-weight: 500; font-display: swap; src: url("fonts/alegreya-sc-500.woff2") format("woff2"); }
+@font-face { font-family: "Alegreya SC"; font-weight: 700; font-display: swap; src: url("fonts/alegreya-sc-700.woff2") format("woff2"); }
+@font-face { font-family: "Alegreya Sans"; font-weight: 400; font-display: swap; src: url("fonts/alegreya-sans-400.woff2") format("woff2"); }
+@font-face { font-family: "Alegreya Sans"; font-weight: 500; font-display: swap; src: url("fonts/alegreya-sans-500.woff2") format("woff2"); }
+@font-face { font-family: "Alegreya Sans"; font-weight: 700; font-display: swap; src: url("fonts/alegreya-sans-700.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 400; font-display: swap; src: url("fonts/ibm-plex-mono-400.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 500; font-display: swap; src: url("fonts/ibm-plex-mono-500.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 600; font-display: swap; src: url("fonts/ibm-plex-mono-600.woff2") format("woff2"); }
+
 :root {
   color-scheme: dark;
   --bg: #0a0e18;
