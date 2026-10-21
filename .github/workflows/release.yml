@@ -1,0 +1,66 @@
+# A version tag promotes images already in the registry, accepts them from the
+# registry, and publishes the GitHub release. Nothing is rebuilt.
+name: release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      version: ${{ steps.promote.outputs.version }}
+      prerelease: ${{ steps.promote.outputs.prerelease }}
+      commit: ${{ steps.promote.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Log in to GHCR
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - id: promote
+        run: scripts/promote.sh "$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: promote
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.promote.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install from the registry, anonymously, and accept
+        env:
+          COMMIT: ${{ needs.promote.outputs.commit }}
+        run: |
+          scripts/render-install.sh "$VERSION" dist/compose.yaml --pin
+          scripts/accept.sh dist/compose.yaml "$COMMIT"
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ needs.promote.outputs.prerelease }}
+        run: |
+          (cd dist && sha256sum compose.yaml > SHA256SUMS)
+          flags=(--verify-tag --title "Valhallowed $VERSION" --generate-notes)
+          if [[ $PRERELEASE == true ]]; then
+            flags+=(--prerelease)
+          else
+            flags+=(--latest)
+          fi
+          gh release create "$GITHUB_REF_NAME" "${flags[@]}" dist/compose.yaml dist/SHA256SUMS

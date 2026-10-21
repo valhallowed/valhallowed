@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VHD Ingress and Boundaries</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+SC:wght@500;700&family=Alegreya+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="vhd.css">
+<style>
+  .lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 420px); gap: 16px; align-items: start; }
+  @media (max-width: 920px) { .lower { grid-template-columns: minmax(0, 1fr); } }
+  .std { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+  svg .n.byo > rect { stroke-dasharray: 5 4; }
+  tbody tr[data-k] td:first-child { font-family: var(--font-mono); font-size: 13px; color: var(--hearth-ink); font-weight: 600; }
+  tbody tr[data-k]:hover td { background: var(--panel-2); }
+  tbody tr.is-selected td { background: color-mix(in srgb, var(--hearth) 10%, var(--panel)); }
+  tbody tr[data-k]:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+</style>
+
+<main class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span class="wordmark">Valhallowed</span><span>Planning</span><span>Ingress and boundaries</span><span>Proposal</span></p>
+    <h1>One way in, a contract at every crossing</h1>
+    <p class="lede">Settings, secrets and operator actions enter VHD in exactly one place, the ingress, and are validated there. Inside, every crossing between two parts is a boundary with one typed contract, one validator on the receiving side and a stated failure behaviour.</p>
+    <div class="legend">
+      <span class="z-ingress"><i></i>Ingress</span>
+      <span class="z-control"><i></i>Control plane</span>
+      <span class="z-runtime"><i></i>Game runtime</span>
+      <span class="z-data"><i></i>Data layer</span>
+      <span class="z-people"><i></i>People</span>
+      <span class="z-external"><i></i>Outside services</span>
+      <span><i class="bdk"></i>Boundary (select for its contract)</span>
+    </div>
+  </header>
+
+  <section id="ingress" aria-labelledby="ingress-h">
+    <h2 id="ingress-h">The ingress</h2>
+    <figure>
+      <div class="frame">
+        <svg id="figA" viewBox="0 0 1200 312" role="img" aria-label="The server manager supplies a manifest, secrets and operator actions. All three pass one validator. Invalid input is rejected and the last good generation keeps running; valid input is reconciled into a new generation that the control plane hands to the game runtime and data layer, which report status back.">
+          <defs>
+            <marker id="fa-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk" d="M0 0 L10 5 L0 10 z"/></marker>
+          </defs>
+          <g class="grp z-ingress"><rect x="205" y="16" width="210" height="268" rx="8"/><text class="gl" x="219" y="34">INGRESS · ONE WAY IN</text></g>
+          <g class="grp z-control"><rect x="606" y="16" width="340" height="268" rx="8"/><text class="gl" x="620" y="34">CONTROL PLANE</text></g>
+
+          <g class="e" data-k="e-fan"><path d="M170 132 H190 V69 H219" marker-end="url(#fa-arr)"/><path d="M170 145 H219" marker-end="url(#fa-arr)"/><path d="M170 158 H190 V221 H219" marker-end="url(#fa-arr)"/></g>
+          <g class="e" data-k="e-in"><path d="M401 69 H432 V221 H401 M401 145 H462" marker-end="url(#fa-arr)"/></g>
+          <g class="e dash" data-k="e-reject"><path d="M524 168 V222" marker-end="url(#fa-arr)"/><text class="lab" x="532" y="199">invalid</text></g>
+          <g class="e" data-k="e-valid"><path d="M586 145 H620" marker-end="url(#fa-arr)"/><text class="lab" x="603" y="137" text-anchor="middle">valid</text></g>
+          <g class="e" data-k="e-gen"><path d="M760 145 H790" marker-end="url(#fa-arr)"/></g>
+          <g class="e" data-k="e-b1"><path d="M930 145 H966 V69 H1020" marker-end="url(#fa-arr)"/><path d="M966 145 V213 H1020" marker-end="url(#fa-arr)"/></g>
+          <g class="e dash" data-k="e-status"><path d="M1180 69 H1192 V252 H930" marker-end="url(#fa-arr)"/><path d="M1180 213 H1192"/><text class="lab" x="1100" y="246" text-anchor="middle">status · world truth</text></g>
+          <g class="e dash" data-k="e-report"><path d="M860 268 V296 H95 V170" marker-end="url(#fa-arr)"/><text class="lab" x="480" y="290" text-anchor="middle">status · errors · pending changes</text></g>
+
+          <g class="n z-people" data-k="sm"><rect x="20" y="118" width="150" height="52" rx="6"/><text class="t" x="34" y="141">Server manager</text><text class="s" x="34" y="159">writes, supplies, acts</text></g>
+          <g class="n z-ingress" data-k="manifest"><rect x="219" y="46" width="182" height="46" rx="6"/><text class="t" x="233" y="66">Manifest</text><text class="s" x="233" y="83">typed settings</text></g>
+          <g class="n z-ingress" data-k="secrets"><rect x="219" y="122" width="182" height="46" rx="6"/><text class="t" x="233" y="142">Secrets</text><text class="s" x="233" y="159">closed key list</text></g>
+          <g class="n z-ingress" data-k="actions"><rect x="219" y="198" width="182" height="46" rx="6"/><text class="t" x="233" y="218">Operator actions</text><text class="s" x="233" y="235">via TUI · console · CLI</text></g>
+          <g class="n z-ingress" data-k="validate"><rect x="462" y="122" width="124" height="46" rx="6"/><text class="t" x="476" y="142">Validate</text><text class="s" x="476" y="159">schema · key list</text></g>
+          <g class="n z-ingress" data-k="reject"><rect x="462" y="222" width="124" height="46" rx="6"/><text class="t" x="476" y="242">Reject</text><text class="s" x="476" y="259">say why, keep last</text></g>
+          <g class="n z-control" data-k="reconcile"><rect x="620" y="122" width="140" height="46" rx="6"/><text class="t" x="634" y="142">Reconcile</text><text class="s" x="634" y="159">+ defaults, implications</text></g>
+          <g class="n z-control" data-k="generation"><rect x="790" y="122" width="140" height="46" rx="6"/><text class="t" x="804" y="142">Generation N</text><text class="s" x="804" y="159">effective configuration</text></g>
+          <g class="n z-control" data-k="status"><rect x="790" y="222" width="140" height="46" rx="6"/><text class="t" x="804" y="242">Status</text><text class="s" x="804" y="259">world truth, presence</text></g>
+          <g class="n z-runtime" data-k="gr"><rect x="1020" y="46" width="160" height="46" rx="6"/><text class="t" x="1034" y="66">Game runtime</text><text class="s" x="1034" y="83">one per world</text></g>
+          <g class="n z-data" data-k="dl"><rect x="1020" y="190" width="160" height="46" rx="6"/><text class="t" x="1034" y="210">Data layer</text><text class="s" x="1034" y="227">intake · broker · web map</text></g>
+
+          <g class="bd" data-k="i0"><rect x="-7" y="-7" width="14" height="14" transform="translate(447 145) rotate(45)"/><text x="447" y="148.5" text-anchor="middle">I0</text></g>
+          <g class="bd" data-k="b1"><rect x="-7" y="-7" width="14" height="14" transform="translate(966 145) rotate(45)"/><text x="966" y="148.5" text-anchor="middle">B1</text></g>
+        </svg>
+      </div>
+      <figcaption>Three kinds of input, one validator. A rejected manifest changes nothing: the children keep running on the last good generation. The control plane hands each child its effective configuration and only the secrets it needs (B1), and the children report status back.</figcaption>
+    </figure>
+  </section>
+
+  <section id="inside" aria-labelledby="inside-h">
+    <h2 id="inside-h">Boundaries inside VHD</h2>
+    <figure>
+      <div class="frame">
+        <svg id="figB" viewBox="0 0 1200 490" role="img" aria-label="Inside VHD: players reach the game runtime and the web map; the plugin crosses into the data layer at three boundaries (telemetry, commands, map export); data-layer services reach the database through one boundary; the chat relay, assistant and web map each reach one outside service through an adapter.">
+          <defs>
+            <marker id="fb-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk" d="M0 0 L10 5 L0 10 z"/></marker>
+          </defs>
+          <g class="grp z-runtime"><rect x="230" y="20" width="240" height="326" rx="8"/><text class="gl" x="244" y="38">GAME RUNTIME · PER WORLD</text></g>
+          <g class="grp z-data"><rect x="540" y="20" width="320" height="450" rx="8"/><text class="gl" x="554" y="38">DATA LAYER</text></g>
+
+          <g class="e" data-k="e-b10"><path d="M190 73 H244" marker-end="url(#fb-arr)"/><text class="lab" x="217" y="63" text-anchor="middle">UDP</text></g>
+          <g class="e" data-k="e-b11"><path d="M105 96 V410 H730" marker-end="url(#fb-arr)"/><text class="lab" x="420" y="402" text-anchor="middle">web requests</text></g>
+          <g class="e" data-k="e-b2"><path d="M456 165 H554" marker-end="url(#fb-arr)"/><text class="lab" x="505" y="155" text-anchor="middle">telemetry</text></g>
+          <g class="e" data-k="e-b3"><path d="M554 235 H456" marker-start="url(#fb-arr)" marker-end="url(#fb-arr)"/><text class="lab" x="505" y="225" text-anchor="middle">commands</text></g>
+          <g class="e" data-k="e-b5"><path d="M456 305 H554" marker-end="url(#fb-arr)"/><text class="lab" x="505" y="295" text-anchor="middle">map export</text></g>
+          <g class="e" data-k="e-b4"><path d="M674 165 H702 V262 H730" marker-end="url(#fb-arr)"/><path d="M674 235 H702"/></g>
+          <g class="e" data-k="e-b6"><path d="M788 380 V327" marker-end="url(#fb-arr)"/><text class="lab" x="798" y="358">reads, records</text></g>
+          <g class="e" data-k="e-b8"><path d="M846 72 H930" marker-start="url(#fb-arr)" marker-end="url(#fb-arr)"/><text class="lab" x="872" y="64" text-anchor="middle">relay</text></g>
+          <g class="e" data-k="e-b7"><path d="M846 142 H930" marker-end="url(#fb-arr)"/><text class="lab" x="872" y="134" text-anchor="middle">prompt</text></g>
+          <g class="e dash" data-k="e-byo"><path d="M846 262 H930"/><text class="lab" x="888" y="254" text-anchor="middle">or BYO</text></g>
+          <g class="e" data-k="e-b9"><path d="M846 410 H930" marker-end="url(#fb-arr)"/><text class="lab" x="872" y="402" text-anchor="middle">sign-in</text></g>
+
+          <g class="n z-people" data-k="players"><rect x="20" y="50" width="170" height="46" rx="6"/><text class="t" x="34" y="70">Players</text><text class="s" x="34" y="87">game client · browser</text></g>
+          <g class="n z-runtime" data-k="server"><rect x="244" y="50" width="212" height="46" rx="6"/><text class="t" x="258" y="70">Valheim dedicated server</text><text class="s" x="258" y="87">downloaded at first start</text></g>
+          <g class="n z-runtime" data-k="bepinex"><rect x="244" y="106" width="212" height="26" rx="6"/><text class="s" x="258" y="123">BepInEx loader · HarmonyX</text></g>
+          <g class="n z-runtime" data-k="plugin"><rect x="244" y="142" width="212" height="186" rx="6"/><text class="t" x="258" y="166">Plugin</text><text class="s" x="258" y="188">telemetry capture</text><text class="s" x="258" y="206">chat commands</text><text class="s" x="258" y="224">command executor</text><text class="s" x="258" y="242">map export</text></g>
+          <g class="n z-data" data-k="intake"><rect x="554" y="143" width="120" height="44" rx="6"/><text class="t" x="568" y="162">Intake</text><text class="s" x="568" y="179">events</text></g>
+          <g class="n z-data" data-k="broker"><rect x="554" y="213" width="120" height="44" rx="6"/><text class="t" x="568" y="232">Broker</text><text class="s" x="568" y="249">commands</text></g>
+          <g class="n z-data" data-k="render"><rect x="554" y="283" width="120" height="44" rx="6"/><text class="t" x="568" y="302">World render</text><text class="s" x="568" y="319">base image</text></g>
+          <g class="n z-data" data-k="relay"><rect x="730" y="50" width="116" height="44" rx="6"/><text class="t" x="744" y="69">Chat relay</text><text class="s" x="744" y="86">events, commands</text></g>
+          <g class="n z-data" data-k="assistant"><rect x="730" y="120" width="116" height="44" rx="6"/><text class="t" x="744" y="139">Assistant</text><text class="s" x="744" y="156">in-game answers</text></g>
+          <g class="n z-data" data-k="db"><rect x="730" y="213" width="116" height="114" rx="6"/><text class="t" x="744" y="236">Database</text><text class="s" x="744" y="254">bundled default</text><text class="s" x="744" y="272">schema owned by</text><text class="s" x="744" y="288">the data layer</text></g>
+          <g class="n z-data" data-k="webmap"><rect x="730" y="380" width="116" height="60" rx="6"/><text class="t" x="744" y="402">Web map</text><text class="s" x="744" y="420">map · journal · chat</text></g>
+          <g class="n z-external" data-k="chatsvc"><rect x="930" y="50" width="240" height="44" rx="6"/><text class="t" x="944" y="69">Chat service</text><text class="s" x="944" y="86">for example Discord</text></g>
+          <g class="n z-external" data-k="llm"><rect x="930" y="120" width="240" height="44" rx="6"/><text class="t" x="944" y="139">LLM provider</text><text class="s" x="944" y="156">any, through an adapter</text></g>
+          <g class="n z-external byo" data-k="byo"><rect x="930" y="240" width="240" height="44" rx="6"/><text class="t" x="944" y="259">Your own database</text><text class="s" x="944" y="276">BYO, same contract as B4</text></g>
+          <g class="n z-external" data-k="steam"><rect x="930" y="388" width="240" height="44" rx="6"/><text class="t" x="944" y="407">Steam</text><text class="s" x="944" y="424">sign-in (OpenID)</text></g>
+
+          <g class="bd" data-k="b10"><rect x="-7" y="-7" width="14" height="14" transform="translate(217 73) rotate(45)"/><text x="217" y="76.5" text-anchor="middle">B10</text></g>
+          <g class="bd" data-k="b11"><rect x="-7" y="-7" width="14" height="14" transform="translate(200 410) rotate(45)"/><text x="200" y="413.5" text-anchor="middle">B11</text></g>
+          <g class="bd" data-k="b2"><rect x="-7" y="-7" width="14" height="14" transform="translate(505 165) rotate(45)"/><text x="505" y="168.5" text-anchor="middle">B2</text></g>
+          <g class="bd" data-k="b3"><rect x="-7" y="-7" width="14" height="14" transform="translate(505 235) rotate(45)"/><text x="505" y="238.5" text-anchor="middle">B3</text></g>
+          <g class="bd" data-k="b5"><rect x="-7" y="-7" width="14" height="14" transform="translate(505 305) rotate(45)"/><text x="505" y="308.5" text-anchor="middle">B5</text></g>
+          <g class="bd" data-k="b4"><rect x="-7" y="-7" width="14" height="14" transform="translate(716 262) rotate(45)"/><text x="716" y="265.5" text-anchor="middle">B4</text></g>
+          <g class="bd" data-k="b6"><rect x="-7" y="-7" width="14" height="14" transform="translate(788 354) rotate(45)"/><text x="788" y="357.5" text-anchor="middle">B6</text></g>
+          <g class="bd" data-k="b8"><rect x="-7" y="-7" width="14" height="14" transform="translate(910 72) rotate(45)"/><text x="910" y="75.5" text-anchor="middle">B8</text></g>
+          <g class="bd" data-k="b7"><rect x="-7" y="-7" width="14" height="14" transform="translate(910 142) rotate(45)"/><text x="910" y="145.5" text-anchor="middle">B7</text></g>
+          <g class="bd" data-k="b9"><rect x="-7" y="-7" width="14" height="14" transform="translate(910 410) rotate(45)"/><text x="910" y="413.5" text-anchor="middle">B9</text></g>
+        </svg>
+      </div>
+      <figcaption>Wiring between data-layer services is left out; the figure shows only where one part crosses into another. Select a diamond or a row below for its contract, its validator and what happens when it fails.</figcaption>
+    </figure>
+
+    <div class="lower">
+      <div class="panel">
+        <h3>The boundary standard</h3>
+        <ul class="std">
+          <li>One typed contract, versioned with the release, with a contract test in the pipeline.</li>
+          <li>The receiving side validates. Nothing trusts the sender.</li>
+          <li>One owner.</li>
+          <li>A stated failure behaviour. Observations fail soft: drop and count, and the game never waits. Actions fail closed: refuse and record.</li>
+        </ul>
+      </div>
+      <div class="panel" id="detail" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <section id="register" aria-labelledby="register-h">
+    <h2 id="register-h">Every boundary</h2>
+    <div class="tbl">
+      <table id="breg">
+        <thead><tr><th>#</th><th>Boundary</th><th>Contract</th><th>On failure</th></tr></thead>
+        <tbody>
+          <tr data-k="i0"><td>I0</td><td>Ingress</td><td>Manifest schema, secrets key list, control API</td><td>Reject whole; last good generation runs</td></tr>
+          <tr data-k="b1"><td>B1</td><td>Control plane → children</td><td>Generation schema</td><td>Child keeps its last good generation</td></tr>
+          <tr data-k="b2"><td>B2</td><td>Plugin → intake</td><td>Event schema</td><td>Fail soft</td></tr>
+          <tr data-k="b3"><td>B3</td><td>Broker ↔ plugin</td><td>Command verbs, limits, idempotency key</td><td>Fail closed</td></tr>
+          <tr data-k="b4"><td>B4</td><td>Services → database</td><td>Schema owned by the data layer; one role per service</td><td>Capability degrades</td></tr>
+          <tr data-k="b5"><td>B5</td><td>Plugin → world render</td><td>Export file format</td><td>Web map keeps its last good render</td></tr>
+          <tr data-k="b6"><td>B6</td><td>Web map → data</td><td>Read-only role, record constraints, chat-scoped token</td><td>Web map stays read-only</td></tr>
+          <tr data-k="b7"><td>B7</td><td>Assistant → LLM provider</td><td>Provider adapter, timeout, budget</td><td>Assistant reports itself unavailable</td></tr>
+          <tr data-k="b8"><td>B8</td><td>Chat relay ↔ chat service</td><td>Adapter; inbound authors allow-listed</td><td>Relay off; game unaffected</td></tr>
+          <tr data-k="b9"><td>B9</td><td>Web map ↔ Steam</td><td>OpenID; server-side sessions</td><td>Web map stays public and read-only</td></tr>
+          <tr data-k="b10"><td>B10</td><td>Players → game runtime</td><td>Game protocol; chat commands parsed and rate-limited</td><td>Command refused and audited</td></tr>
+          <tr data-k="b11"><td>B11</td><td>Players → web map</td><td>Web map API schema; identity from the session</td><td>Request rejected</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="limits" id="limits" aria-labelledby="limits-h">
+    <h2 id="limits-h">What the boundaries never allow</h2>
+    <ul>
+      <li>A child reading the manifest or the secrets file. Children read their generation and nothing else.</li>
+      <li>Any service but the data layer changing the database schema.</li>
+      <li>Anything but the broker creating a command, or anything but the plugin executing one. Markers and journal entries stay records.</li>
+      <li>An outside service becoming required. Chat relay, assistant and sign-in each switch off cleanly.</li>
+      <li>A boundary without a contract test in the pipeline.</li>
+    </ul>
+    <p class="note">Open decisions behind this page: O1 supervision model, O2 data layer placement, O3 worlds per install, O11 languages.</p>
+  </section>
+
+  <footer>
+    <p>Valhallowed · terms as defined in docs/glossary.md · where this page and docs/architecture.md differ, the doc wins.</p>
+    <p>Valhallowed is not affiliated with or endorsed by Iron Gate. Valheim is a trademark of Iron Gate AB.</p>
+  </footer>
+</main>
+
+<script src="vhd.js"></script>
+<script>
+  const B = (title, rows, text) => ({ kind: 'Boundary', title, text, rows });
+  const N = (kind, title, text) => ({ kind, title, text });
+  const archData = {
+    i0: B('I0 · Ingress', [
+      ['Crosses', 'manifest, secrets, operator actions'],
+      ['Contract', 'manifest schema (versioned), the closed secrets key list, the control API'],
+      ['Validated by', 'the control plane, before anything changes'],
+      ['On failure', 'reject the whole input, say why and where, keep the last good generation running'],
+      ['Owner', 'control plane'],
+    ], 'The only way settings, secrets and operator actions enter VHD.'),
+    b1: B('B1 · Control plane → children', [
+      ['Crosses', 'effective configuration and scoped secrets down; status up'],
+      ['Contract', 'generation schema, versioned with the release'],
+      ['Validated by', 'each child on load; it refuses a schema version it does not know'],
+      ['On failure', 'the child keeps its last good generation'],
+      ['Owner', 'control plane'],
+    ]),
+    b2: B('B2 · Plugin → intake', [
+      ['Crosses', 'telemetry events: chat, presence, position, world events'],
+      ['Contract', 'event schema'],
+      ['Validated by', 'intake'],
+      ['On failure', 'fail soft: drop and count; the game thread never waits'],
+      ['Owner', 'data layer'],
+    ]),
+    b3: B('B3 · Broker ↔ plugin', [
+      ['Crosses', 'commands down (polled by the plugin); outcomes up'],
+      ['Contract', 'verbs, per-verb switches, rate limits, idempotency key, outcome taxonomy'],
+      ['Validated by', 'the broker when a command is issued; the plugin when it runs'],
+      ['On failure', 'fail closed: refuse and record the reason'],
+      ['Owner', 'broker'],
+    ]),
+    b4: B('B4 · Services → database', [
+      ['Crosses', 'reads and writes'],
+      ['Contract', 'schema owned and applied at start by the data layer; one least-privilege role per service'],
+      ['Validated by', 'database constraints and roles'],
+      ['On failure', 'the capability degrades; no other service migrates the schema'],
+      ['BYO', 'your own database meets the same contract'],
+    ]),
+    b5: B('B5 · Plugin → world render', [
+      ['Crosses', 'the map export file'],
+      ['Contract', 'export file format, versioned'],
+      ['Validated by', 'world render'],
+      ['On failure', 'the web map keeps its last good render'],
+      ['Owner', 'data layer'],
+    ]),
+    b6: B('B6 · Web map → data', [
+      ['Crosses', 'reads; record writes (markers, journal); chat sends'],
+      ['Contract', 'read-only role plus record constraints; chat goes through the broker on a chat-scoped token'],
+      ['Validated by', 'database constraints; the broker'],
+      ['On failure', 'the web map stays read-only'],
+    ]),
+    b7: B('B7 · Assistant → LLM provider', [
+      ['Crosses', 'world digest and the question out; the answer back'],
+      ['Contract', 'provider adapter with a typed request and response, a timeout and a budget'],
+      ['Rule', 'the data layer computes every fact; the model only words them'],
+      ['On failure', 'the assistant says it is unavailable; nothing else changes'],
+    ]),
+    b8: B('B8 · Chat relay ↔ chat service', [
+      ['Crosses', 'world events out; commands in'],
+      ['Contract', 'one adapter per chat service; inbound authors allow-listed; inbound commands go through the broker'],
+      ['On failure', 'the relay switches off; the game is unaffected'],
+    ]),
+    b9: B('B9 · Web map ↔ Steam', [
+      ['Crosses', 'sign-in'],
+      ['Contract', 'OpenID; sessions kept server-side; only people the game has seen can sign in'],
+      ['On failure', 'the web map stays public and read-only'],
+    ]),
+    b10: B('B10 · Players → game runtime', [
+      ['Crosses', 'game traffic and chat lines'],
+      ['Contract', 'the game protocol (not ours); chat commands parsed and rate-limited by the plugin, then issued through the broker'],
+      ['On failure', 'the command is refused and audited'],
+    ]),
+    b11: B('B11 · Players → web map', [
+      ['Crosses', 'web requests'],
+      ['Contract', 'web map API schema; identity comes from the session, never the request'],
+      ['On failure', 'the request is rejected'],
+    ]),
+    sm: N('People', 'Server manager', 'Operates an install through the control plane: writes the manifest, supplies secrets, takes operator actions.'),
+    manifest: N('Ingress', 'Manifest', 'The one typed file of settings. Safe to commit and share: it never holds secrets.'),
+    secrets: N('Ingress', 'Secrets', 'Values for outside services only. Key names come from a closed list; an unknown key is rejected.'),
+    actions: N('Ingress', 'Operator actions', 'One-off requests through the control API: import a world, back up now, read logs. Validated like the manifest.'),
+    validate: N('Ingress', 'Validate', 'Checks the manifest against its schema and secrets against the key list, before anything changes.'),
+    reject: N('Ingress', 'Reject', 'Reports what failed and where. Nothing is applied; the last good generation keeps running.'),
+    reconcile: N('Control plane', 'Reconcile', 'Merges manifest, secrets and defaults into a new generation and reports what was set, what defaulted and what that implies.'),
+    generation: N('Control plane', 'Generation N', 'One numbered effective configuration, applied whole or not at all.'),
+    status: N('Control plane', 'Status', 'Collects status from every child. Reports world truth (the world loaded and matches its save), not container health.'),
+    gr: N('Game runtime', 'Game runtime', 'Runs one world: the dedicated server, BepInEx and the plugin.'),
+    dl: N('Data layer', 'Data layer', 'Intake, broker, persistence, world render, web map, chat relay, assistant, database.'),
+    players: N('People', 'Players', 'Play in a world and use the web map. Never touch the control plane.'),
+    server: N('Game runtime', 'Valheim dedicated server', 'Downloaded through SteamCMD at first start. Never shipped in an image.'),
+    bepinex: N('Game runtime', 'BepInEx and HarmonyX', 'The mod loader and patching library the plugin runs on.'),
+    plugin: N('Game runtime', 'Plugin', 'Captures telemetry, parses chat commands, executes commands from the broker and writes the map export.'),
+    intake: N('Data layer', 'Intake', 'Receives telemetry events from the plugin (B2) and persists them.'),
+    broker: N('Data layer', 'Broker', 'Creates, queues and audits every command, whoever asked for it.'),
+    render: N('Data layer', 'World render', 'Turns the map export into the web map’s base image, at runtime.'),
+    relay: N('Data layer', 'Chat relay', 'Mirrors world events to a chat service and takes commands from allow-listed authors.'),
+    assistant: N('Data layer', 'Assistant', 'Answers player questions in game, using facts the data layer computed.'),
+    db: N('Data layer', 'Database', 'Bundled by default. Its schema belongs to the data layer.'),
+    webmap: N('Data layer', 'Web map', 'The player-facing web app: world map, journal, chat. Not the admin console.'),
+    chatsvc: N('Outside service', 'Chat service', 'Optional. Without its secret, the chat relay stays off.'),
+    llm: N('Outside service', 'LLM provider', 'Optional. Without its secret, the assistant stays off.'),
+    byo: N('Outside service', 'Your own database', 'Optional. Replaces the bundled database and meets the same contract (B4).'),
+    steam: N('Outside service', 'Steam', 'Sign-in for the web map, and the source of the dedicated-server download.')
+  };
+
+  const detail = document.getElementById('detail');
+  const selects = [
+    VHD.details(document.getElementById('figA'), archData, detail),
+    VHD.details(document.getElementById('figB'), archData, detail),
+    VHD.details(document.getElementById('breg'), archData, detail)
+  ];
+  selects[0]('i0');
+</script>

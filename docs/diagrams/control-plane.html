@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VHD Control Plane</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+SC:wght@500;700&family=Alegreya+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="vhd.css">
+<style>
+  .lower { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  svg .msg path { fill: none; stroke: var(--line-strong); stroke-width: 1.6; }
+  svg .msg.dash path { stroke-dasharray: 6 4; }
+  svg .msg text { font-family: var(--font-mono); font-size: 11.5px; fill: var(--ink); }
+  svg .msg .no { fill: var(--ink-muted); font-size: 10.5px; }
+  svg .msg.lit path { stroke: var(--hearth-ink); stroke-width: 2.4; }
+  svg .msg.lit text { font-weight: 600; }
+  svg .notebox { fill: color-mix(in srgb, var(--hearth) 10%, var(--panel)); stroke: var(--hearth-ink); stroke-dasharray: 3 3; }
+  svg .xmark { stroke: var(--bad); stroke-width: 3; }
+  svg.dim .msg { opacity: .25; }
+  svg.dim .msg.lit { opacity: 1; }
+
+  /* wireframes */
+  .wf-label { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-muted); }
+  .term {
+    overflow-x: auto;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--ink);
+  }
+  .term pre { margin: 0; padding: 16px 18px; font-family: var(--font-mono); font-size: 13px; line-height: 1.55; min-width: 820px; }
+  .term .hd { color: var(--hearth-ink); font-weight: 600; }
+  .term .mu { color: var(--ink-muted); }
+  .term .ok { color: var(--ok); }
+  .term .wa { color: var(--warn); }
+  .term .ba { color: var(--bad); }
+  .term .key { color: var(--focus); }
+
+  .console { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; }
+  .c-top { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+  .c-brand { font-family: var(--font-display); font-weight: 700; color: var(--hearth-ink); font-size: 18px; }
+  .c-brand small { font-family: var(--font-mono); font-weight: 400; font-size: 11.5px; color: var(--ink-muted); letter-spacing: .04em; margin-left: 8px; }
+  .c-strip { display: flex; flex-wrap: wrap; gap: 6px; }
+  .c-body { display: grid; grid-template-columns: 170px minmax(0, 1fr); min-height: 380px; }
+  .c-nav { border-right: 1px solid var(--line); padding: 12px 8px; display: grid; gap: 2px; align-content: start; }
+  .c-nav button { text-align: left; border: 0; background: transparent; color: var(--ink); padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 15px; }
+  .c-nav button[aria-pressed="true"] { background: color-mix(in srgb, var(--hearth) 16%, var(--panel)); color: var(--ink); font-weight: 700; }
+  .c-nav button[disabled] { color: var(--ink-muted); cursor: default; }
+  .c-main { padding: 16px; display: grid; gap: 14px; align-content: start; min-width: 0; }
+  .c-main h3 { font-size: 16px; }
+  .c-card { border: 1px solid var(--line-subtle); border-radius: 8px; padding: 12px 14px; display: grid; gap: 8px; min-width: 0; }
+  .c-card.warn { border-color: var(--warn); }
+  .c-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .st-ok { --zc: var(--ok); }
+  .st-warn { --zc: var(--warn); }
+  .st-bad { --zc: var(--bad); }
+  .st-off { --zc: var(--line-strong); }
+  .caps { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 14px; font-size: 14.5px; }
+  .caps div { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+  .caps .why { color: var(--ink-muted); font-size: 13px; }
+  .c-main table { font-size: 14px; }
+  .c-main td code { font-size: 12.5px; }
+  @media (max-width: 680px) {
+    .c-body { grid-template-columns: minmax(0, 1fr); }
+    .c-nav { border-right: 0; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; }
+  }
+</style>
+
+<main class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span class="wordmark">Valhallowed</span><span>Planning</span><span>Control plane</span><span>Proposal</span></p>
+    <h1>The control plane and what it manages</h1>
+    <p class="lede">The server manager talks to one control plane through the TUI, the admin console or the CLI. The control plane validates, reconciles and decides when a change can apply; the game runtimes and the data layer run what they are given and report back.</p>
+    <div class="legend">
+      <span class="z-people"><i></i>Server manager</span>
+      <span class="z-control"><i></i>Control plane and its interfaces</span>
+      <span class="z-runtime"><i></i>Game runtime</span>
+      <span class="z-data"><i></i>Data layer</span>
+      <span class="z-external"><i></i>Outside service</span>
+      <span>Solid: request or change · Dashed: report</span>
+    </div>
+  </header>
+
+  <section id="flows" aria-labelledby="flows-h">
+    <h2 id="flows-h">How a change moves</h2>
+    <div class="panel">
+      <div class="seg" id="seg" role="group" aria-label="Scenario"></div>
+    </div>
+    <figure>
+      <div class="frame">
+        <svg id="seq" viewBox="0 0 1200 520" role="img" aria-label="Sequence of messages between the server manager, the TUI or admin console, the control plane, the game runtime, the data layer and Steam for the selected scenario.">
+          <defs>
+            <marker id="fc-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk" d="M0 0 L10 5 L0 10 z"/></marker>
+          </defs>
+          <line class="life" x1="90" y1="64" x2="90" y2="506"/>
+          <line class="life" x1="290" y1="64" x2="290" y2="506"/>
+          <line class="life" x1="500" y1="64" x2="500" y2="506"/>
+          <line class="life" x1="720" y1="64" x2="720" y2="506"/>
+          <line class="life" x1="930" y1="64" x2="930" y2="506"/>
+          <line class="life" x1="1110" y1="64" x2="1110" y2="506"/>
+          <g class="n z-people" data-k="h-sm"><rect x="10" y="20" width="160" height="44" rx="6"/><text class="t" x="90" y="47" text-anchor="middle">Server manager</text></g>
+          <g class="n z-control" data-k="h-ui"><rect x="210" y="20" width="160" height="44" rx="6"/><text class="t" x="290" y="47" text-anchor="middle">TUI · admin console</text></g>
+          <g class="n z-control" data-k="h-cp"><rect x="420" y="20" width="160" height="44" rx="6"/><text class="t" x="500" y="47" text-anchor="middle">Control plane</text></g>
+          <g class="n z-runtime" data-k="h-gr"><rect x="640" y="20" width="160" height="44" rx="6"/><text class="t" x="720" y="47" text-anchor="middle">Game runtime</text></g>
+          <g class="n z-data" data-k="h-dl"><rect x="850" y="20" width="160" height="44" rx="6"/><text class="t" x="930" y="47" text-anchor="middle">Data layer</text></g>
+          <g class="n z-external" data-k="h-steam"><rect x="1040" y="20" width="140" height="44" rx="6"/><text class="t" x="1110" y="47" text-anchor="middle">Steam</text></g>
+          <g id="msgs"></g>
+        </svg>
+      </div>
+      <figcaption id="seqcap">Pick a scenario above, then step through it. Each step lights one message.</figcaption>
+    </figure>
+    <div class="panel">
+      <ol class="steps" id="steps"></ol>
+      <div class="stepnav"><button class="btn" id="prev" type="button">Back</button><button class="btn" id="next" type="button">Start</button></div>
+    </div>
+  </section>
+
+  <section id="tui" aria-labelledby="tui-h">
+    <h2 id="tui-h">TUI</h2>
+    <p>For hosts where a browser is unavailable or unwanted. It runs inside the control plane container or as the CLI against the loopback control API, so it opens no port of its own. One screen answers: are my worlds really up, what is switched off and why, what is waiting, and is my manifest valid.</p>
+    <p class="wf-label">Wireframe · example data</p>
+    <div class="term" role="img" aria-label="Wireframe of the TUI showing worlds with world truth, capabilities with reasons, one pending change waiting for players to leave, and one manifest error.">
+<pre><span class="hd"> VALHALLOWED</span>  <span class="mu">install</span> longhouse   <span class="mu">generation</span> 9   <span class="mu">control plane up</span> 3d 04h          <span class="key">?</span> <span class="mu">help</span>
+<span class="mu"> ─────────────────────────────────────────────────────────────────────────────────────────</span>
+<span class="hd"> WORLDS</span>
+  <span class="ok">●</span> Meadowfold    running   <span class="mu">world truth</span> <span class="ok">ok</span> 48,113 / 48,113 objects   3 players   udp 2456-2457
+  <span class="ok">●</span> Ashwake       running   <span class="mu">world truth</span> <span class="ok">ok</span> 12,904 / 12,904 objects   0 players   udp 2466-2467
+
+<span class="hd"> HOST</span>
+  4 cores   16 GB memory   212 GB disk free
+  <span class="wa">! memory</span>   worlds ask 12 GB, data layer 1 GB; host has 11 GB available   <span class="mu">set world.*.memory to fit</span>
+
+<span class="hd"> CAPABILITIES</span>
+  telemetry   <span class="ok">on</span>     commands   <span class="ok">on</span>     web map   <span class="ok">on</span>     sign-in   <span class="ok">on</span>
+  chat relay  <span class="mu">off</span>    <span class="mu">no secret chat_relay.token</span>
+  assistant   <span class="mu">off</span>    <span class="mu">off in manifest</span>
+
+<span class="hd"> PENDING</span>
+  <span class="wa">gen 10</span>  Meadowfold  secret world.password changed   <span class="mu">cost</span> game restart   <span class="wa">waits: 3 players online</span>
+
+<span class="hd"> MANIFEST</span>
+  <span class="ba">✗</span> secrets line 4   unknown key <span class="ba">chat_relay.tokn</span>   <span class="mu">nearest:</span> chat_relay.token
+
+<span class="mu"> ─────────────────────────────────────────────────────────────────────────────────────────</span>
+ <span class="key">[w]</span> worlds  <span class="key">[c]</span> changes  <span class="key">[b]</span> backups  <span class="key">[i]</span> import  <span class="key">[l]</span> logs  <span class="key">[r]</span> reload  <span class="key">[q]</span> quit</pre>
+    </div>
+  </section>
+
+  <section id="console" aria-labelledby="console-h">
+    <h2 id="console-h">Admin console</h2>
+    <p>The same control API in a browser, for server managers only. It listens on loopback unless the manifest opens it, and it is a different app from the web map that players use. The settings view is the settings reference made live: every value with where it came from, its change cost and what it affects.</p>
+    <p class="wf-label">Wireframe · example data · buttons do nothing</p>
+    <div class="console" aria-label="Admin console wireframe">
+      <div class="c-top">
+        <span class="c-brand">Valhallowed<small>admin console · longhouse</small></span>
+        <span class="c-strip">
+          <span class="chip st-ok">generation 9 running</span>
+          <span class="chip st-warn">1 pending</span>
+          <span class="chip st-warn">1 host warning</span>
+          <span class="chip st-bad">1 manifest error</span>
+        </span>
+      </div>
+      <div class="c-body">
+        <nav class="c-nav" aria-label="Console sections">
+          <button type="button" data-view="overview" aria-pressed="true">Overview</button>
+          <button type="button" data-view="settings" aria-pressed="false">Settings</button>
+          <button type="button" data-view="changes" aria-pressed="false">Changes</button>
+          <button type="button" disabled>Worlds</button>
+          <button type="button" disabled>Backups</button>
+          <button type="button" disabled>Logs</button>
+        </nav>
+        <div class="c-main">
+          <div data-panel="overview">
+            <div class="c-main" style="padding:0">
+              <div class="c-card">
+                <h3>Worlds</h3>
+                <div class="tbl">
+                  <table>
+                    <thead><tr><th>World</th><th>State</th><th>World truth</th><th>Players</th><th>Port</th></tr></thead>
+                    <tbody>
+                      <tr><td>Meadowfold</td><td><span class="chip st-ok">running</span></td><td class="num">48,113 / 48,113</td><td class="num">3</td><td class="num">udp 2456–2457</td></tr>
+                      <tr><td>Ashwake</td><td><span class="chip st-ok">running</span></td><td class="num">12,904 / 12,904</td><td class="num">0</td><td class="num">udp 2466–2467</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="c-card warn">
+                <h3>Host</h3>
+                <p>4 cores · 16 GB memory · 212 GB disk free. <span class="chip st-warn">memory</span> The worlds ask for 12 GB and the data layer for 1 GB, but the host has 11 GB available. Everything still starts; under load a world may be killed for memory. Lower <code>world.*.memory</code> or free memory on the host.</p>
+              </div>
+              <div class="c-card">
+                <h3>Capabilities</h3>
+                <div class="caps">
+                  <div><span class="chip st-ok">on</span>Telemetry</div>
+                  <div><span class="chip st-ok">on</span>In-game commands</div>
+                  <div><span class="chip st-ok">on</span>Web map</div>
+                  <div><span class="chip st-ok">on</span>Sign-in</div>
+                  <div><span class="chip st-off">off</span>Chat relay <span class="why">no secret chat_relay.token</span></div>
+                  <div><span class="chip st-off">off</span>Assistant <span class="why">off in manifest</span></div>
+                </div>
+              </div>
+              <div class="c-card warn">
+                <h3>Manifest error</h3>
+                <p><code>secrets</code> line 4: unknown key <code>chat_relay.tokn</code>. Nearest valid key: <code>chat_relay.token</code>. Nothing was applied; generation 9 keeps running.</p>
+              </div>
+            </div>
+          </div>
+          <div data-panel="settings" hidden>
+            <div class="tbl">
+              <table>
+                <thead><tr><th>Setting</th><th>Value</th><th>Source</th><th>Change cost</th><th>Affects</th></tr></thead>
+                <tbody>
+                  <tr><td><code>world.Meadowfold.port</code></td><td class="num">2456</td><td>manifest</td><td><span class="chip st-bad">game restart</span></td><td>That world; your firewall rule</td></tr>
+                  <tr><td><code>world.Meadowfold.memory</code></td><td class="num">6 GB</td><td>default</td><td><span class="chip st-bad">game restart</span></td><td>That world's memory limit; the host check</td></tr>
+                  <tr><td><code>world.Meadowfold.password</code></td><td class="num">set</td><td>secrets</td><td><span class="chip st-bad">game restart</span></td><td>Who can join</td></tr>
+                  <tr><td><code>telemetry.position_interval</code></td><td class="num">5 s</td><td>default</td><td><span class="chip st-ok">live</span></td><td>Intake load; web map trails</td></tr>
+                  <tr><td><code>commands.player_rate</code></td><td class="num">30 / min</td><td>manifest</td><td><span class="chip st-ok">live</span></td><td>Every player's chat commands</td></tr>
+                  <tr><td><code>web_map.public_url</code></td><td class="num">https://map.example.org</td><td>manifest</td><td><span class="chip st-warn">service restart</span></td><td>Sign-in return address; links in chat</td></tr>
+                  <tr><td><code>admin_console.listen</code></td><td class="num">127.0.0.1:9456</td><td>default</td><td><span class="chip st-warn">service restart</span></td><td>Who can reach this console</td></tr>
+                  <tr><td><code>chat_relay.enabled</code></td><td class="num">true</td><td>manifest</td><td><span class="chip st-ok">live</span></td><td>Off anyway: missing secret <code>chat_relay.token</code></td></tr>
+                  <tr><td><code>database.url</code></td><td class="num">bundled</td><td>default</td><td><span class="chip st-warn">service restart</span></td><td>Every data-layer service</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="note">Every value is either a default or the server manager's override; ports, addresses and resources included. Setting names and default values are illustrative; the manifest format is open (O6) and the resource defaults await a measurement under load (O13).</p>
+          </div>
+          <div data-panel="changes" hidden>
+            <div class="c-main" style="padding:0">
+              <div class="c-card warn">
+                <h3>Generation 10 · pending</h3>
+                <p>One change: secret <code>world.password</code> for Meadowfold. Change cost: game restart. Meadowfold has 3 players online, so this waits for the world to empty.</p>
+                <div class="c-row"><button class="btn" type="button" disabled>Wait for empty world</button><button class="btn" type="button" disabled>Apply now · disconnects 3 players</button></div>
+              </div>
+              <div class="c-card">
+                <h3>History</h3>
+                <div class="tbl">
+                  <table>
+                    <thead><tr><th>Generation</th><th>When</th><th>Changes</th><th>Result</th></tr></thead>
+                    <tbody>
+                      <tr><td class="num">—</td><td class="num">2026-10-21 09:14</td><td>secrets file</td><td><span class="chip st-bad">rejected</span> unknown key</td></tr>
+                      <tr><td class="num">9</td><td class="num">2026-10-20 23:40</td><td>world.Ashwake.port</td><td><span class="chip st-ok">applied</span> after the world emptied</td></tr>
+                      <tr><td class="num">8</td><td class="num">2026-10-20 18:02</td><td>commands.player_rate</td><td><span class="chip st-ok">applied</span> live</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="limits" id="limits" aria-labelledby="limits-h">
+    <h2 id="limits-h">What the control plane will not do</h2>
+    <ul>
+      <li>Sit on the game's path. No player traffic, telemetry or command passes through it, so its failure stops changes, not play.</li>
+      <li>Apply part of a generation. A change applies whole or not at all.</li>
+      <li>Restart a game server with players online unless the server manager confirms it, knowing who it disconnects.</li>
+      <li>Let a world that failed to load save over the real one.</li>
+      <li>Start an install on a host that falls short without saying so. The host check warns in status.</li>
+      <li>Open the admin console beyond loopback unless the manifest says so.</li>
+      <li>Hold player data. Players and their records belong to the data layer.</li>
+    </ul>
+    <p class="note">Open decisions behind this page: O1 supervision model (how stop and start reach a child), O3 worlds per install (the wireframes assume several), O6 manifest format.</p>
+  </section>
+
+  <footer>
+    <p>Valhallowed · terms as defined in docs/glossary.md · where this page and docs/architecture.md differ, the doc wins.</p>
+    <p>Valhallowed is not affiliated with or endorsed by Iron Gate. Valheim is a trademark of Iron Gate AB.</p>
+  </footer>
+</main>
+
+<script src="vhd.js"></script>
+<script>
+  const X = { sm: 90, ui: 290, cp: 500, gr: 720, dl: 930, steam: 1110 };
+  const ROW0 = 100;
+  const ROW = 42;
+  const SVGNS = 'http://www.w3.org/2000/svg';
+
+  const scenarios = {
+    start: { label: 'First start', cap: 'The data layer starts before any game runtime, and a world counts as up only once it matches its save.', steps: [
+      { f: 'sm', t: 'cp', l: 'compose up', d: 'The server manager starts the install with a manifest and, optionally, secrets.' },
+      { f: 'cp', t: 'cp', l: 'validate', d: 'Manifest against its schema; secrets against the key list.' },
+      { f: 'cp', t: 'cp', l: 'host check: ports, memory, CPU, disk', d: 'What the manifest asks for, against what the host has. A shortfall becomes a warning in status; a port already taken stops only the world that needs it.' },
+      { f: 'cp', t: 'cp', l: 'reconcile: generation 1', d: 'Defaults fill every unset setting, and reconcile records what each implies.' },
+      { f: 'cp', t: 'dl', l: 'generation 1 + scoped secrets', d: 'The data layer starts first: it applies the database schema and opens intake and the broker.' },
+      { f: 'dl', t: 'cp', l: 'ready', dash: true, d: 'Schema applied, intake listening.' },
+      { f: 'cp', t: 'gr', l: 'generation 1 + scoped secrets', d: 'Then each game runtime, one per world.' },
+      { f: 'gr', t: 'steam', l: 'download dedicated server', d: 'First start only. Later starts reuse the downloaded files.' },
+      { f: 'gr', t: 'cp', l: 'world loaded, matches save', dash: true, d: 'World truth: the loaded world is checked against its save, not just the container.' },
+      { f: 'cp', t: 'ui', l: 'running, generation 1', dash: true, d: 'The TUI and the admin console show the install as running.' }
+    ] },
+    reload: { label: 'Hot reload', cap: 'Only the children a change affects receive it, and a live change applies without a restart.', steps: [
+      { f: 'sm', t: 'cp', l: 'save manifest', d: 'A changed manifest is picked up on save, or on Reload in the TUI or console.' },
+      { f: 'cp', t: 'cp', l: 'validate', d: 'The whole manifest, every time.' },
+      { f: 'cp', t: 'cp', l: 'reconcile: generation 8, cost live', d: 'Every changed setting carries its change cost. This one applies live.' },
+      { f: 'cp', t: 'dl', l: 'generation 8', d: 'Only the children affected by the change receive it.' },
+      { f: 'dl', t: 'cp', l: 'applied', dash: true, d: 'The child confirms the generation it now runs.' },
+      { f: 'cp', t: 'ui', l: 'applied: generation 8', dash: true, d: 'The console lists what changed, and from which value.' }
+    ] },
+    invalid: { label: 'Invalid manifest', cap: 'A rejected manifest never reaches a child. The last good generation keeps running.', steps: [
+      { f: 'sm', t: 'cp', l: 'save secrets file', d: 'Example: a mistyped key, chat_relay.tokn.' },
+      { f: 'cp', t: 'cp', l: 'validate: fails', d: 'The key is not on the closed list.' },
+      { f: 'cp', t: 'ui', l: 'rejected: line 4, unknown key', dash: true, d: 'The error names the line and the nearest valid key.' },
+      { note: 'children untouched: generation 9 keeps running', a: 'gr', b: 'dl', d: 'Nothing is applied. No child ever sees a half-valid change.' }
+    ] },
+    restart: { label: 'Restart with players online', cap: 'A change that needs a game-server restart is stored and held until the world is empty, unless the server manager confirms.', steps: [
+      { f: 'sm', t: 'cp', l: 'save secrets file', d: 'Example: a new server password for one world.' },
+      { f: 'cp', t: 'cp', l: 'reconcile: generation 10, cost game restart', d: 'Valid, and it needs a game-server restart.' },
+      { f: 'dl', t: 'cp', l: 'presence: 3 players online', dash: true, d: 'The control plane reads presence before any game-server restart.' },
+      { f: 'cp', t: 'ui', l: 'pending: waits for an empty world', dash: true, d: 'Stored and held. The server manager can apply it now, with a warning that names who it disconnects, or wait.' },
+      { f: 'dl', t: 'cp', l: 'presence: 0 players', dash: true, d: 'Later, the world empties.' },
+      { f: 'cp', t: 'gr', l: 'save world, stop', d: 'The world saves before it stops.' },
+      { f: 'cp', t: 'gr', l: 'start with generation 10', d: 'The runtime starts on the new generation.' },
+      { f: 'gr', t: 'cp', l: 'world loaded, matches save', dash: true, d: 'World truth before anything is reported as done.' },
+      { f: 'cp', t: 'ui', l: 'applied: generation 10', dash: true, d: 'The pending change moves to history.' }
+    ] },
+    import: { label: 'World import', cap: 'An import replaces a world, so it backs the current one up first and restores it if the import fails to load.', steps: [
+      { f: 'sm', t: 'ui', l: 'import world file', d: 'Upload in the console, or a path through the CLI.' },
+      { f: 'ui', t: 'cp', l: 'operator action: import', d: 'Operator actions pass the same validation as the manifest.' },
+      { f: 'cp', t: 'cp', l: 'validate save: format, name, size', d: 'Both save formats are recognised: the pre-1.0 single file and the 1.0+ chunked directory.' },
+      { f: 'dl', t: 'cp', l: 'presence: 0 players', dash: true, d: 'Replacing a world waits for it to be empty.' },
+      { f: 'cp', t: 'gr', l: 'back up current world, stop', d: 'The current save is backed up before anything is replaced.' },
+      { f: 'cp', t: 'gr', l: 'place save, start', d: 'The runtime starts on the imported save.' },
+      { f: 'gr', t: 'cp', l: 'world loaded, matches save', dash: true, d: 'If it fails to load, the control plane restores the backup and reports why.' },
+      { f: 'cp', t: 'ui', l: 'imported', dash: true, d: 'The world list shows the new world and its object count.' }
+    ] },
+    update: { label: 'Game update', cap: 'Proposed: a world that does not load after a game update is stopped before it can save over the real one.', steps: [
+      { f: 'cp', t: 'steam', l: 'newest server build?', d: 'Policy checks on a schedule.' },
+      { f: 'steam', t: 'cp', l: 'new build available', dash: true, d: 'The update is a pending change with cost: game restart.' },
+      { f: 'cp', t: 'ui', l: 'pending: game update', dash: true, d: 'Held until the world is empty, like any game-restart change.' },
+      { f: 'dl', t: 'cp', l: 'presence: 0 players', dash: true, d: 'The world empties.' },
+      { f: 'cp', t: 'gr', l: 'save world, stop', d: 'Saved before the update.' },
+      { f: 'gr', t: 'steam', l: 'download update', d: 'SteamCMD fetches the new build.' },
+      { f: 'gr', t: 'cp', l: 'world truth: failed to load', dash: true, d: 'Example: the patch broke a plugin patch, and the world came up empty.' },
+      { f: 'cp', t: 'gr', l: 'stop before first autosave', d: 'An empty world must never save over the real one. The save stays intact.' },
+      { f: 'cp', t: 'ui', l: 'update held: world did not load', dash: true, d: 'The server manager sees why. Release notes name the game build each release was accepted on.' }
+    ] },
+    down: { label: 'Control plane stops', cap: 'The control plane is needed to change an install, not to run it.', steps: [
+      { cross: 'cp', l: 'control plane stops', d: 'For any reason: a crash, or an upgrade of the control plane itself.' },
+      { f: 'gr', t: 'dl', l: 'telemetry continues', d: 'Children keep running on their last good generation.' },
+      { f: 'dl', t: 'gr', l: 'commands continue', d: 'Players notice nothing; the broker and the plugin keep working.' },
+      { note: 'no changes and no status until it returns', a: 'sm', b: 'ui', d: 'The TUI and console cannot connect, and manifest changes wait.' },
+      { f: 'cp', t: 'cp', l: 'restart, rebuild status', d: 'On return it rebuilds status from the children and resumes.' }
+    ] }
+  };
+
+  function el(name, attrs, text) {
+    const node = document.createElementNS(SVGNS, name);
+    Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v));
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function drawScenario(key) {
+    const g = document.getElementById('msgs');
+    g.replaceChildren();
+    scenarios[key].steps.forEach((s, i) => {
+      const y = ROW0 + i * ROW;
+      const m = el('g', { class: 'msg' + (s.dash ? ' dash' : ''), 'data-k': 'm' + i });
+      if (s.note) {
+        const x1 = X[s.a] - 80;
+        const x2 = X[s.b] + 80;
+        m.appendChild(el('rect', { class: 'notebox', x: x1, y: y - 15, width: x2 - x1, height: 24, rx: 4 }));
+        m.appendChild(el('text', { x: (x1 + x2) / 2, y: y + 2, 'text-anchor': 'middle' }, s.note));
+      } else if (s.cross) {
+        const x = X[s.cross];
+        m.appendChild(el('path', { class: 'xmark', d: `M${x - 9} ${y - 9} L${x + 9} ${y + 9} M${x + 9} ${y - 9} L${x - 9} ${y + 9}` }));
+        m.appendChild(el('text', { x: x + 18, y: y + 4 }, s.l));
+      } else if (s.f === s.t) {
+        const x = X[s.f];
+        m.appendChild(el('path', { d: `M${x} ${y - 8} H${x + 34} V${y + 8} H${x + 2}`, 'marker-end': 'url(#fc-arr)' }));
+        m.appendChild(el('text', { x: x + 42, y: y + 4 }, s.l));
+      } else {
+        const x1 = X[s.f];
+        const x2 = X[s.t];
+        const dir = x2 > x1 ? 1 : -1;
+        m.appendChild(el('path', { d: `M${x1} ${y} H${x2 - dir * 2}`, 'marker-end': 'url(#fc-arr)' }));
+        m.appendChild(el('text', { x: (x1 + x2) / 2, y: y - 7, 'text-anchor': 'middle' }, s.l));
+      }
+      m.appendChild(el('text', { class: 'no', x: 14, y: y + 4 }, String(i + 1)));
+      g.appendChild(m);
+    });
+    document.getElementById('seqcap').textContent = scenarios[key].cap;
+  }
+
+  const stepScenarios = {};
+  Object.entries(scenarios).forEach(([k, sc]) => {
+    stepScenarios[k] = {
+      label: sc.label,
+      steps: sc.steps.map((s, i) => ({ t: s.l || s.note, d: s.d, on: ['m' + i] }))
+    };
+  });
+
+  VHD.stepper({
+    svg: document.getElementById('seq'),
+    seg: document.getElementById('seg'),
+    list: document.getElementById('steps'),
+    prev: document.getElementById('prev'),
+    next: document.getElementById('next'),
+    scenarios: stepScenarios,
+    onScenario: drawScenario
+  });
+
+  const navButtons = document.querySelectorAll('.c-nav button[data-view]');
+  navButtons.forEach((b) => b.addEventListener('click', () => {
+    navButtons.forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+    document.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.getAttribute('data-panel') !== b.getAttribute('data-view'); });
+  }));
+</script>

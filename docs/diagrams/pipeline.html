@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VHD Release Pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+SC:wght@500;700&family=Alegreya+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="vhd.css">
+<style>
+  svg .lane rect { fill: color-mix(in srgb, var(--line) 16%, transparent); }
+  svg .lane text { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; fill: var(--ink-muted); }
+  svg .chipr { fill: color-mix(in srgb, var(--zc) 24%, var(--panel)); stroke: var(--zc); stroke-width: 1; }
+  svg .chipt { font-family: var(--font-mono); font-size: 10px; fill: var(--ink); }
+  .lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 400px); gap: 16px; align-items: start; }
+  @media (max-width: 920px) { .lower { grid-template-columns: minmax(0, 1fr); } }
+</style>
+
+<main class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span class="wordmark">Valhallowed</span><span>Planning</span><span>Release pipeline</span><span>Proposal</span></p>
+    <h1>From a commit to every install</h1>
+    <p class="lede">Every change reaches consumers through the same gates and the same registry. CI never deploys to an install; installs pull released artifacts, and a release is exactly the images its candidate was.</p>
+    <div class="legend">
+      <span class="z-external"><i></i>Registry and outside services</span>
+      <span class="z-people"><i></i>Consumers</span>
+      <span><i class="bdk"></i>Gate</span>
+      <span>Solid edge: artifact moves · Dashed: signal, no artifact</span>
+    </div>
+  </header>
+
+  <section id="flow" aria-labelledby="flow-h">
+    <h2 id="flow-h">The pipeline</h2>
+    <figure>
+      <div class="frame">
+        <svg id="pipe" viewBox="0 0 1200 722" role="img" aria-label="Release pipeline in four lanes: source control, CI runner, registry and GitHub Releases, consumers. Artifacts move from source to the registry, and consumers only ever pull from the registry.">
+          <defs>
+            <marker id="pa-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk" d="M0 0 L10 5 L0 10 z"/></marker>
+          </defs>
+
+          <g class="lane"><rect x="20" y="16" width="250" height="690" rx="6"/><text x="35" y="38">SOURCE CONTROL</text></g>
+          <g class="lane"><rect x="290" y="16" width="360" height="690" rx="6"/><text x="305" y="38">CI RUNNER · ACTIONS OR LOCAL BUILD LANE</text></g>
+          <g class="lane"><rect x="670" y="16" width="260" height="690" rx="6"/><text x="685" y="38">REGISTRY · GITHUB RELEASES</text></g>
+          <g class="lane"><rect x="950" y="16" width="230" height="690" rx="6"/><text x="965" y="38">CONSUMERS</text></g>
+
+          <g class="e" data-k="e-push"><path d="M245 104 H310" marker-end="url(#pa-arr)"/><text class="lab" x="277" y="96" text-anchor="middle">push</text></g>
+          <g class="e dash" data-k="e-green"><path d="M380 132 V160 H140 V186" marker-end="url(#pa-arr)"/><text class="lab" x="200" y="154" text-anchor="middle">all green</text></g>
+          <g class="e" data-k="e-merge"><path d="M245 214 H310" marker-end="url(#pa-arr)"/><text class="lab" x="277" y="206" text-anchor="middle">on merge</text></g>
+          <g class="e" data-k="e-pushc"><path d="M630 214 H800 V286" marker-end="url(#pa-arr)"/><text class="lab" x="715" y="206" text-anchor="middle">push, commit tag</text></g>
+          <g class="e" data-k="e-pull"><path d="M800 362 V438 H630" marker-end="url(#pa-arr)"/><text class="lab" x="712" y="430" text-anchor="middle">pull, not local cache</text></g>
+          <g class="e dash" data-k="e-sched"><path d="M245 438 H310" marker-end="url(#pa-arr)"/><text class="lab" x="277" y="430" text-anchor="middle">trigger</text></g>
+          <g class="e dash" data-k="e-cand"><path d="M470 466 V548 H685" marker-end="url(#pa-arr)"/><text class="lab" x="555" y="540" text-anchor="middle">acceptance passes</text></g>
+          <g class="e" data-k="e-pullrc"><path d="M915 548 H965" marker-end="url(#pa-arr)"/><text class="lab" x="940" y="540" text-anchor="middle">pull</text></g>
+          <g class="e dash" data-k="e-soak"><path d="M1065 576 V606 H140 V630" marker-end="url(#pa-arr)"/><text class="lab" x="470" y="600" text-anchor="middle">soak clean, no blockers</text></g>
+          <g class="e" data-k="e-promote"><path d="M245 658 H685" marker-end="url(#pa-arr)"/><text class="lab" x="465" y="650" text-anchor="middle">promote: retag, no rebuild</text></g>
+          <g class="e" data-k="e-pullrel"><path d="M915 658 H965" marker-end="url(#pa-arr)"/><text class="lab" x="940" y="650" text-anchor="middle">pull</text></g>
+
+          <g class="n z-neutral" data-k="src"><rect x="35" y="76" width="210" height="56" rx="6"/><text class="t" x="49" y="99">Commit or pull request</text><text class="s" x="49" y="118">one repo, one version</text></g>
+          <g class="n z-neutral" data-k="checks"><rect x="310" y="76" width="320" height="56" rx="6"/><text class="t" x="324" y="99">Checks</text><text class="s" x="324" y="118">lint · unit · contracts · schema · public check</text></g>
+          <g class="n z-neutral" data-k="merge"><rect x="35" y="186" width="210" height="56" rx="6"/><text class="t" x="49" y="209">Merge to main</text><text class="s" x="49" y="228">held until the merge gate passes</text></g>
+          <g class="n z-neutral" data-k="build"><rect x="310" y="186" width="320" height="56" rx="6"/><text class="t" x="324" y="209">Build</text><text class="s" x="324" y="228">plugin on fetched game assemblies · images</text></g>
+          <g class="n z-external" data-k="commitbuild">
+            <rect x="685" y="286" width="230" height="76" rx="6"/>
+            <text class="t" x="699" y="309">Commit build</text><text class="s" x="699" y="328">tagged by commit</text>
+            <g class="z-control"><rect class="chipr" x="699" y="337" width="46" height="16" rx="3"/><text class="chipt" x="722" y="349" text-anchor="middle">control</text></g>
+            <g class="z-runtime"><rect class="chipr" x="751" y="337" width="46" height="16" rx="3"/><text class="chipt" x="774" y="349" text-anchor="middle">game</text></g>
+            <g class="z-data"><rect class="chipr" x="803" y="337" width="46" height="16" rx="3"/><text class="chipt" x="826" y="349" text-anchor="middle">data</text></g>
+            <g class="z-runtime"><rect class="chipr" x="855" y="337" width="46" height="16" rx="3"/><text class="chipt" x="878" y="349" text-anchor="middle">plugin</text></g>
+          </g>
+          <g class="n z-neutral" data-k="schedule"><rect x="35" y="410" width="210" height="56" rx="6"/><text class="t" x="49" y="433">Nightly game check</text><text class="s" x="49" y="452">newest dedicated server</text></g>
+          <g class="n z-neutral" data-k="accept"><rect x="310" y="410" width="320" height="56" rx="6"/><text class="t" x="324" y="433">Acceptance</text><text class="s" x="324" y="452">clean runner installs from the registry</text></g>
+          <g class="n z-external" data-k="rc"><rect x="685" y="520" width="230" height="56" rx="6"/><text class="t" x="699" y="543">Release candidate</text><text class="s" x="699" y="562">same images, retagged</text></g>
+          <g class="n z-people" data-k="candch"><rect x="965" y="520" width="200" height="56" rx="6"/><text class="t" x="979" y="543">Candidate channel</text><text class="s" x="979" y="562">dev lane, opted-in installs</text></g>
+          <g class="n z-neutral" data-k="reltag"><rect x="35" y="630" width="210" height="56" rx="6"/><text class="t" x="49" y="653">Release tag</text><text class="s" x="49" y="672">a maintainer promotes</text></g>
+          <g class="n z-external" data-k="release"><rect x="685" y="630" width="230" height="56" rx="6"/><text class="t" x="699" y="653">Release</text><text class="s" x="699" y="672">version tag + GitHub Release</text></g>
+          <g class="n z-people" data-k="relch"><rect x="965" y="630" width="200" height="56" rx="6"/><text class="t" x="979" y="653">Release channel</text><text class="s" x="979" y="672">every consumer</text></g>
+
+          <g class="bd" data-k="g1"><rect x="-7" y="-7" width="14" height="14" transform="translate(300 160) rotate(45)"/><text x="300" y="163.5" text-anchor="middle">M</text></g>
+          <g class="bd" data-k="g2"><rect x="-7" y="-7" width="14" height="14" transform="translate(640 548) rotate(45)"/><text x="640" y="551.5" text-anchor="middle">C</text></g>
+          <g class="bd" data-k="g3"><rect x="-7" y="-7" width="14" height="14" transform="translate(300 606) rotate(45)"/><text x="300" y="609.5" text-anchor="middle">R</text></g>
+        </svg>
+      </div>
+      <figcaption>Artifacts move from source control to the registry and never straight to an install. Select any stage or gate for its inputs, outputs and what blocks it; pick a trigger below to walk through what runs.</figcaption>
+    </figure>
+
+    <div class="lower">
+      <div class="panel" aria-labelledby="walk-h">
+        <h3 id="walk-h">Walk a trigger</h3>
+        <div class="seg" id="seg" role="group" aria-label="Trigger"></div>
+        <ol class="steps" id="steps"></ol>
+        <div class="stepnav"><button class="btn" id="prev" type="button">Back</button><button class="btn" id="next" type="button">Start</button></div>
+      </div>
+      <div class="panel" id="detail" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <section id="contents" aria-labelledby="contents-h">
+    <h2 id="contents-h">What a release contains</h2>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Artifact</th><th>Built from</th><th>Published to</th><th>Consumed by</th></tr></thead>
+        <tbody>
+          <tr><td><span class="chip z-control">control plane image</span></td><td>The control plane</td><td>Registry</td><td>Every install</td></tr>
+          <tr><td><span class="chip z-runtime">game runtime image</span></td><td>The game runtime (O4), with the plugin inside</td><td>Registry</td><td>Every install. It downloads the dedicated server at first start; no game files ship in the image.</td></tr>
+          <tr><td><span class="chip z-data">data layer images</span></td><td>Intake, broker, persistence, world render, web map, chat relay, assistant</td><td>Registry</td><td>Every install</td></tr>
+          <tr><td><span class="chip z-runtime">plugin artifact</span></td><td>The plugin, compiled against game assemblies fetched in CI</td><td>GitHub Release</td><td>The game runtime image; anyone inspecting a release</td></tr>
+          <tr><td><span class="chip z-ingress">manifest schema</span></td><td>The schema source; also produces the settings reference</td><td>GitHub Release, valhallowed.com</td><td>The control plane; server managers</td></tr>
+          <tr><td><span class="chip z-neutral">release notes</span></td><td>Written per release; record the game build it was accepted on</td><td>GitHub Release, valhallowed.com</td><td>Server managers</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="channels" aria-labelledby="channels-h">
+    <h2 id="channels-h">Channels</h2>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Channel</th><th>Tag</th><th>Who follows it</th><th>Moves when</th></tr></thead>
+        <tbody>
+          <tr><td>Commit</td><td class="num">sha-&lt;commit&gt;, edge</td><td>CI acceptance, the dev lane</td><td>Every merge to main that builds</td></tr>
+          <tr><td>Candidate</td><td class="num">X.Y.Z-rc.N</td><td>The dev lane, installs that opt in</td><td>Acceptance passes (candidate gate)</td></tr>
+          <tr><td>Release</td><td class="num">X.Y.Z, latest</td><td>Every install by default, the maintainers' own included</td><td>A maintainer promotes a soaked candidate (release gate)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="limits" id="limits" aria-labelledby="limits-h">
+    <h2 id="limits-h">What the pipeline will not do</h2>
+    <ul>
+      <li>Deploy to an install. Consumers pull; the control plane decides when a pulled update applies.</li>
+      <li>Rebuild on promotion. A release is the same image digests its candidate was.</li>
+      <li>Ship game files. The dedicated server downloads at first start, and the game assemblies used for the build are fetched in CI and discarded.</li>
+      <li>Take a hand-built hot fix. A fix is a commit and passes the same gates.</li>
+      <li>Give any consumer its own channel or tag. The maintainers' own installs follow the release channel too.</li>
+    </ul>
+    <p class="note">Open decisions behind this page: O4 game runtime image, O5 repo shape.</p>
+  </section>
+
+  <footer>
+    <p>Valhallowed · terms as defined in docs/glossary.md · where this page and docs/architecture.md differ, the doc wins.</p>
+    <p>Valhallowed is not affiliated with or endorsed by Iron Gate. Valheim is a trademark of Iron Gate AB.</p>
+  </footer>
+</main>
+
+<script src="vhd.js"></script>
+<script>
+  const pipeData = {
+    src: { kind: 'Source control', title: 'Commit or pull request', text: 'All of VHD lives in one repo (O5), so one commit moves the plugin, the services and the manifest schema together.', rows: [['Trigger', 'push to a branch'], ['Next', 'checks']] },
+    checks: { kind: 'CI runner', title: 'Checks', text: 'Fast checks on every push. They gate the merge.', rows: [['Runs', 'lint, unit tests, a contract test for every boundary, the manifest schema check, the public-content check'], ['Public-content check', 'rejects private addresses, internal host names, personal paths and email addresses, so none enters the public history'], ['Gate', 'merge gate']] },
+    merge: { kind: 'Source control', title: 'Merge to main', text: 'Main always builds. Branch protection holds the merge until the merge gate passes.', rows: [['Requires', 'merge gate green']] },
+    build: { kind: 'CI runner', title: 'Build', text: 'Fetches the game assemblies from the dedicated-server download and caches them. Nothing proprietary is committed or shipped.', rows: [['Produces', 'control plane, game runtime and data layer images; the plugin artifact'], ['Inputs', 'the repo at one commit; game assemblies; the BepInEx pack'], ['Locally', 'the same steps run in the build lane']] },
+    commitbuild: { kind: 'Registry', title: 'Commit build', text: 'Every merge publishes its images and plugin under the commit tag. Nothing on this tag is meant for consumers.', rows: [['Tags', 'sha-<commit>, edge'], ['Followed by', 'CI acceptance, the dev lane']] },
+    accept: { kind: 'CI runner', title: 'Acceptance', text: 'A clean runner installs VHD from the registry, the way a stranger would, and runs the acceptance material.', rows: [['Pulls', 'registry images, not the local build cache, so a missing push fails here'], ['Runs', 'the walking skeleton (one live player on the web map) and the acceptance material'], ['Gate', 'candidate gate']] },
+    schedule: { kind: 'Source control', title: 'Nightly game check', text: 'Game patches arrive without notice. A nightly run builds and accepts against the newest dedicated-server build.', rows: [['Catches', 'a Harmony patch that applies and then throws; a changed save format'], ['On failure', 'an issue opens and the candidate gate blocks the next candidate']] },
+    rc: { kind: 'Registry', title: 'Release candidate', text: 'The commit build that passed the candidate gate, promoted. Same image digests.', rows: [['Tag', 'X.Y.Z-rc.N'], ['Rebuilds', 'never']] },
+    candch: { kind: 'Consumers', title: 'Candidate channel', text: 'Installs that opt in to candidates: the dev lane, and any consumer who wants early releases.', rows: [['Watches', 'world truth, errors, pending changes'], ['Feeds', 'the release gate']] },
+    reltag: { kind: 'Source control', title: 'Release tag', text: 'A maintainer promotes a candidate that soaked clean.', rows: [['Requires', 'the release gate']] },
+    release: { kind: 'Registry · GitHub Releases', title: 'Release', text: 'The candidate retagged with its version, plus a GitHub Release.', rows: [['Registry', 'images under the version tag'], ['GitHub Release', 'plugin artifact, manifest schema, settings reference, release notes, checksums'], ['Site', 'valhallowed.com carries the notes and the settings reference']] },
+    relch: { kind: 'Consumers', title: 'Release channel', text: 'The default for every install. The maintainers’ own installs follow it like any other consumer.', rows: [['Updates', 'pulled by the consumer; the control plane holds a game-server restart while players are online']] },
+    g1: { kind: 'Gate', title: 'Merge gate', text: 'Every check is green.', rows: [['Blocks', 'merge to main']] },
+    g2: { kind: 'Gate', title: 'Candidate gate', text: 'Acceptance passes on registry images, including against the newest game build.', rows: [['Blocks', 'the candidate tag']] },
+    g3: { kind: 'Gate', title: 'Release gate', text: 'The candidate soaked on the candidate channel with no open blockers.', rows: [['Blocks', 'the release tag']] }
+  };
+
+  const pipe = document.getElementById('pipe');
+  VHD.details(pipe, pipeData, document.getElementById('detail'), { first: 'accept' });
+  VHD.stepper({
+    svg: pipe,
+    seg: document.getElementById('seg'),
+    list: document.getElementById('steps'),
+    prev: document.getElementById('prev'),
+    next: document.getElementById('next'),
+    scenarios: {
+      pr: { label: 'Pull request', steps: [
+        { t: 'Push a branch', d: 'A pull request starts the checks.', on: ['src', 'e-push', 'checks'] },
+        { t: 'Checks run', d: 'Lint, unit and contract tests, the schema check and the public-content check.', on: ['checks'] },
+        { t: 'Merge gate', d: 'The merge stays blocked until every check is green.', on: ['checks', 'e-green', 'g1', 'merge'] }
+      ] },
+      merge: { label: 'Merge to main', steps: [
+        { t: 'Merge', d: 'Every merge builds.', on: ['merge', 'e-merge', 'build'] },
+        { t: 'Build', d: 'Fetch game assemblies (cached), build the plugin, build every image.', on: ['build'] },
+        { t: 'Push the commit build', d: 'Images and plugin land in the registry under the commit tag.', on: ['build', 'e-pushc', 'commitbuild'] },
+        { t: 'Acceptance', d: 'A clean runner installs from the registry and runs the walking skeleton and the acceptance material.', on: ['commitbuild', 'e-pull', 'accept'] }
+      ] },
+      nightly: { label: 'Nightly game check', steps: [
+        { t: 'Schedule fires', d: 'Once a night, against the newest dedicated-server build.', on: ['schedule', 'e-sched'] },
+        { t: 'Rebuild and accept', d: 'Catches a game patch that breaks the plugin before a consumer meets it.', on: ['schedule', 'e-sched', 'build', 'accept'] },
+        { t: 'Result', d: 'Pass: release notes record the game build it was accepted on. Fail: an issue opens and the candidate gate blocks.', on: ['accept'] }
+      ] },
+      candidate: { label: 'Candidate', steps: [
+        { t: 'Candidate gate', d: 'Walking skeleton and acceptance material pass on the registry images.', on: ['accept', 'e-cand', 'g2'] },
+        { t: 'Retag as candidate', d: 'Same images, new tag. Nothing rebuilds.', on: ['e-cand', 'g2', 'rc'] },
+        { t: 'Soak', d: 'The dev lane and opted-in installs run the candidate.', on: ['rc', 'e-pullrc', 'candch'] }
+      ] },
+      release: { label: 'Release', steps: [
+        { t: 'Release gate', d: 'The candidate soaked with no open blockers.', on: ['candch', 'e-soak', 'g3'] },
+        { t: 'Release tag', d: 'A maintainer promotes the soaked candidate.', on: ['reltag', 'e-promote'] },
+        { t: 'Publish', d: 'Retag the same images; the GitHub Release carries the plugin, schema and notes.', on: ['e-promote', 'release'] },
+        { t: 'Consumers pull', d: 'Every install on the release channel pulls the same artifacts.', on: ['release', 'e-pullrel', 'relch'] }
+      ] }
+    }
+  });
+</script>

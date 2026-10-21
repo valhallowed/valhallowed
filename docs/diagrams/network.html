@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VHD Network Exposure</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+SC:wght@500;700&family=Alegreya+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="vhd.css">
+<style>
+  svg .zone > rect { fill: none; stroke: var(--line-strong); stroke-width: 1.5; }
+  svg .zone text { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; fill: var(--ink-muted); }
+  svg .port rect { fill: var(--panel); stroke: var(--hearth-ink); stroke-width: 1.5; }
+  svg .port text { font-family: var(--font-mono); font-size: 11px; fill: var(--hearth-ink); font-weight: 600; }
+  svg .n.soft > rect { stroke-dasharray: 5 4; }
+  svg .n.off { opacity: .4; }
+  .summary { font-size: 16px; }
+  .yes { --zc: var(--ok); }
+  .meh { --zc: var(--warn); }
+</style>
+
+<main class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span class="wordmark">Valhallowed</span><span>Planning</span><span>Network exposure</span><span>Proposal</span></p>
+    <h1>What an install exposes, and to whom</h1>
+    <p class="lede">An install opens as little as it can: the game ports for each world, the web map when it is on, and nothing else beyond the host. Every port and address on this page is a default; the manifest can change any of them, and reconcile rejects a clash.</p>
+    <div class="legend">
+      <span class="z-people"><i></i>People</span>
+      <span class="z-runtime"><i></i>Game runtime</span>
+      <span class="z-data"><i></i>Data layer</span>
+      <span class="z-control"><i></i>Control plane</span>
+      <span class="z-external"><i></i>Outside services and yours</span>
+      <span>Gold badge: a default port reachable from outside the host · Dashed edge: optional</span>
+    </div>
+  </header>
+
+  <section id="map" aria-labelledby="map-h">
+    <h2 id="map-h">Exposure by profile</h2>
+    <div class="panel">
+      <div class="seg" id="seg" role="group" aria-label="Exposure profile">
+        <button type="button" data-p="lan" aria-pressed="true">LAN (default)</button>
+        <button type="button" data-p="direct" aria-pressed="false">Public, direct</button>
+        <button type="button" data-p="tls" aria-pressed="false">Public with TLS</button>
+        <button type="button" data-p="game" aria-pressed="false">Game only</button>
+      </div>
+      <p class="summary" id="summary"></p>
+    </div>
+    <figure>
+      <div class="frame">
+        <svg id="net" viewBox="0 0 1200 550" role="img" aria-label="Players reach the game ports and, when on, the web map, directly or through TLS. The server manager reaches the control plane only on the host or through the host's SSH. Data-layer services and the database have no host port. Outbound, the install reaches Steam, the registry and, when configured, a chat service, an LLM provider and your own database.">
+          <defs>
+            <marker id="fe-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk" d="M0 0 L10 5 L0 10 z"/></marker>
+          </defs>
+          <g class="zone"><rect x="230" y="20" width="720" height="510" rx="10"/><text x="244" y="38">HOST</text></g>
+          <g class="zone"><rect x="440" y="46" width="490" height="410" rx="8"/><text x="454" y="64">INSTALL NETWORK · PRIVATE</text></g>
+
+          <g class="e" data-k="e-game"><path d="M190 103 H460" marker-end="url(#fe-arr)"/><text class="lab" x="218" y="95" text-anchor="middle">play</text></g>
+          <g class="e" data-k="e-web" data-p="lan direct"><path d="M105 126 V203 H460" marker-end="url(#fe-arr)"/><text class="lab" x="160" y="195" text-anchor="middle">browser</text></g>
+          <g class="e" data-k="e-webp" data-p="tls"><path d="M105 126 V263 H300" marker-end="url(#fe-arr)"/><text class="lab" x="160" y="255" text-anchor="middle">browser</text></g>
+          <g class="e" data-k="e-proxy" data-p="tls"><path d="M430 263 H446 V215 H460" marker-end="url(#fe-arr)"/></g>
+          <g class="e" data-k="e-ssh"><path d="M190 358 H460" marker-end="url(#fe-arr)"/><text class="lab" x="330" y="378" text-anchor="middle">tunnel to 127.0.0.1:9456</text></g>
+          <g class="e" data-k="e-dl"><path d="M560 80 V58 H960 V88 H990" marker-end="url(#fe-arr)"/><text class="lab" x="760" y="74" text-anchor="middle">server downloads</text></g>
+          <g class="e" data-k="e-signin" data-p="lan direct tls"><path d="M660 203 H685 V138 H965 V100 H990" marker-end="url(#fe-arr)"/><text class="lab" x="830" y="132" text-anchor="middle">sign-in check</text></g>
+          <g class="e dash" data-k="e-chat"><path d="M910 230 H990" marker-end="url(#fe-arr)"/><text class="lab" x="950" y="222" text-anchor="middle">if set</text></g>
+          <g class="e dash" data-k="e-llm"><path d="M910 290 H990" marker-end="url(#fe-arr)"/><text class="lab" x="950" y="282" text-anchor="middle">if set</text></g>
+          <g class="e dash" data-k="e-byo"><path d="M910 353 H990" marker-end="url(#fe-arr)"/><text class="lab" x="950" y="345" text-anchor="middle">or BYO</text></g>
+          <g class="e" data-k="e-pull"><path d="M420 493 H990" marker-end="url(#fe-arr)"/><text class="lab" x="700" y="485" text-anchor="middle">pulls images</text></g>
+
+          <g class="n z-people" data-k="players"><rect x="20" y="80" width="170" height="46" rx="6"/><text class="t" x="34" y="100">Players</text><text class="s" x="34" y="117">internet or LAN</text></g>
+          <g class="n z-people" data-k="sm"><rect x="20" y="335" width="170" height="46" rx="6"/><text class="t" x="34" y="355">Server manager</text><text class="s" x="34" y="372">on the host, or SSH</text></g>
+          <g class="n z-external soft" data-k="proxy" data-p="tls"><rect x="300" y="240" width="130" height="46" rx="6"/><text class="t" x="312" y="260">TLS</text><text class="s" x="312" y="277">bundled or yours</text></g>
+          <g class="n z-neutral" data-k="docker"><rect x="260" y="470" width="160" height="46" rx="6"/><text class="t" x="274" y="490">Docker engine</text><text class="s" x="274" y="507">the host's own</text></g>
+
+          <g class="n z-runtime" data-k="gr"><rect x="460" y="80" width="200" height="46" rx="6"/><text class="t" x="474" y="100">Game runtime × worlds</text><text class="s" x="474" y="117">udp, one port pair each</text></g>
+          <g class="n z-data" data-k="wm" id="wm"><rect x="460" y="180" width="200" height="46" rx="6"/><text class="t" x="474" y="200">Web map</text>
+            <text class="s" x="474" y="217" data-p="lan">tcp 8456, LAN</text>
+            <text class="s" x="474" y="217" data-p="direct">tcp 8456, port-forwarded</text>
+            <text class="s" x="474" y="217" data-p="tls">127.0.0.1:8456 behind TLS</text>
+            <text class="s" x="474" y="217" data-p="game">off</text>
+          </g>
+          <g class="n z-control" data-k="cp"><rect x="460" y="335" width="200" height="46" rx="6"/><text class="t" x="474" y="355">Control plane</text><text class="s" x="474" y="372">console on 127.0.0.1:9456</text></g>
+          <g class="n z-data" data-k="ib"><rect x="710" y="80" width="200" height="46" rx="6"/><text class="t" x="724" y="100">Intake · broker</text><text class="s" x="724" y="117">no host port</text></g>
+          <g class="n z-data" data-k="wr"><rect x="710" y="150" width="200" height="40" rx="6"/><text class="t" x="724" y="167">World render</text><text class="s" x="724" y="183">no host port</text></g>
+          <g class="n z-data" data-k="cr"><rect x="710" y="210" width="200" height="40" rx="6"/><text class="t" x="724" y="227">Chat relay</text><text class="s" x="724" y="243">outbound only</text></g>
+          <g class="n z-data" data-k="as"><rect x="710" y="270" width="200" height="40" rx="6"/><text class="t" x="724" y="287">Assistant</text><text class="s" x="724" y="303">outbound only</text></g>
+          <g class="n z-data" data-k="db"><rect x="710" y="330" width="200" height="46" rx="6"/><text class="t" x="724" y="350">Database</text><text class="s" x="724" y="367">5432, install network only</text></g>
+
+          <g class="n z-external" data-k="steam"><rect x="990" y="70" width="190" height="46" rx="6"/><text class="t" x="1004" y="90">Steam</text><text class="s" x="1004" y="107">downloads · sign-in</text></g>
+          <g class="n z-external soft" data-k="chat"><rect x="990" y="207" width="190" height="46" rx="6"/><text class="t" x="1004" y="227">Chat service</text><text class="s" x="1004" y="244">optional</text></g>
+          <g class="n z-external soft" data-k="llm"><rect x="990" y="267" width="190" height="46" rx="6"/><text class="t" x="1004" y="287">LLM provider</text><text class="s" x="1004" y="304">optional</text></g>
+          <g class="n z-external soft" data-k="byo"><rect x="990" y="330" width="190" height="46" rx="6"/><text class="t" x="1004" y="350">Your database</text><text class="s" x="1004" y="367">optional, BYO</text></g>
+          <g class="n z-external" data-k="reg"><rect x="990" y="470" width="190" height="46" rx="6"/><text class="t" x="1004" y="490">Registry</text><text class="s" x="1004" y="507">images (GHCR)</text></g>
+
+          <g class="port"><rect x="250" y="92" width="112" height="22" rx="4"/><text x="306" y="107" text-anchor="middle">udp 2456–2457</text></g>
+          <g class="port" data-p="lan direct"><rect x="250" y="192" width="112" height="22" rx="4"/><text x="306" y="207" text-anchor="middle">tcp 8456</text></g>
+          <g class="port" data-p="tls"><rect x="236" y="252" width="58" height="22" rx="4"/><text x="265" y="267" text-anchor="middle">tcp 443</text></g>
+          <g class="port"><rect x="250" y="347" width="60" height="22" rx="4"/><text x="280" y="362" text-anchor="middle">ssh</text></g>
+        </svg>
+      </div>
+      <figcaption>Everything inside the install network talks over a private network the host never publishes. Only gold badges are reachable from beyond the host, and the SSH badge is the host's own SSH, not something VHD opens. Every port shown is a default.</figcaption>
+    </figure>
+    <div class="panel" id="detail" aria-live="polite"></div>
+  </section>
+
+  <section id="direct" aria-labelledby="direct-h">
+    <h2 id="direct-h">Exposing the web map directly</h2>
+    <p>A server manager can forward the game ports and the web map's port on their router and give players <span class="mono">http://&lt;public IP&gt;:8456</span>. Steam sign-in works there: the player's browser goes to Steam's own HTTPS page and comes back to the address the manifest names as <code>web_map.public_url</code>, and the web map confirms the result with Steam directly. Players see the same flow as behind TLS. What changes is around that flow.</p>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>What players notice</th><th>Public, direct (HTTP)</th><th>Public with TLS</th></tr></thead>
+        <tbody>
+          <tr><td>Sign in through Steam and land back on the map</td><td><span class="chip yes">same</span> Works</td><td><span class="chip yes">same</span> Works</td></tr>
+          <tr><td>Browser on the first visit</td><td><span class="chip meh">differs</span> Chrome plans a one-time, skippable warning before a public HTTP site, on by default from Chrome 154, scheduled for October 2026. Addresses on the LAN are excluded.</td><td>No warning</td></tr>
+          <tr><td>Session in transit</td><td><span class="chip meh">differs</span> The session cookie travels unencrypted, so someone on the same network can take over a signed-in session. The Steam password never touches VHD either way.</td><td>Encrypted</td></tr>
+          <tr><td>The address</td><td><span class="chip meh">differs</span> A residential IP can change. The map's address, the sign-in return address, bookmarks and sessions all break with it; a dynamic-DNS hostname avoids that.</td><td>A hostname, or a bare IP certificate that renews itself</td></tr>
+          <tr><td>Players on the host's own LAN</td><td><span class="chip meh">depends</span> Reaching the public address from inside needs the router to support NAT loopback. Otherwise they sign in on the LAN address instead.</td><td>Same caveat</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">So yes: direct exposure gives players the normal experience, with a weaker session and a brittler address. The control plane says both in status when <code>web_map.public_url</code> is plain HTTP. Bundled TLS (O12) closes the gap without a domain: Let's Encrypt has issued six-day certificates for bare IP addresses since January 2026, renewed automatically, provided port 80 or 443 reaches the install for the challenge.</p>
+  </section>
+
+  <section id="inbound" aria-labelledby="inbound-h">
+    <h2 id="inbound-h">Inbound endpoints</h2>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Endpoint</th><th>Default port</th><th>LAN</th><th>Public, direct</th><th>Public with TLS</th><th>Game only</th><th>Set by</th></tr></thead>
+        <tbody>
+          <tr><td>Game, per world</td><td class="num">udp 2456–2457; next world 2466–2467</td><td>all interfaces</td><td>all, forwarded</td><td>all, forwarded</td><td>all interfaces</td><td><code>world.&lt;name&gt;.port</code>; reconcile rejects overlapping pairs, the host check flags a port already in use</td></tr>
+          <tr><td>Web map</td><td class="num">tcp 8456</td><td>all interfaces, HTTP</td><td>all, forwarded, HTTP</td><td>127.0.0.1, behind TLS on 443</td><td>off</td><td><code>web_map.listen</code>, <code>web_map.public_url</code></td></tr>
+          <tr><td>Admin console and control API</td><td class="num">tcp 9456</td><td>127.0.0.1</td><td>127.0.0.1</td><td>127.0.0.1</td><td>127.0.0.1</td><td><code>admin_console.listen</code></td></tr>
+          <tr><td>TUI and CLI</td><td class="num">none</td><td colspan="4">Inside the control plane container, or the CLI against the loopback control API</td><td>n/a</td></tr>
+          <tr><td>Intake, broker, world render</td><td class="num">none on the host</td><td colspan="4">Install network only; the plugin is their only caller</td><td>n/a</td></tr>
+          <tr><td>Database (bundled)</td><td class="num">tcp 5432, install network</td><td colspan="4">Never published</td><td><code>database.url</code> for BYO</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="outbound" aria-labelledby="outbound-h">
+    <h2 id="outbound-h">Outbound connections</h2>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Destination</th><th>From</th><th>When</th><th>Needed for</th></tr></thead>
+        <tbody>
+          <tr><td>Steam CDN</td><td>Game runtime (SteamCMD)</td><td>First start, game updates; the control plane's update check</td><td>Installing and updating the game</td></tr>
+          <tr><td>Registry</td><td>The host's Docker engine</td><td>Install and upgrade</td><td>Installing and upgrading VHD</td></tr>
+          <tr><td>Steam sign-in</td><td>Web map</td><td>While sign-in is on</td><td>Optional; <code>web_map.public_url</code> must be the address players use</td></tr>
+          <tr><td>Certificate authority</td><td>Bundled TLS</td><td>Every few days, while bundled TLS is on</td><td>Optional (O12)</td></tr>
+          <tr><td>Chat service</td><td>Chat relay</td><td>While its secret is set</td><td>Optional</td></tr>
+          <tr><td>LLM provider</td><td>Assistant</td><td>While its secret is set</td><td>Optional</td></tr>
+          <tr><td>Your database</td><td>Data-layer services</td><td>Only when BYO replaces the bundled one</td><td>Optional</td></tr>
+          <tr><td>valhallowed.com</td><td>nothing</td><td>never</td><td>Docs only. Installs make no calls home.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="urls" aria-labelledby="urls-h">
+    <h2 id="urls-h">Addresses a server manager uses</h2>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>What</th><th>Address (defaults)</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Game</td><td class="num">&lt;host&gt;:2456</td><td>What players type in the game's join dialog, or find in the server list.</td></tr>
+          <tr><td>Web map on the LAN</td><td class="num">http://&lt;LAN address&gt;:8456</td><td>Sign-in works for LAN players; status warns that sessions are unencrypted.</td></tr>
+          <tr><td>Web map, public direct</td><td class="num">http://&lt;public IP or hostname&gt;:8456</td><td>Set it as <code>web_map.public_url</code>. Same warning, plus a browser warning on a player's first visit.</td></tr>
+          <tr><td>Web map, public with TLS</td><td class="num">https://&lt;public IP or hostname&gt;</td><td>Set it as <code>web_map.public_url</code>. No warnings.</td></tr>
+          <tr><td>Admin console on the host</td><td class="num">http://127.0.0.1:9456</td><td>Loopback only.</td></tr>
+          <tr><td>Admin console from elsewhere</td><td class="num">ssh -L 9456:127.0.0.1:9456 &lt;host&gt;</td><td>Then open http://127.0.0.1:9456 locally.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="limits" id="limits" aria-labelledby="limits-h">
+    <h2 id="limits-h">What an install never exposes</h2>
+    <ul>
+      <li>The database or any data-layer service on a host port.</li>
+      <li>The admin console beyond loopback, unless the manifest opens it.</li>
+      <li>Plain HTTP without saying so. Status warns whenever sessions travel unencrypted.</li>
+      <li>Calls home. No install talks to valhallowed.com or to the VHD project.</li>
+      <li>A fixed port. Every port above is a default the manifest can change.</li>
+    </ul>
+    <p class="note">Open decisions behind this page: O3 worlds per install, O6 manifest format (setting names are illustrative), O12 TLS for a public web map.</p>
+  </section>
+
+  <footer>
+    <p>Valhallowed · terms as defined in docs/glossary.md · where this page and docs/architecture.md differ, the doc wins.</p>
+    <p>Valhallowed is not affiliated with or endorsed by Iron Gate. Valheim is a trademark of Iron Gate AB.</p>
+  </footer>
+</main>
+
+<script src="vhd.js"></script>
+<script>
+  const N = (kind, title, rows) => ({ kind, title, rows });
+  const netData = {
+    players: N('People', 'Players', [['Reach', 'the game ports; the web map when it is on']]),
+    sm: N('People', 'Server manager', [['Reaches', 'the TUI inside the control plane container, or the admin console on 127.0.0.1:9456, on the host or through the host’s SSH']]),
+    proxy: N('Bundled or yours', 'TLS', [['Does', 'terminates TLS on 443 and forwards to the web map on loopback'], ['Options', 'bundled TLS with automatic certificates for a hostname or a bare public IP, or your own reverse proxy (O12)']]),
+    docker: N('Host', 'Docker engine', [['Does', 'pulls VHD images from the registry and runs the install'], ['Not', 'part of VHD; the host’s own']]),
+    gr: N('Game runtime', 'Game runtime × worlds', [['Listens', 'one udp port pair per world, on all interfaces; defaults, set per world'], ['Outbound', 'Steam CDN for the server download and updates']]),
+    wm: N('Data layer', 'Web map', [['LAN', 'tcp 8456 on all interfaces, plain HTTP'], ['Public, direct', 'the same port, forwarded by the router'], ['Public with TLS', '127.0.0.1:8456 behind TLS'], ['Game only', 'off']]),
+    cp: N('Control plane', 'Control plane', [['Listens', 'admin console and control API on 127.0.0.1:9456 by default'], ['Outbound', 'Steam, for the game update check']]),
+    ib: N('Data layer', 'Intake · broker', [['Listens', 'install network only'], ['Callers', 'the plugin; the web map and chat relay through the broker']]),
+    wr: N('Data layer', 'World render', [['Listens', 'nowhere; reads the map export from a shared volume']]),
+    cr: N('Data layer', 'Chat relay', [['Outbound', 'the chat service, only while its secret is set']]),
+    as: N('Data layer', 'Assistant', [['Outbound', 'the LLM provider, only while its secret is set']]),
+    db: N('Data layer', 'Database', [['Listens', 'tcp 5432 on the install network only'], ['BYO', 'replace it with database.url; the data layer then connects out']]),
+    steam: N('Outside service', 'Steam', [['Used for', 'server downloads and updates; confirming web map sign-ins']]),
+    chat: N('Outside service', 'Chat service', [['Used for', 'the chat relay; optional']]),
+    llm: N('Outside service', 'LLM provider', [['Used for', 'the assistant; optional']]),
+    byo: N('Outside service', 'Your database', [['Used for', 'replacing the bundled database; optional']]),
+    reg: N('Outside service', 'Registry', [['Used for', 'pulling VHD images at install and upgrade']])
+  };
+  VHD.details(document.getElementById('net'), netData, document.getElementById('detail'), { first: 'wm' });
+
+  const summaries = {
+    lan: 'Players reach the game from anywhere you forward the udp ports. The web map answers on tcp 8456 over plain HTTP on your network, and sign-in works for players there; status warns that sessions are unencrypted. The admin console answers only on the host.',
+    direct: 'You forward the game ports and tcp 8456 on your router and hand out http://<public IP>:8456. Sign-in works for everyone with the same flow as behind TLS. Status warns that sessions are unencrypted, and Chrome shows players a one-time warning on their first visit.',
+    tls: 'TLS terminates on 443, bundled or your own proxy, and forwards to the web map on loopback. With an https public URL, sign-in carries no warnings. The game ports stay public, and the admin console stays on the host.',
+    game: 'Only the game ports are reachable. The web map and sign-in are off; telemetry and commands still run. The admin console stays on the host.'
+  };
+  const net = document.getElementById('net');
+  const segButtons = document.querySelectorAll('#seg button');
+  function profile(p) {
+    segButtons.forEach((b) => b.setAttribute('aria-pressed', String(b.getAttribute('data-p') === p)));
+    net.querySelectorAll('[data-p]').forEach((el) => {
+      if (el.getAttribute('data-p').split(' ').includes(p)) el.removeAttribute('hidden');
+      else el.setAttribute('hidden', '');
+    });
+    document.getElementById('wm').classList.toggle('off', p === 'game');
+    document.getElementById('summary').textContent = summaries[p];
+  }
+  segButtons.forEach((b) => b.addEventListener('click', () => profile(b.getAttribute('data-p'))));
+  profile('lan');
+</script>

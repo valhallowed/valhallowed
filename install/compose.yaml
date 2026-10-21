@@ -1,0 +1,10 @@
+# Valhallowed install. Each release attaches this file rendered for its
+# version, with every image pinned by digest (scripts/render-install.sh).
+name: valhallowed
+
+services:
+  skeleton:
+    image: ghcr.io/valhallowed/skeleton:@VHD_VERSION@
+    ports:
+      - "8456:8456"
+    restart: unless-stopped
