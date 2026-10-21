@@ -17,7 +17,8 @@ system. Terms follow [glossary.md](glossary.md).
 - The product name and its marks never include "Valheim" or imitate the game's
   logo.
 - Every public surface carries one line: *Valhallowed is not affiliated with or
-  endorsed by Iron Gate. Valheim is a trademark of Iron Gate AB.*
+  endorsed by Iron Gate. Valheim is a trademark of Iron Gate AB.* One
+  exemption: the valhallowed.com landing page, which stays almost wordless.
 
 ## Voices
 

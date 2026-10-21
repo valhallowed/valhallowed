@@ -38,7 +38,8 @@ restate the docs.
   player data. Acceptance material is synthesized or anonymized.
 - **Colours and type come from design/tokens.css.** A surface never hard-codes
   a colour or a font.
-- **Every public page carries the trademark line** in docs/brand.md.
+- **Every public page carries the trademark line** in docs/brand.md, except
+  the one page it exempts.
 
 ## Verify
 
