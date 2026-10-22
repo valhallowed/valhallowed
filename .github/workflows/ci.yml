@@ -45,9 +45,15 @@ jobs:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - id: tag
         run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - id: game
+        name: The dedicated server's current build
+        run: |
+          build=$(scripts/game-build.sh)
+          echo "build=$build" >> "$GITHUB_OUTPUT"
       - name: Plugin, against the newest dedicated server
         env:
           VHD_BUILD: ${{ github.sha }}
+          GAME_BUILD: ${{ steps.game.outputs.build }}
         run: |
           docker buildx bake plugin
           scripts/check-plugin.sh dist/plugin
@@ -59,6 +65,7 @@ jobs:
       - name: Build, and on main push to the commit channel
         env:
           VHD_BUILD: ${{ github.sha }}
+          GAME_BUILD: ${{ steps.game.outputs.build }}
           TAGS: ${{ steps.tag.outputs.tag }},edge
         run: |
           args=(--provenance=mode=max --sbom=true)

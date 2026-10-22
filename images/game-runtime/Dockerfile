@@ -3,7 +3,9 @@
 # downloaded in a build stage and discarded. SteamCMD and the server download
 # into /data at first start, so no Valve or Iron Gate file is in any image.
 
-FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS game
+# SteamCMD, for the plugin build and for scripts/game-build.sh, which asks Steam
+# for the dedicated server's current build.
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS steamcmd
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates=20250419+deb13u1 \
@@ -11,19 +13,34 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 # SteamCMD updates itself on its first run, so the tarball has no version to pin.
 ADD https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz /tmp/steamcmd.tar.gz
+RUN mkdir /steamcmd && tar -xzf /tmp/steamcmd.tar.gz -C /steamcmd && rm /tmp/steamcmd.tar.gz
+
+# The dedicated server build GAME_BUILD names, downloaded to take its assemblies
+# and discarded in the same step: the layer holds only the assemblies and the
+# build id, and is reused exactly while the build is unchanged. SteamCMD's exit
+# code is unreliable on a first run, so success is the app manifest it writes,
+# marked fully installed, and a failed attempt is retried.
+FROM steamcmd AS game
+ARG GAME_BUILD
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-# SteamCMD's exit code is unreliable on a first run, so success is the app
-# manifest it writes, marked fully installed, and a failed attempt is retried.
-RUN mkdir /steamcmd && tar -xzf /tmp/steamcmd.tar.gz -C /steamcmd \
+RUN if [[ ! $GAME_BUILD =~ ^[0-9]+$ ]]; then \
+      echo "GAME_BUILD must be the dedicated server's build id; scripts/game-build.sh prints it" >&2; exit 1; \
+    fi \
+ && manifest=/server/steamapps/appmanifest_896660.acf \
+ && installed() { grep -qE '^[[:space:]]*"StateFlags"[[:space:]]+"4"' "$manifest" 2>/dev/null; } \
  && for attempt in 1 2 3; do \
       /steamcmd/steamcmd.sh +force_install_dir /server +login anonymous +app_update 896660 validate +quit || true; \
-      grep -qE '^[[:space:]]*"StateFlags"[[:space:]]+"4"' /server/steamapps/appmanifest_896660.acf 2>/dev/null && break; \
+      installed && break; \
       echo "steamcmd attempt $attempt failed" >&2; \
     done \
+ && installed \
  && mkdir /refs \
  && cp /server/valheim_server_Data/Managed/{assembly_valheim,UnityEngine,UnityEngine.CoreModule}.dll /refs/ \
- && sed -n 's/^[[:space:]]*"buildid"[[:space:]]*"\([0-9]*\)".*/\1/p' /server/steamapps/appmanifest_896660.acf > /refs/game-build \
- && [[ -s /refs/game-build ]]
+ && sed -n 's/^[[:space:]]*"buildid"[[:space:]]*"\([0-9]*\)".*/\1/p' "$manifest" > /refs/game-build \
+ && if [[ $(</refs/game-build) != "$GAME_BUILD" ]]; then \
+      echo "Steam served build $(</refs/game-build), not GAME_BUILD $GAME_BUILD; build again" >&2; exit 1; \
+    fi \
+ && rm -rf /server /steamcmd /root/Steam /root/.steam /root/.local/share/Steam
 
 FROM busybox:1.38.0@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e AS bepinex
 ADD --checksum=sha256:bce631497976a93977ceb08e166712e6c31d15244956f89f17df092a9b62e29f \
