@@ -52,4 +52,6 @@ restate the docs.
 | The manifest schema or its examples | `scripts/check-schema.sh` |
 | Images or the install | `make accept` |
 
-CI runs the same checks on every pull request and every push to `main`.
+CI runs the first four on every pull request and every push to `main`. On
+`main` it also builds and pushes the images, then accepts them from the
+registry rather than from a local build.

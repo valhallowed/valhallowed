@@ -68,7 +68,7 @@
           <g class="n z-external soft" data-k="proxy" data-p="tls"><rect x="300" y="240" width="130" height="46" rx="6"/><text class="t" x="312" y="260">TLS</text><text class="s" x="312" y="277">bundled or yours</text></g>
           <g class="n z-neutral" data-k="docker"><rect x="260" y="470" width="160" height="46" rx="6"/><text class="t" x="274" y="490">Docker engine</text><text class="s" x="274" y="507">the host's own</text></g>
 
-          <g class="n z-runtime" data-k="gr"><rect x="460" y="80" width="200" height="46" rx="6"/><text class="t" x="474" y="100">Game runtime × worlds</text><text class="s" x="474" y="117">udp, one port pair each</text></g>
+          <g class="n z-runtime" data-k="gr"><rect x="460" y="80" width="200" height="46" rx="6"/><text class="t" x="474" y="100">Game runtime × worlds</text><text class="s" x="474" y="117">udp, three world ports each</text></g>
           <g class="n z-data" data-k="wm" id="wm"><rect x="460" y="180" width="200" height="46" rx="6"/><text class="t" x="474" y="200">Web map</text>
             <text class="s" x="474" y="217" data-p="lan">tcp 8456, LAN</text>
             <text class="s" x="474" y="217" data-p="direct">tcp 8456, public</text>
@@ -88,7 +88,7 @@
           <g class="n z-external soft" data-k="byo"><rect x="990" y="330" width="190" height="46" rx="6"/><text class="t" x="1004" y="350">Your database</text><text class="s" x="1004" y="367">optional, BYO</text></g>
           <g class="n z-external" data-k="reg"><rect x="990" y="470" width="190" height="46" rx="6"/><text class="t" x="1004" y="490">Registry</text><text class="s" x="1004" y="507">images (GHCR)</text></g>
 
-          <g class="port"><rect x="250" y="92" width="112" height="22" rx="4"/><text x="306" y="107" text-anchor="middle">udp 2456–2457</text></g>
+          <g class="port"><rect x="250" y="92" width="112" height="22" rx="4"/><text x="306" y="107" text-anchor="middle">udp 2456–2458</text></g>
           <g class="port" data-p="lan direct"><rect x="250" y="192" width="112" height="22" rx="4"/><text x="306" y="207" text-anchor="middle">tcp 8456</text></g>
           <g class="port" data-p="tls"><rect x="236" y="252" width="58" height="22" rx="4"/><text x="265" y="267" text-anchor="middle">tcp 443</text></g>
           <g class="port"><rect x="250" y="347" width="60" height="22" rx="4"/><text x="280" y="362" text-anchor="middle">ssh</text></g>
@@ -123,8 +123,8 @@
       <table>
         <thead><tr><th>Endpoint</th><th>Default port</th><th>LAN</th><th>Public, direct</th><th>Public with TLS</th><th>Game only</th><th>Set by</th></tr></thead>
         <tbody>
-          <tr><td>Game, per world</td><td class="num">udp 2456–2457; next world 2466–2467</td><td>all interfaces</td><td>all, public</td><td>all, public</td><td>all interfaces</td><td><code>world.&lt;name&gt;.port</code>; reconcile rejects overlapping pairs, the host check flags a port already in use</td></tr>
-          <tr><td>Web map</td><td class="num">tcp 8456</td><td>all interfaces, HTTP</td><td>all, public, HTTP</td><td>127.0.0.1, behind TLS on 443</td><td>off</td><td><code>web_map.listen</code>, <code>web_map.public_url</code></td></tr>
+          <tr><td>Game, per world</td><td class="num">udp 2456–2458 for one world; with several, each world sets its port</td><td>all interfaces</td><td>all, public</td><td>all, public</td><td>all interfaces</td><td><code>world.&lt;name&gt;.port</code>; reconcile rejects overlapping ranges, the host check flags a port already in use</td></tr>
+          <tr><td>Web map</td><td class="num">tcp 8456</td><td>all interfaces, HTTP</td><td>all, public, HTTP</td><td>127.0.0.1, behind TLS on 443</td><td>off</td><td><code>web_map.port</code>, <code>web_map.listen</code>, <code>web_map.public_url</code></td></tr>
           <tr><td>Admin console and control API</td><td class="num">tcp 9456</td><td>127.0.0.1</td><td>127.0.0.1</td><td>127.0.0.1</td><td>127.0.0.1</td><td><code>admin_console.listen</code></td></tr>
           <tr><td>TUI and CLI</td><td class="num">none</td><td colspan="4">Inside the control plane container, or the CLI against the loopback control API</td><td>n/a</td></tr>
           <tr><td>Intake, broker, world render</td><td class="num">none on the host</td><td colspan="4">Install network only; the plugin is their only caller</td><td>n/a</td></tr>
@@ -159,7 +159,7 @@
       <table>
         <thead><tr><th>What</th><th>Address (defaults)</th><th>Notes</th></tr></thead>
         <tbody>
-          <tr><td>Game</td><td class="num">&lt;host&gt;:2456</td><td>What players type in the game's join dialog, or find in the server list.</td></tr>
+          <tr><td>Game</td><td class="num">&lt;host&gt;:2456</td><td>What players type in the game's join dialog. A world appears in the server list only when it is listed.</td></tr>
           <tr><td>Web map on the LAN</td><td class="num">http://&lt;LAN address&gt;:8456</td><td>Sign-in works for LAN players; status warns that sessions are unencrypted.</td></tr>
           <tr><td>Web map, public direct</td><td class="num">http://&lt;public IP or hostname&gt;:8456</td><td>Set it as <code>web_map.public_url</code>. Same warning, plus a browser warning on a player's first visit.</td></tr>
           <tr><td>Web map, public with TLS</td><td class="num">https://&lt;public IP or hostname&gt;</td><td>Set it as <code>web_map.public_url</code>. No warnings.</td></tr>
@@ -179,7 +179,7 @@
       <li>Calls home. No install talks to valhallowed.com or to the VHD project.</li>
       <li>A fixed port. Every port above is a default the manifest can change.</li>
     </ul>
-    <p class="note">Open decisions behind this page: O3 worlds per install, O6 manifest format (setting names are illustrative), O12 TLS for a public web map.</p>
+    <p class="note">Ground rules behind this page: G9 every port is a default, G15 many worlds per install. Open: O12 TLS for a public web map. Of the setting names here, only <code>world.&lt;name&gt;.port</code> and <code>web_map.port</code> are in schema v1; the rest are illustrative.</p>
   </section>
 
   <footer>
@@ -196,7 +196,7 @@
     sm: N('People', 'Server manager', [['Reaches', 'the TUI inside the control plane container, or the admin console on 127.0.0.1:9456, on the host or through the host’s SSH']]),
     proxy: N('Bundled or yours', 'TLS', [['Does', 'terminates TLS on 443 and forwards to the web map on loopback'], ['Options', 'bundled TLS with automatic certificates for a hostname or a bare public IP, or your own reverse proxy (O12)']]),
     docker: N('Host', 'Docker engine', [['Does', 'pulls VHD images from the registry and runs the install'], ['Not', 'part of VHD; the host’s own']]),
-    gr: N('Game runtime', 'Game runtime × worlds', [['Listens', 'one udp port pair per world, on all interfaces; defaults, set per world'], ['Outbound', 'Steam CDN for the server download and updates']]),
+    gr: N('Game runtime', 'Game runtime × worlds', [['Listens', 'three udp world ports per world, on all interfaces; defaults, set per world'], ['Outbound', 'Steam CDN for the server download and updates']]),
     wm: N('Data layer', 'Web map', [['LAN', 'tcp 8456 on all interfaces, plain HTTP'], ['Public, direct', 'the same port, open to the internet'], ['Public with TLS', '127.0.0.1:8456 behind TLS'], ['Game only', 'off']]),
     cp: N('Control plane', 'Control plane', [['Listens', 'admin console and control API on 127.0.0.1:9456 by default'], ['Outbound', 'Steam, for the game update check']]),
     ib: N('Data layer', 'Intake · broker', [['Listens', 'install network only'], ['Callers', 'the plugin; the web map and chat relay through the broker']]),

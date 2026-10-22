@@ -9,7 +9,7 @@ system. Terms follow [glossary.md](glossary.md).
 |---|---|
 | **Valhallowed** | Product name: titles, the first mention in any doc, marketing, the admin console header. |
 | **VHD** | Short form after the first mention, and in compact UI where the full name does not fit. |
-| **valhallowed.com** | Home of the product: docs, release notes, install guide. |
+| **valhallowed.com** | Home of the product. It links to the docs and releases in the public repo, which stay their only source. |
 
 - Identifiers follow G11 in [architecture.md](architecture.md): the GitHub org
   `valhallowed`, repo `valhallowed/valhallowed`, images

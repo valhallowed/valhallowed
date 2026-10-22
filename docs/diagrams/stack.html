@@ -54,7 +54,6 @@
           <g class="e dot" data-k="e-compile"><path d="M510 193 H560 V245 H590" marker-end="url(#fd-arr)"/><text class="lab" x="535" y="185" text-anchor="middle">compiles</text></g>
           <g class="e" data-k="e-hosts"><path d="M510 323 H560 V275 H590" marker-end="url(#fd-arr)"/><text class="lab" x="535" y="315" text-anchor="middle">hosts</text></g>
           <g class="e" data-k="e-patch"><path d="M700 230 V146" marker-end="url(#fd-arr)"/><text class="lab" x="708" y="192">patches methods by name</text></g>
-          <g class="e dash" data-k="e-base"><path d="M700 66 V100" marker-end="url(#fd-arr)"/><text class="lab" x="708" y="88">base? (O4)</text></g>
           <g class="e" data-k="e-report"><path d="M810 123 H880" marker-end="url(#fd-arr)"/><text class="lab" x="845" y="115" text-anchor="middle">reports</text></g>
           <g class="e" data-k="e-show"><path d="M1030 123 H1060" marker-end="url(#fd-arr)"/></g>
           <g class="e dash" data-k="e-night"><path d="M810 260 H880" marker-end="url(#fd-arr)"/><text class="lab" x="845" y="252" text-anchor="middle">tested</text></g>
@@ -66,7 +65,7 @@
           <g class="n z-external soft" data-k="server"><rect x="290" y="100" width="220" height="46" rx="6"/><text class="t" x="304" y="120">Dedicated server files</text><text class="s" x="304" y="137">first start and each update</text></g>
           <g class="n z-external soft" data-k="asm"><rect x="290" y="170" width="220" height="46" rx="6"/><text class="t" x="304" y="190">Game assemblies</text><text class="s" x="304" y="207">fetched in CI, never shipped</text></g>
           <g class="n z-runtime" data-k="bepinex"><rect x="290" y="300" width="220" height="46" rx="6"/><text class="t" x="304" y="320">BepInEx + HarmonyX</text><text class="s" x="304" y="337">pinned in the image</text></g>
-          <g class="n z-external soft" data-k="lloesche"><rect x="590" y="20" width="220" height="46" rx="6"/><text class="t" x="604" y="40">lloesche/valheim-server</text><text class="s" x="604" y="57">base image or reference</text></g>
+          <g class="n z-external soft" data-k="lloesche"><rect x="590" y="20" width="220" height="46" rx="6"/><text class="t" x="604" y="40">lloesche/valheim-server</text><text class="s" x="604" y="57">reference only (G16)</text></g>
           <g class="n z-runtime" data-k="runtime"><rect x="590" y="100" width="220" height="46" rx="6"/><text class="t" x="604" y="120">Game runtime</text><text class="s" x="604" y="137">one per world</text></g>
           <g class="n z-runtime" data-k="plugin"><rect x="590" y="230" width="220" height="60" rx="6"/><text class="t" x="604" y="252">Plugin</text><text class="s" x="604" y="270">Harmony patches on game code</text></g>
           <g class="n z-control" data-k="truth"><rect x="880" y="100" width="150" height="46" rx="6"/><text class="t" x="894" y="120">World truth</text><text class="s" x="894" y="137">control plane check</text></g>
@@ -85,8 +84,8 @@
   <section id="stack" aria-labelledby="stack-h">
     <h2 id="stack-h">Stack by part</h2>
     <div class="legend">
-      <span><span class="chip k-fixed">fixed</span> set by the game</span>
-      <span><span class="chip k-lean">lean</span> the current lean, open to change (O11)</span>
+      <span><span class="chip k-fixed">fixed</span> set by the game or a ground rule</span>
+      <span><span class="chip k-lean">lean</span> the current lean, open to change</span>
       <span><span class="chip k-open">open</span> not decided</span>
       <span><span class="chip k-svc">service</span> outside service</span>
     </div>
@@ -94,11 +93,11 @@
       <table class="stack">
         <thead><tr><th>Part</th><th>Language and runtime</th><th>Libraries</th><th>Third-party pieces</th><th>Outside services</th></tr></thead>
         <tbody>
-          <tr><td>Control plane</td><td><span class="chip k-open">language: open</span></td><td class="chips"><span class="chip k-open">TUI toolkit: open</span><span class="chip k-open">schema validation: open</span></td><td class="muted">none</td><td class="chips"><span class="chip k-svc">Steam (update checks)</span></td></tr>
-          <tr><td>Game runtime</td><td><span class="chip k-open">image base: O4</span></td><td class="muted">none</td><td class="chips"><span class="chip k-fixed">Valheim dedicated server</span><span class="chip k-fixed">SteamCMD</span><span class="chip k-fixed">BepInEx</span><span class="chip k-fixed">HarmonyX</span></td><td class="chips"><span class="chip k-svc">Steam CDN</span></td></tr>
+          <tr><td>Control plane</td><td><span class="chip k-fixed">Python (G19)</span></td><td class="chips"><span class="chip k-open">TUI toolkit: open</span><span class="chip k-fixed">JSON Schema (G18)</span></td><td class="muted">none</td><td class="chips"><span class="chip k-svc">Steam (update checks)</span></td></tr>
+          <tr><td>Game runtime</td><td><span class="chip k-fixed">VHD’s own image (G16)</span></td><td class="muted">none</td><td class="chips"><span class="chip k-fixed">Valheim dedicated server</span><span class="chip k-fixed">SteamCMD</span><span class="chip k-fixed">BepInEx</span><span class="chip k-fixed">HarmonyX</span></td><td class="chips"><span class="chip k-svc">Steam CDN</span></td></tr>
           <tr><td>Plugin</td><td><span class="chip k-fixed">C#, .NET Standard 2.1</span></td><td class="chips"><span class="chip k-fixed">BepInEx</span><span class="chip k-fixed">HarmonyX</span></td><td class="chips"><span class="chip k-fixed">game assemblies (build only)</span></td><td class="muted">none</td></tr>
-          <tr><td>Data layer</td><td><span class="chip k-lean">Python</span></td><td class="chips"><span class="chip k-lean">httpx</span><span class="chip k-lean">pydantic</span><span class="chip k-lean">psycopg 3</span><span class="chip k-lean">inotify_simple</span></td><td class="chips"><span class="chip k-lean">PostgreSQL (bundled default)</span></td><td class="chips"><span class="chip k-svc">chat service</span><span class="chip k-svc">LLM provider</span></td></tr>
-          <tr><td>Web map</td><td><span class="chip k-lean">TypeScript on Node.js</span></td><td class="chips"><span class="chip k-lean">Angular</span><span class="chip k-lean">Leaflet</span><span class="chip k-lean">Express</span><span class="chip k-lean">pg</span><span class="chip k-lean">zod</span></td><td class="muted">none</td><td class="chips"><span class="chip k-svc">Steam sign-in</span></td></tr>
+          <tr><td>Data layer</td><td><span class="chip k-fixed">Python (G19)</span></td><td class="chips"><span class="chip k-lean">httpx</span><span class="chip k-lean">pydantic</span><span class="chip k-lean">psycopg 3</span><span class="chip k-lean">inotify_simple</span></td><td class="chips"><span class="chip k-lean">PostgreSQL (bundled default)</span></td><td class="chips"><span class="chip k-svc">chat service</span><span class="chip k-svc">LLM provider</span></td></tr>
+          <tr><td>Web map</td><td class="chips"><span class="chip k-fixed">TypeScript (G19)</span><span class="chip k-lean">Node.js</span></td><td class="chips"><span class="chip k-lean">Angular</span><span class="chip k-lean">Leaflet</span><span class="chip k-lean">Express</span><span class="chip k-lean">pg</span><span class="chip k-lean">zod</span></td><td class="muted">none</td><td class="chips"><span class="chip k-svc">Steam sign-in</span></td></tr>
           <tr><td>Pipeline</td><td class="muted">n/a</td><td class="muted">n/a</td><td class="muted">none</td><td class="chips"><span class="chip k-svc">GitHub Actions</span><span class="chip k-svc">GHCR</span><span class="chip k-svc">Steam CDN (build)</span></td></tr>
         </tbody>
       </table>
@@ -123,9 +122,8 @@
           <tr data-a="image"><td>SteamCMD</td><td>Game runtime</td><td>In the game runtime image</td><td>Valve terms (not yet checked)</td><td>If Steam is unreachable, new installs and game updates wait. Running worlds keep running.</td></tr>
           <tr data-a="image"><td>BepInEx</td><td>Game runtime, plugin</td><td>Pinned in the game runtime image</td><td>LGPL-2.1</td><td>Reaches installs only through a VHD release that passed acceptance.</td></tr>
           <tr data-a="image"><td>HarmonyX</td><td>Plugin</td><td>Ships with BepInEx</td><td>MIT</td><td>Moves with BepInEx.</td></tr>
-          <tr data-a="image"><td>lloesche/valheim-server</td><td>Game runtime (O4)</td><td>Base image, or reference only</td><td>Apache-2.0</td><td>As a base, each upstream change needs acceptance. As a reference, none.</td></tr>
           <tr data-a="image"><td>PostgreSQL</td><td>Data layer</td><td>Bundled image by default, or BYO</td><td>PostgreSQL License; image MIT</td><td>A major version needs a migration path. If unreachable, persistence turns off and other capabilities carry on.</td></tr>
-          <tr data-a="image"><td>Python</td><td>Data layer</td><td>In the image</td><td>PSF (not yet checked)</td><td>Pinned per release.</td></tr>
+          <tr data-a="image"><td>Python</td><td>Control plane, data layer</td><td>In the image</td><td>PSF (not yet checked)</td><td>Pinned per release.</td></tr>
           <tr data-a="image"><td>httpx · pydantic</td><td>Data layer</td><td>In the image</td><td>BSD-3 · MIT</td><td>Pinned per release.</td></tr>
           <tr data-a="image"><td>psycopg 3</td><td>Data layer</td><td>In the image</td><td>LGPL-3.0-only</td><td>Pinned per release.</td></tr>
           <tr data-a="image"><td>inotify_simple</td><td>Data layer</td><td>In the image</td><td>BSD-2 (not verified against the license text)</td><td>Pinned per release.</td></tr>
@@ -150,7 +148,7 @@
       <li>An outside service for the game to run. Chat service, LLM provider and sign-in are optional; Steam is needed only to install and update.</li>
       <li>Shared infrastructure outside the install, such as a central database, log pipeline or alerting. Each is a bring-your-own setting.</li>
     </ul>
-    <p class="note">Open decisions behind this page: O4 game runtime image, O11 languages.</p>
+    <p class="note">Ground rules behind this page: G16 VHD’s own game runtime image, G18 JSON Schema, G19 languages.</p>
   </section>
 
   <footer>
@@ -170,10 +168,10 @@
     server: D('Third party', 'Dedicated server files', [['Arrives', 'downloaded into the install, never shipped in an image'], ['Risk', 'a patch can break the plugin’s patches']]),
     asm: D('Third party', 'Game assemblies', [['Arrives', 'fetched in CI from the dedicated-server download, then discarded'], ['Used for', 'compiling the plugin; no publicizer step']]),
     bepinex: D('Game runtime', 'BepInEx + HarmonyX', [['Arrives', 'pinned in the game runtime image'], ['Does', 'loads the plugin and applies its Harmony patches']]),
-    lloesche: D('Third party', 'lloesche/valheim-server', [['License', 'Apache-2.0'], ['Role', 'base image or reference only (O4); the lean is reference only']]),
+    lloesche: D('Third party', 'lloesche/valheim-server', [['License', 'Apache-2.0'], ['Role', 'a reference for the game runtime’s design (G16); nothing of it ships']]),
     runtime: D('Game runtime', 'Game runtime', [['Runs', 'one world: the server, BepInEx and the plugin']]),
     plugin: D('Game runtime', 'Plugin', [['Binds', 'game methods by name through Harmony'], ['Failure mode', 'a patch can apply and then throw inside the game, leaving the world empty while every container looks healthy']]),
-    truth: D('Control plane', 'World truth', [['Checks', 'the world loaded and its object count matches the save'], ['On failure', 'stops the runtime before its first autosave and holds the update (proposed)']]),
+    truth: D('Control plane', 'World truth', [['Checks', 'the world loaded and its object count matches the save'], ['On failure', 'stops the game before its first autosave, holds the runtime and the update']]),
     nightly: D('Pipeline', 'Nightly game check', [['Runs', 'build and acceptance against the newest dedicated-server build'], ['On failure', 'blocks the next candidate (candidate gate)']]),
     players: D('People', 'Players', [['See', 'a world only after world truth passes']])
   };
@@ -183,7 +181,7 @@
     patch: { label: 'Game patch', on: ['irongate', 'e-build', 'e-same', 'server', 'asm', 'e-runs', 'e-compile', 'plugin', 'e-patch', 'runtime', 'e-report', 'truth', 'e-night', 'nightly'], text: 'Harmony binds game methods by name, so a patch can leave a plugin patch applying and then throwing, and the world comes up empty. The nightly check catches it before a release. On an install, world truth stops the runtime before it can save over the real world and holds the update.' },
     bepinex: { label: 'BepInEx release', on: ['bepproj', 'e-rel', 'bepinex', 'e-hosts', 'plugin', 'e-night', 'nightly'], text: 'VHD pins BepInEx in the game runtime image, so a new release reaches installs only inside a VHD release that passed acceptance. Nothing on an install changes on its own.' },
     steam: { label: 'Steam unreachable', on: ['valve', 'e-tool', 'steamcmd', 'e-dl', 'server'], text: 'New installs and game updates wait. Running worlds keep running: nothing in the game chain needs Steam once the server is downloaded.' },
-    base: { label: 'lloesche image change', on: ['lloesche', 'e-base', 'runtime'], text: 'If VHD builds on it (O4), every upstream change needs acceptance before it reaches a release. If VHD keeps it as a reference only, an upstream change reaches nothing.' }
+    base: { label: 'lloesche image change', on: ['lloesche'], text: 'Nothing. VHD builds its own game runtime image and keeps lloesche/valheim-server as a reference only (G16), so an upstream change reaches no install.' }
   };
   const svg = document.getElementById('chainsvg');
   const seg = document.getElementById('blast');
