@@ -10,16 +10,20 @@ updates:
   # updated in the same pull request.
   - package-ecosystem: docker
     directories:
+      - /images/control-plane
+      - /images/debian
       - /images/game-runtime
       - /images/skeleton
     schedule:
       interval: weekly
   - package-ecosystem: pip
-    directory: /runtime
+    directories:
+      - /control
+      - /runtime
     schedule:
       interval: weekly
-    # These mirror the Debian packages the game runtime image installs, and
-    # move with the base image instead.
+    # These mirror the Debian packages the images install, and move with the
+    # base image instead.
     ignore:
       - dependency-name: jsonschema
       - dependency-name: jsonschema-specifications
