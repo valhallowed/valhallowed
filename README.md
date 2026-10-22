@@ -5,8 +5,9 @@ governed in-game commands and a web map, configured through one manifest. VHD
 for short. Its home is [valhallowed.com](https://valhallowed.com).
 
 **Status: pre-release.** This repository holds the design, the manifest
-schema, the release pipeline and a stand-in image. Nothing here is useful to
-install yet.
+schema, the release pipeline, the plugin and the game runtime image, which
+runs one world from a hand-written configuration. The control plane that
+writes that configuration is next. Nothing here is useful to install yet.
 
 ## Docs
 

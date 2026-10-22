@@ -68,6 +68,9 @@ flowchart LR
   services (chat relay, LLM provider, their own database).
 - **Least privilege.** Each child receives only the secrets it needs. No child
   reads the secrets source. Status shows set, unset or invalid, never a value.
+  One exception is the game's: the dedicated server takes a world's password
+  only on its command line, where any user on the host can read it from the
+  process list.
 - **Kept apart from the manifest,** in a file of their own (G18), so the
   manifest can be committed and shared.
 
@@ -132,7 +135,10 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   the plugin's BepInEx config, are never edited by hand.
 - **World truth gates saving.** A world that fails world truth is stopped
   before its first autosave, so an empty world never saves over the real one,
-  and status says why.
+  and status says why. Until a save parser can count a save's objects, world
+  truth compares the plugin's count with what the runtime last saw the world
+  hold: a world that held objects, or had a save and no count, fails when it
+  loads empty or when the plugin never reports it.
 - **Hold.** An action that replaces a world's files, such as import or
   restore, puts its runtime on hold: the game stops and the container stays
   up until the action finishes. No Docker socket is needed (G13).
