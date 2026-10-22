@@ -39,6 +39,13 @@ make accept
 Builds the images with the definition CI uses, installs them through the
 release compose file and runs acceptance against the local build.
 
+```bash
+make plugin
+```
+
+Builds the plugin into `dist/plugin`. The build downloads the dedicated server
+to compile against its assemblies, and keeps none of its files.
+
 ## Contributing
 
 Start with [AGENTS.md](AGENTS.md). Its rules apply to people as much as to

@@ -50,8 +50,9 @@ restate the docs.
 | Workflows | `actionlint` |
 | Shell scripts | `shellcheck scripts/*.sh` |
 | The manifest schema or its examples | `scripts/check-schema.sh` |
+| The plugin | `make plugin` |
 | Images or the install | `make accept` |
 
-CI runs the first four on every pull request and every push to `main`. On
-`main` it also builds and pushes the images, then accepts them from the
-registry rather than from a local build.
+CI runs the first four on every pull request and every push to `main`, and
+builds the plugin and the images on both. On `main` it also pushes the images,
+then accepts them from the registry rather than from a local build.

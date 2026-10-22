@@ -1,0 +1,8 @@
+# Build contexts that use the repo root send only what their Dockerfile copies.
+*
+!plugin/
+plugin/bin/
+plugin/obj/
+!images/plugin/refcheck/
+images/plugin/refcheck/bin/
+images/plugin/refcheck/obj/

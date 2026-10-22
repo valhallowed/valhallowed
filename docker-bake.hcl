@@ -30,6 +30,16 @@ target "_common" {
   }
 }
 
+# The plugin, built against the dedicated server's assemblies. Not in the
+# default group: its output is files, not an image.
+target "plugin" {
+  inherits   = ["_common"]
+  context    = "."
+  dockerfile = "images/plugin/Dockerfile"
+  target     = "plugin"
+  output     = ["type=local,dest=dist/plugin"]
+}
+
 target "skeleton" {
   inherits = ["_common"]
   context  = "images/skeleton"

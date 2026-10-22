@@ -41,6 +41,12 @@ jobs:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - id: tag
         run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - name: Plugin, against the newest dedicated server
+        env:
+          VHD_BUILD: ${{ github.sha }}
+        run: |
+          docker buildx bake plugin
+          scripts/check-plugin.sh dist/plugin
       - name: Log in to GHCR
         if: github.ref == 'refs/heads/main'
         env:

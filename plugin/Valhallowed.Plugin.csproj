@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Built by images/plugin/Dockerfile, which supplies the game's and BepInEx's
+       assemblies as GameManaged and BepInExCore. They are references only and
+       never copied into the output. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>Valhallowed.Plugin</AssemblyName>
+    <RootNamespace>Valhallowed.Plugin</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <DebugType>none</DebugType>
+    <InformationalVersion>$(VhdBuild)</InformationalVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="BepInEx" HintPath="$(BepInExCore)/BepInEx.dll" Private="false" />
+    <Reference Include="assembly_valheim" HintPath="$(GameManaged)/assembly_valheim.dll" Private="false" />
+    <Reference Include="UnityEngine" HintPath="$(GameManaged)/UnityEngine.dll" Private="false" />
+    <Reference Include="UnityEngine.CoreModule" HintPath="$(GameManaged)/UnityEngine.CoreModule.dll" Private="false" />
+  </ItemGroup>
+
+</Project>
