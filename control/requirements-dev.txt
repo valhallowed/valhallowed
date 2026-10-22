@@ -12,7 +12,7 @@ iniconfig==2.3.1
 packaging==26.3
 pluggy==1.6.0
 Pygments==2.21.0
-ruff==0.16.10
+ruff==0.17.1
 mypy==2.4.0
 ast-serialize==0.12.1
 librt==0.16.0
