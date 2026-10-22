@@ -22,6 +22,9 @@ def test_install_mods_lays_in_bepinex_the_plugin_and_its_config(tmp_path: Path) 
     stray = server_dir / "BepInEx" / "plugins" / "Other" / "Other.dll"
     stray.parent.mkdir(parents=True)
     stray.write_bytes(b"MZ")
+    patcher = server_dir / "BepInEx" / "patchers" / "Other.Patcher.dll"
+    patcher.parent.mkdir(parents=True)
+    patcher.write_bytes(b"MZ")
 
     server.install_mods(make_pack(tmp_path), plugin, server_dir, Path("/run/vhd/world.json"), 7)
 
@@ -29,6 +32,7 @@ def test_install_mods_lays_in_bepinex_the_plugin_and_its_config(tmp_path: Path) 
     assert (server_dir / "doorstop_libs" / "libdoorstop_x64.so").exists()
     assert (server_dir / "BepInEx" / "plugins" / "Valhallowed" / "Valhallowed.Plugin.dll").exists()
     assert not stray.exists()
+    assert not patcher.exists()
     config = (server_dir / "BepInEx" / "config" / "com.valhallowed.plugin.cfg").read_text()
     assert config == "[Status]\nPath = /run/vhd/world.json\nIntervalSeconds = 7\n"
 
