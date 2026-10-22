@@ -54,6 +54,8 @@ class Apply:
         settings = manifest.load(self.install, self.schemas)
         self._check_engine()
         host = self._host()
+        # vhd runs as root; everything it writes belongs to whom the control plane runs as.
+        self.store = Store(self.store.root, host.owner)
         running = self._running(host.project)
         rendered_path = self.install / layout.RENDERED
         previous = json.loads(rendered_path.read_text()) if rendered_path.exists() else None
@@ -158,11 +160,10 @@ class Apply:
         self.store.save(state)
 
     def _own(self, owner: tuple[int, int]) -> None:
-        """Give the volumes to the install folder's owner, whom the control plane runs as."""
+        """Give the volumes' roots to the install folder's owner, whom the control plane runs as.
+        The store gives it every file and directory it writes."""
         for directory in (self.store.root, self.control_dir):
             os.chown(directory, *owner)
-        for path in self.store.root.rglob("*"):
-            os.chown(path, *owner)
 
     def _write(self, path: Path, document: dict[str, object], owner: tuple[int, int]) -> None:
         path.parent.mkdir(exist_ok=True)

@@ -42,13 +42,19 @@ class State:
 
 
 class Store:
-    def __init__(self, root: Path) -> None:
+    """owner: whom every file and directory is given to, when the writer is someone else. vhd
+    apply runs as root; the control plane, which runs as that owner, then writes them too."""
+
+    def __init__(self, root: Path, owner: tuple[int, int] | None = None) -> None:
         self.root = root
+        self.owner = owner
 
     @contextmanager
     def locked(self) -> Iterator[None]:
         """Hold the volume's lock, so the control plane and vhd apply never write at once."""
         with (self.root / ".lock").open("a") as lock:
+            if self.owner is not None:
+                os.fchown(lock.fileno(), *self.owner)
             fcntl.flock(lock, fcntl.LOCK_EX)
             try:
                 yield
@@ -74,25 +80,39 @@ class Store:
             "applied": state.applied,
         }
         # It holds every world's secrets, so only its owner reads it.
-        _write(self.root / STATE_FILE, document, 0o600)
+        self._write(self.root / STATE_FILE, document, 0o600)
 
     def hand(self, state: State, child_id: str, child: Child, number: int) -> None:
         """Publish a child's documents under number: secrets first, the generation second (B1)."""
         directory = self.root / child_id
         directory.mkdir(exist_ok=True)
         directory.chmod(0o755)
+        if self.owner is not None:
+            os.chown(directory, *self.owner)
         generation, secrets = child.numbered(number)
-        _write(directory / SECRETS_FILE, secrets, 0o644)
-        _write(directory / GENERATION_FILE, generation, 0o644)
+        self._write(directory / SECRETS_FILE, secrets, 0o644)
+        self._write(directory / GENERATION_FILE, generation, 0o644)
         state.handed[child_id] = Handed(number, child)
 
-
-def _write(path: Path, document: object, mode: int) -> None:
-    """Write whole, then move into place, so a reader never sees half a file."""
-    temporary = path.with_name(f".{path.name}.tmp")
-    temporary.write_text(json.dumps(document, sort_keys=True))
-    temporary.chmod(mode)
-    os.replace(temporary, path)
+    def _write(self, path: Path, document: object, mode: int) -> None:
+        """Write whole and flushed to disk, then move into place, so a reader never sees half a
+        file and a crash never leaves an empty one. The file has its mode and owner from the
+        start: state.json holds every secret, so no moment may find it readable to others."""
+        temporary = path.with_name(f".{path.name}.tmp")
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+        with os.fdopen(descriptor, "w") as file:
+            os.fchmod(file.fileno(), mode)
+            if self.owner is not None:
+                os.fchown(file.fileno(), *self.owner)
+            file.write(json.dumps(document, sort_keys=True))
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
 
 
 def _child_document(child: Child) -> dict[str, object]:

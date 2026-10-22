@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 from vhd_control.manifest import Settings, World
@@ -48,3 +49,16 @@ def test_the_lock_can_be_taken_again_once_released(tmp_path: Path) -> None:
         pass
     with store.locked():
         pass
+
+
+def test_a_leftover_temporary_file_never_lends_state_its_mode(tmp_path: Path) -> None:
+    store = Store(tmp_path, owner=(os.getuid(), os.getgid()))
+    leftover = tmp_path / ".state.json.tmp"
+    leftover.write_text("{}")
+    leftover.chmod(0o666)
+
+    store.save(State())
+
+    assert (tmp_path / "state.json").stat().st_mode & 0o777 == 0o600
+    assert not leftover.exists()
+    assert (tmp_path / "state.json").stat().st_uid == os.getuid()
