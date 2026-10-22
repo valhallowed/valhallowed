@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Game runtime generation",
+  "description": "B1: the effective configuration the control plane hands one game runtime, as generation.json in that runtime's own volume. The runtime validates it, refuses a contract version it does not know, and keeps running its last good generation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "generation", "world", "plugin"],
+  "properties": {
+    "contract": {
+      "description": "The version of this contract.",
+      "const": 1
+    },
+    "generation": {
+      "description": "The generation number. A higher number replaces a lower one.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "world": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "port"],
+      "properties": {
+        "name": {
+          "description": "The world's save name.",
+          "$ref": "../schema/manifest.schema.json#/$defs/save_name"
+        },
+        "port": {
+          "description": "The first of the world's three UDP ports.",
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65533
+        }
+      }
+    },
+    "plugin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status_interval_s"],
+      "properties": {
+        "status_interval_s": {
+          "description": "How often the plugin rewrites the runtime's world status file, in seconds.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        }
+      }
+    },
+    "status_url": {
+      "description": "Where the runtime reports its status to the control plane. Absent, the runtime only logs it.",
+      "type": "string",
+      "pattern": "^http://[A-Za-z0-9.-]+(:[0-9]{1,5})?/"
+    }
+  }
+}
