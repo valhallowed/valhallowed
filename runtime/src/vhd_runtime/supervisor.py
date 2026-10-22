@@ -16,12 +16,17 @@ from typing import Protocol
 from vhd_runtime import server, status, steam
 from vhd_runtime.generation import Generation, InvalidGeneration, Reader
 
+# Well below the game's autosave interval (30 minutes unless changed), so a
+# world held at this point has not saved.
 LOAD_TIMEOUT_S = 900
 STOP_TIMEOUT_S = 120
 POLL_S = 1.0
 GENERATION_POLL_S = 2.0
 HELD_AFTER_OBJECTS = "the world loaded with no objects where it last held {last}; stopped before its first autosave"
 HELD_OVER_SAVE = "the world loaded with no objects although a save existed; stopped before its first autosave"
+HELD_UNREPORTED = (
+    "the plugin has not reported the loaded world, which held objects before; stopped before its first autosave"
+)
 UNVERIFIED_REASON = "the plugin has not reported the loaded world"
 
 _log = logging.getLogger(__name__)
@@ -149,25 +154,43 @@ class Supervisor:
                 world = status.read_world(self.paths.world_status, generation.world) or world
             previous = state
             if state in (State.LOADING, State.UNVERIFIED) and world is not None:
-                held = self._loaded_empty(generation.world, world.objects, save_existed)
-                if held is not None:
-                    # Killed, not interrupted: SIGINT would save the empty world over the real one.
-                    process.kill()
-                    process.wait()
-                    state, reason = State.HELD, held
-                    _log.error("held: %s", reason)
-                else:
-                    state, reason = State.RUNNING, None
-                    _log.info("world %s loaded with %d objects", generation.world, world.objects)
+                state, reason = self._on_report(process, generation.world, world.objects, save_existed)
             if state is State.RUNNING and world is not None:
                 self._remember_objects(generation.world, world.objects)
             elif state is State.LOADING and self.clock.now() - launched > LOAD_TIMEOUT_S:
-                state, reason = State.UNVERIFIED, UNVERIFIED_REASON
-                _log.warning("unverified: %s", reason)
+                state, reason = self._on_load_timeout(process, generation.world, save_existed)
             if state is not previous or self.clock.now() >= next_report:
                 reporter.send(_status(generation, state, reason, build, world))
                 next_report = self.clock.now() + generation.status_interval_s
             self.clock.sleep(POLL_S)
+
+    def _on_report(self, process: Process, world: str, objects: int, save_existed: bool) -> tuple[State, str | None]:
+        """World truth on the plugin's first report: run the world, or hold it if it loaded empty."""
+        held = self._loaded_empty(world, objects, save_existed)
+        if held is not None:
+            return self._hold(process, held)
+        _log.info("world %s loaded with %d objects", world, objects)
+        return State.RUNNING, None
+
+    def _on_load_timeout(self, process: Process, world: str, save_existed: bool) -> tuple[State, str | None]:
+        """World truth when the plugin never reported: what loaded is unknown, so a world with
+        something to lose is held, and one with nothing to lose runs unverified."""
+        if self._expects_objects(world, save_existed):
+            return self._hold(process, HELD_UNREPORTED)
+        _log.warning("unverified: %s", UNVERIFIED_REASON)
+        return State.UNVERIFIED, UNVERIFIED_REASON
+
+    def _hold(self, process: Process, reason: str) -> tuple[State, str]:
+        # Killed, not interrupted: SIGINT would save whatever loaded over the real world.
+        process.kill()
+        process.wait()
+        _log.error("held: %s", reason)
+        return State.HELD, reason
+
+    def _expects_objects(self, world: str, save_existed: bool) -> bool:
+        """Whether the world held objects when last seen, or, with nothing remembered, had a save."""
+        last = self._last_objects(world)
+        return save_existed if last is None else last > 0
 
     def _loaded_empty(self, world: str, objects: int, save_existed: bool) -> str | None:
         """Why the world must be held, or None. An empty load fails world truth when the

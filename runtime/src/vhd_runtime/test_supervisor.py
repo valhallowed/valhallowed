@@ -242,7 +242,7 @@ def test_a_report_from_an_earlier_run_is_ignored(world: World) -> None:
     assert "held" not in world.states()
 
 
-def test_no_report_leaves_the_world_unverified_but_running(world: World) -> None:
+def test_no_report_for_a_new_world_leaves_it_unverified_but_running(world: World) -> None:
     world.generation()
     sup = world.supervisor()
     world.time.at(supervisor.LOAD_TIMEOUT_S + 10, lambda: sup.request_stop(signal.SIGTERM, None))
@@ -250,6 +250,42 @@ def test_no_report_leaves_the_world_unverified_but_running(world: World) -> None
     assert sup.run() == 0
     assert "unverified" in world.states()
     assert world.process.signals == [signal.SIGINT]
+
+
+def test_no_report_over_a_save_is_held_without_saving(world: World) -> None:
+    world.generation()
+    world.save()
+    sup = world.supervisor()
+    world.time.at(supervisor.LOAD_TIMEOUT_S + 60, lambda: sup.request_stop(signal.SIGTERM, None))
+
+    assert sup.run() == 0
+    assert world.process.killed
+    assert world.process.signals == []
+    held = [r for r in world.reports if r["state"] == "held"]
+    assert held and held[0]["reason"] == supervisor.HELD_UNREPORTED
+
+
+def test_no_report_for_a_world_that_held_objects_is_held(world: World) -> None:
+    world.generation()
+    world.remember("Meadowfold", 120)
+    sup = world.supervisor()
+    world.time.at(supervisor.LOAD_TIMEOUT_S + 60, lambda: sup.request_stop(signal.SIGTERM, None))
+
+    assert sup.run() == 0
+    assert world.process.killed
+    assert world.process.signals == []
+
+
+def test_no_report_for_a_world_last_seen_empty_leaves_it_unverified(world: World) -> None:
+    world.generation()
+    world.save()
+    world.remember("Meadowfold", 0)
+    sup = world.supervisor()
+    world.time.at(supervisor.LOAD_TIMEOUT_S + 10, lambda: sup.request_stop(signal.SIGTERM, None))
+
+    assert sup.run() == 0
+    assert "unverified" in world.states()
+    assert not world.process.killed
 
 
 def test_a_newer_generation_stops_the_server_with_a_save(world: World) -> None:
