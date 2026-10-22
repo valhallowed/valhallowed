@@ -19,6 +19,7 @@ jobs:
   promote:
     runs-on: ubuntu-24.04
     permissions:
+      actions: read
       contents: read
       packages: write
     outputs:
@@ -34,6 +35,8 @@ jobs:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - id: promote
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: scripts/promote.sh "$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
 
   release:
