@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Built by images/plugin/Dockerfile, which supplies the game's and BepInEx's
+  <!-- Built by images/game-runtime/Dockerfile, which supplies the game's and BepInEx's
        assemblies as GameManaged and BepInExCore. They are references only and
        never copied into the output. -->
   <PropertyGroup>
