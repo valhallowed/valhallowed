@@ -285,7 +285,7 @@
       { f: 'cp', t: 'dl', l: 'generation 1 + scoped secrets', d: 'The data layer starts first: it applies the database schema and opens intake and the broker.' },
       { f: 'dl', t: 'cp', l: 'ready', dash: true, d: 'Schema applied, intake listening.' },
       { f: 'cp', t: 'gr', l: 'generation 1 + scoped secrets', d: 'Then each game runtime, one per world.' },
-      { f: 'gr', t: 'steam', l: 'download dedicated server', d: 'First start only. Later starts reuse the downloaded files.' },
+      { f: 'gr', t: 'steam', l: 'download SteamCMD, dedicated server', d: 'First start only: the supervisor fetches SteamCMD, then the server. Later starts reuse both.' },
       { f: 'gr', t: 'cp', l: 'world loaded, matches save', dash: true, d: 'World truth: the loaded world is checked against its save, not just the container.' },
       { f: 'cp', t: 'ui', l: 'running, generation 1', dash: true, d: 'The TUI and the admin console show the install as running.' }
     ] },
