@@ -5,9 +5,10 @@ governed in-game commands and a web map, configured through one manifest. VHD
 for short. Its home is [valhallowed.com](https://valhallowed.com).
 
 **Status: pre-release.** This repository holds the design, the manifest
-schema, the release pipeline, the plugin and the game runtime image, which
-runs one world from a hand-written configuration. The control plane that
-writes that configuration is next. Nothing here is useful to install yet.
+schema, the release pipeline, the plugin, the game runtime image and the
+control plane with its CLI, `vhd`, which together run worlds from one
+manifest. The data layer and the web map are next. Nothing here is useful to
+install yet.
 
 ## Docs
 
@@ -27,6 +28,23 @@ Images live at `ghcr.io/valhallowed/<component>`. They are built once, on
 releases attach `compose.yaml`, pinned by digest, the manifest schema and
 `SHA256SUMS`. The channels and gates are in
 [Architecture § Releases](docs/architecture.md#releases).
+
+## Installing
+
+Needs Docker Engine 26 or newer with Compose, on an x86-64 host. In a folder
+of its own:
+
+1. Download a release's `compose.yaml`.
+2. Write `manifest.toml`. One world on every default takes two lines; see
+   [`schema/examples/valid`](schema/examples/valid/).
+3. For a world password, write `secrets.toml` beside it, readable by you
+   alone.
+4. Run `docker compose run --rm vhd apply`, and `docker compose run --rm vhd
+   status` to see each world.
+
+Edit either file and the control plane applies the change, holding a game
+restart while players are online. A change to the containers themselves,
+such as a new world or port, waits for the next `vhd apply`.
 
 ## Building locally
 

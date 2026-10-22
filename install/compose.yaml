@@ -1,5 +1,10 @@
 # Valhallowed install. Each release attaches this file rendered for its
 # version, with every image pinned by digest (scripts/render-install.sh).
+#
+# Put it in a folder of its own, with manifest.toml and, if a world has a
+# password, secrets.toml beside it. Then, from that folder:
+#   docker compose run --rm vhd apply
+# vhd apply renders the install's own compose file into .vhd/ and starts it.
 name: valhallowed
 
 # Every image a release ships, listed once. Services name them by anchor;
@@ -12,9 +17,26 @@ x-vhd:
     skeleton: &skeleton ghcr.io/valhallowed/skeleton:@VHD_VERSION@
 
 services:
+  # vhd, the control plane's CLI: the only container that gets Docker's socket,
+  # and only for its run (G13). It starts only through docker compose run.
+  vhd:
+    image: *control-plane
+    profiles: [tools]
+    user: "0"
+    network_mode: none
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/install
+      - generations:/generations
+      - control:/run/vhd-control
+
   skeleton:
     image: *skeleton
     # The web map's default port (G9). The manifest takes it over once it exists.
     ports:
       - "8456:8456"
     restart: unless-stopped
+
+volumes:
+  generations: {}
+  control: {}
