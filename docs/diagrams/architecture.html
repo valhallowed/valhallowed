@@ -171,7 +171,7 @@
       <li>An outside service becoming required. Chat relay, assistant and sign-in each switch off cleanly.</li>
       <li>A boundary without a contract test in the pipeline.</li>
     </ul>
-    <p class="note">Open decisions behind this page: O1 supervision model, O2 data layer placement, O3 worlds per install, O11 languages.</p>
+    <p class="note">Ground rules behind this page: G6 one way in, G13 Compose owns the containers, G14 the data layer runs as children, G15 many worlds per install.</p>
   </section>
 
   <footer>
@@ -260,7 +260,7 @@
       ['On failure', 'the request is rejected'],
     ]),
     sm: N('People', 'Server manager', 'Operates an install through the control plane: writes the manifest, supplies secrets, takes operator actions.'),
-    manifest: N('Ingress', 'Manifest', 'The one typed file of settings. Safe to commit and share: it never holds secrets.'),
+    manifest: N('Ingress', 'Manifest', 'The one TOML file of settings, checked against its schema (G18). Safe to commit and share: it never holds secrets.'),
     secrets: N('Ingress', 'Secrets', 'Sensitive values kept apart from the manifest, such as world passwords and credentials for outside services. Key names come from a closed list; an unknown key is rejected.'),
     actions: N('Ingress', 'Operator actions', 'One-off requests through the control API: import a world, back up now, read logs. Validated like the manifest.'),
     validate: N('Ingress', 'Validate', 'Checks the manifest against its schema and secrets against the key list, before anything changes.'),

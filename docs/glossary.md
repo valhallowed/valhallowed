@@ -7,8 +7,8 @@ meaning for an old one, lands here first.
 ## Terms
 
 **Acceptance** — Installing a channel's images from the registry, anonymously,
-on a clean runner, then checking that the install works. Every channel passes
-it before it publishes.
+on a clean runner, then checking that the install works. Commit builds are what
+it installs; a candidate or a release publishes only after it passes.
 
 **Acceptance material** — Recorded sessions, world saves, schema constraints
 and chat-command contracts that every capability must keep. Synthesized or
@@ -17,6 +17,10 @@ anonymized; never real player data.
 **Admin console** — The control plane's web interface for server managers:
 status, manifest errors, changes, worlds, backups and logs. Listens locally
 unless the manifest opens it. Not the web map.
+
+**Assistant** — The capability that answers players' questions in game, worded
+by an LLM provider from facts the data layer computed (B7). Off without its
+secret.
 
 **Boundary** — A point inside VHD where data or control crosses between two
 parts. Each boundary has one typed contract, one validator on the receiving
@@ -30,13 +34,17 @@ it never changes a code path.
 **Broker** — The data-layer service that creates, queues and audits commands.
 Nothing else creates a command.
 
+**Candidate** — A version on its way to release: a commit build's images
+promoted to an `X.Y.Z-rc.N` tag. It runs on the candidate channel before a
+release tag promotes it.
+
 **Capability** — A unit of function that switches on independently: telemetry,
 in-game commands, chat relay, assistant, web map, sign-in. It declares what it
 depends on, and its failure degrades only itself.
 
 **Change cost** — What applying a setting change requires: live, service
 restart or game-server restart. Every setting carries one in the manifest
-schema.
+schema, beside what applies it: the control plane or `vhd apply`.
 
 **Channel** — A release stream a consumer follows: commit builds, release
 candidates or releases.
@@ -44,8 +52,12 @@ candidates or releases.
 **Chat relay** — The capability that mirrors world events to an outside chat
 service, such as Discord, and accepts commands from it.
 
-**Child** — A process the control plane configures and manages: a game runtime
-or a data-layer service.
+**Child** — A container in an install that the control plane configures and
+reports on: a game runtime or a data-layer service. Compose runs it (G13).
+
+**CLI** — `vhd`, the control plane's command-line client, run from the control
+plane's image. `vhd apply` brings an install's containers in line with its
+current generation, with the server manager's own access to Docker (G13).
 
 **Command** — A request to change the game. Created only by the broker,
 executed only by the plugin on the game thread, and audited.
@@ -58,11 +70,10 @@ admin console and the CLI are its clients.
 
 **Control plane** — The part of VHD that owns ingress, reconcile, child
 lifecycle, operator actions and status. Needed to start or change an install,
-not to keep it running.
+not to keep it running. It holds no Docker socket (G13).
 
 **Data layer** — Telemetry intake, persistence, the broker, the chat relay, the
-web map and the database. Its placement relative to the control plane is open
-(O2).
+web map and the database. Each service runs as its own child (G14).
 
 **Default** — What VHD uses when the manifest says nothing: a value or a
 built-in service. Every default works with no setup.
@@ -81,6 +92,9 @@ policy.
 **Generation** — One numbered effective configuration. Applied whole or not at
 all; when a new one is rejected, the last good generation keeps running.
 
+**Hold** — A game runtime with its game stopped and its container up, so a
+world's files can be replaced without a Docker socket (G13).
+
 **Host check** — The control plane's comparison of what the manifest asks for
 (ports, memory and CPU per world, disk) with what the host has. A shortfall is
 a warning in status, never a silent failure.
@@ -88,25 +102,38 @@ a warning in status, never a silent failure.
 **Ingress** — Where settings, secrets and operator actions enter VHD from
 outside. There is exactly one, and the control plane owns it.
 
-**Install** — One running copy of VHD: a control plane and its children.
+**Install** — One running copy of VHD: a control plane and its children, run
+by Compose as one project.
+
+**Intake** — The data-layer service that receives telemetry from the plugin
+(B2) and persists it.
 
 **Lane** — One of three isolated ways VHD runs on a host. Build makes
 artifacts, dev is a full install with a throwaway world, and consumer runs
 released artifacts only.
 
-**Manifest** — The one typed file a server manager writes to configure an
+**Manifest** — The one TOML file a server manager writes to configure an
 install. Checked against the manifest schema; never holds secrets.
 
-**Manifest schema** — The versioned definition of every setting: type, default,
-change cost and what it affects. It produces validation, defaults, each child's
-configuration and the settings reference.
+**Manifest schema** — The versioned JSON Schema in `schema/` for the manifest
+and the secrets file: every setting with its type, default, change cost and
+what applies it, and the closed list of secret keys. It produces validation,
+defaults, each child's configuration and the settings reference.
+
+**Map export** — The file the plugin writes with a world's map, the input to
+world render (B5).
+
+**Nightly game check** — The pipeline run that builds and accepts the newest
+commit against the newest dedicated-server build. A failure blocks the next
+candidate.
 
 **Operator action** — A one-off request through the control API, such as
 importing a world, taking a backup or reading logs. Validated like the
 manifest.
 
-**Pending change** — A validated change waiting until it can apply, typically
-a game-server restart while players are online.
+**Pending change** — A validated change waiting until it can apply: a
+game-server restart while players are online, or a change to the containers
+that waits for `vhd apply`.
 
 **Player** — A person playing in a world. Players use the game and the web map;
 they never touch the control plane.
@@ -127,21 +154,29 @@ Stored by the data layer; never becomes a command.
 **Registry** — The public image store VHD publishes to: GHCR (G10). The
 boundary between building VHD and running it.
 
-**Release** — A versioned set of VHD artifacts that share one version: images,
-the plugin artifact and the manifest schema.
+**Release** — A versioned set of VHD artifacts that share one version: the
+images, `compose.yaml`, the plugin artifact and the manifest schema.
 
 **Secrets** — Sensitive values a server manager supplies, such as a world's
-password or a chat service token, kept apart from the manifest. Key names come
-from a closed list in the manifest schema.
+password or a chat service token, kept in a TOML file apart from the manifest.
+Key names come from a closed list in the manifest schema.
 
 **Server manager** — The person who operates an install through the control
 plane. Not a player.
 
 **Settings reference** — The user-facing list of every setting with its
-default, change cost and effect. Generated from the manifest schema.
+default, change cost, what applies it and its effect. Generated from the
+manifest schema.
+
+**Sign-in** — The capability that signs a player in to the web map through
+Steam (B9). Only people the game has seen can sign in.
 
 **Status** — The control plane's report on an install and its children. It
 reports world truth, not container health.
+
+**Telemetry** — What the plugin observes in a world and sends to intake (B2):
+chat, presence, positions and world events. Observations, so a failure drops
+them and the game never waits.
 
 **TUI** — The control plane's terminal interface. Same control API as the admin
 console; for hosts where a browser is unavailable or unwanted.
@@ -158,6 +193,9 @@ map.
 admin console.
 
 **World** — One Valheim save and the game runtime that serves it.
+
+**World ports** — The UDP ports a world reserves on the host: its port through
+port+2. Worlds that share a host need ranges that do not overlap.
 
 **World render** — Turning a world's map export into the web map's base image.
 Runs on the install, so no image carries a world's map.

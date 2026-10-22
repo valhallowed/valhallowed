@@ -98,11 +98,13 @@
         <thead><tr><th>Artifact</th><th>Built from</th><th>Published to</th><th>Consumed by</th></tr></thead>
         <tbody>
           <tr><td><span class="chip z-control">control plane image</span></td><td>The control plane</td><td>Registry</td><td>Every install</td></tr>
-          <tr><td><span class="chip z-runtime">game runtime image</span></td><td>The game runtime (O4), with the plugin inside</td><td>Registry</td><td>Every install. It downloads the dedicated server at first start; no game files ship in the image.</td></tr>
+          <tr><td><span class="chip z-runtime">game runtime image</span></td><td>The game runtime (G16), with the plugin inside</td><td>Registry</td><td>Every install. It downloads the dedicated server at first start; no game files ship in the image.</td></tr>
           <tr><td><span class="chip z-data">data layer images</span></td><td>Intake, broker, persistence, world render, web map, chat relay, assistant</td><td>Registry</td><td>Every install</td></tr>
           <tr><td><span class="chip z-runtime">plugin artifact</span></td><td>The plugin, compiled against game assemblies fetched in CI</td><td>GitHub Release</td><td>The game runtime image; anyone inspecting a release</td></tr>
-          <tr><td><span class="chip z-ingress">manifest schema</span></td><td>The schema source; also produces the settings reference</td><td>GitHub Release, valhallowed.com</td><td>The control plane; server managers</td></tr>
-          <tr><td><span class="chip z-neutral">release notes</span></td><td>Written per release; record the game build it was accepted on</td><td>GitHub Release, valhallowed.com</td><td>Server managers</td></tr>
+          <tr><td><span class="chip z-ingress">manifest schema</span></td><td>The schema source; also produces the settings reference</td><td>GitHub Release</td><td>The control plane; server managers and their editors</td></tr>
+          <tr><td><span class="chip z-control">compose.yaml</span></td><td>Rendered per release, every image pinned by digest</td><td>GitHub Release</td><td><code>vhd apply</code>, which renders each install’s compose file from it</td></tr>
+          <tr><td><span class="chip z-neutral">SHA256SUMS</span></td><td>Checksums of the release’s files</td><td>GitHub Release</td><td>Anyone verifying a download</td></tr>
+          <tr><td><span class="chip z-neutral">release notes</span></td><td>Written per release; record the game build it was accepted on</td><td>GitHub Release</td><td>Server managers</td></tr>
         </tbody>
       </table>
     </div>
@@ -125,13 +127,13 @@
   <section class="limits" id="limits" aria-labelledby="limits-h">
     <h2 id="limits-h">What the pipeline will not do</h2>
     <ul>
-      <li>Deploy to an install. Consumers pull; the control plane decides when a pulled update applies.</li>
+      <li>Deploy to an install. The server manager applies a new version with <code>vhd apply</code>, and a game-server restart waits while players are online unless the server manager confirms it.</li>
       <li>Rebuild on promotion. A release is the same image digests its candidate was.</li>
       <li>Ship game files. The dedicated server downloads at first start, and the game assemblies used for the build are fetched in CI and discarded.</li>
       <li>Take a hand-built hot fix. A fix is a commit and passes the same gates.</li>
       <li>Give any consumer its own channel or tag. The maintainers' own installs follow the release channel too.</li>
     </ul>
-    <p class="note">Open decisions behind this page: O4 game runtime image, O5 repo shape.</p>
+    <p class="note">Ground rules behind this page: G12 build once, promote by tag; G16 VHD’s own game runtime image; G17 one repo.</p>
   </section>
 
   <footer>
@@ -143,7 +145,7 @@
 <script src="vhd.js"></script>
 <script>
   const pipeData = {
-    src: { kind: 'Source control', title: 'Commit or pull request', text: 'All of VHD lives in one repo (O5), so one commit moves the plugin, the services and the manifest schema together.', rows: [['Trigger', 'push to a branch'], ['Next', 'checks']] },
+    src: { kind: 'Source control', title: 'Commit or pull request', text: 'All of VHD lives in one repo (G17), so one commit moves the plugin, the services and the manifest schema together.', rows: [['Trigger', 'push to a branch'], ['Next', 'checks']] },
     checks: { kind: 'CI runner', title: 'Checks', text: 'Fast checks on every push. They gate the merge.', rows: [['Runs', 'lint, unit tests, a contract test for every boundary, the manifest schema check, the public-content check'], ['Public-content check', 'rejects private addresses, internal host names, personal paths and email addresses, so none enters the public history'], ['Gate', 'merge gate']] },
     merge: { kind: 'Source control', title: 'Merge to main', text: 'Main always builds. Branch protection holds the merge until the merge gate passes.', rows: [['Requires', 'merge gate green']] },
     build: { kind: 'CI runner', title: 'Build', text: 'Fetches the game assemblies from the dedicated-server download and caches them. Nothing proprietary is committed or shipped.', rows: [['Produces', 'control plane, game runtime and data layer images; the plugin artifact'], ['Inputs', 'the repo at one commit; game assemblies; the BepInEx pack'], ['Locally', 'the same steps run in the build lane']] },
@@ -153,8 +155,8 @@
     rc: { kind: 'Registry', title: 'Release candidate', text: 'The commit build that passed the candidate gate, promoted. Same image digests.', rows: [['Tag', 'X.Y.Z-rc.N'], ['Rebuilds', 'never']] },
     candch: { kind: 'Consumers', title: 'Candidate channel', text: 'Installs that opt in to candidates: the dev lane, and any consumer who wants early releases.', rows: [['Watches', 'world truth, errors, pending changes'], ['Feeds', 'the release gate']] },
     reltag: { kind: 'Source control', title: 'Release tag', text: 'A maintainer promotes a candidate that soaked clean.', rows: [['Requires', 'the release gate']] },
-    release: { kind: 'Registry · GitHub Releases', title: 'Release', text: 'The candidate retagged with its version, plus a GitHub Release.', rows: [['Registry', 'images under the version tag'], ['GitHub Release', 'plugin artifact, manifest schema, settings reference, release notes, checksums'], ['Site', 'valhallowed.com carries the notes and the settings reference']] },
-    relch: { kind: 'Consumers', title: 'Release channel', text: 'The default for every install. The maintainers’ own installs follow it like any other consumer.', rows: [['Updates', 'pulled by the consumer; the control plane holds a game-server restart while players are online']] },
+    release: { kind: 'Registry · GitHub Releases', title: 'Release', text: 'The candidate retagged with its version, plus a GitHub Release.', rows: [['Registry', 'images under the version tag'], ['GitHub Release', 'compose.yaml, the manifest schema, the plugin artifact and checksums; the notes name the game build it was accepted on'], ['Site', 'valhallowed.com links to each release']] },
+    relch: { kind: 'Consumers', title: 'Release channel', text: 'The default for every install. The maintainers’ own installs follow it like any other consumer.', rows: [['Updates', 'applied by the server manager with vhd apply; a game-server restart waits while players are online unless the server manager confirms it']] },
     g1: { kind: 'Gate', title: 'Merge gate', text: 'Every check is green.', rows: [['Blocks', 'merge to main']] },
     g2: { kind: 'Gate', title: 'Candidate gate', text: 'Acceptance passes on registry images, including against the newest game build.', rows: [['Blocks', 'the candidate tag']] },
     g3: { kind: 'Gate', title: 'Release gate', text: 'The candidate soaked on the candidate channel with no open blockers.', rows: [['Blocks', 'the release tag']] }
@@ -193,7 +195,7 @@
       release: { label: 'Release', steps: [
         { t: 'Release gate', d: 'The candidate soaked with no open blockers.', on: ['candch', 'e-soak', 'g3'] },
         { t: 'Release tag', d: 'A maintainer promotes the soaked candidate.', on: ['reltag', 'e-promote'] },
-        { t: 'Publish', d: 'Retag the same images; the GitHub Release carries the plugin, schema and notes.', on: ['e-promote', 'release'] },
+        { t: 'Publish', d: 'Retag the same images; the GitHub Release carries compose.yaml, the schema, the plugin, checksums and notes.', on: ['e-promote', 'release'] },
         { t: 'Consumers pull', d: 'Every install on the release channel pulls the same artifacts.', on: ['release', 'e-pullrel', 'relch'] }
       ] }
     }

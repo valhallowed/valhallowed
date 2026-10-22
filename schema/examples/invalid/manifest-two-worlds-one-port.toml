@@ -1,0 +1,7 @@
+# expect: 'port' is a required property
+schema = 1
+
+[world.Meadowfold]
+port = 2456
+
+[world.Ashwake]

@@ -1,0 +1,4 @@
+# expect: '../Meadowfold' does not match
+schema = 1
+
+[world."../Meadowfold"]

@@ -121,8 +121,8 @@
 <pre><span class="hd"> VALHALLOWED</span>  <span class="mu">install</span> longhouse   <span class="mu">generation</span> 9   <span class="mu">control plane up</span> 3d 04h          <span class="key">?</span> <span class="mu">help</span>
 <span class="mu"> ─────────────────────────────────────────────────────────────────────────────────────────</span>
 <span class="hd"> WORLDS</span>
-  <span class="ok">●</span> Meadowfold    running   <span class="mu">world truth</span> <span class="ok">ok</span> 48,113 / 48,113 objects   3 players   udp 2456-2457
-  <span class="ok">●</span> Ashwake       running   <span class="mu">world truth</span> <span class="ok">ok</span> 12,904 / 12,904 objects   0 players   udp 2466-2467
+  <span class="ok">●</span> Meadowfold    running   <span class="mu">world truth</span> <span class="ok">ok</span> 48,113 / 48,113 objects   3 players   udp 2456-2458
+  <span class="ok">●</span> Ashwake       running   <span class="mu">world truth</span> <span class="ok">ok</span> 12,904 / 12,904 objects   0 players   udp 2466-2468
 
 <span class="hd"> HOST</span>
   4 cores   16 GB memory   212 GB disk free
@@ -134,7 +134,7 @@
   assistant   <span class="mu">off</span>    <span class="mu">off in manifest</span>
 
 <span class="hd"> PENDING</span>
-  <span class="wa">gen 10</span>  Meadowfold  secret world.password changed   <span class="mu">cost</span> game restart   <span class="wa">waits: 3 players online</span>
+  <span class="wa">gen 10</span>  Meadowfold  secret password changed   <span class="mu">cost</span> game-server restart   <span class="wa">waits: 3 players online</span>
 
 <span class="hd"> MANIFEST</span>
   <span class="ba">✗</span> secrets line 4   unknown key <span class="ba">chat_relay.tokn</span>   <span class="mu">nearest:</span> chat_relay.token
@@ -146,7 +146,7 @@
 
   <section id="console" aria-labelledby="console-h">
     <h2 id="console-h">Admin console</h2>
-    <p>The same control API in a browser, for server managers only. It listens on loopback unless the manifest opens it, and it is a different app from the web map that players use. The settings view is the settings reference made live: every value with where it came from, its change cost and what it affects.</p>
+    <p>The same control API in a browser, for server managers only. It listens on loopback unless the manifest opens it, and it is a different app from the web map that players use. The settings view is the settings reference made live: every value with where it came from, its change cost, what applies it and what it affects.</p>
     <p class="wf-label">Wireframe · example data · buttons do nothing</p>
     <div class="console" aria-label="Admin console wireframe">
       <div class="c-top">
@@ -176,8 +176,8 @@
                   <table>
                     <thead><tr><th>World</th><th>State</th><th>World truth</th><th>Players</th><th>Port</th></tr></thead>
                     <tbody>
-                      <tr><td>Meadowfold</td><td><span class="chip st-ok">running</span></td><td class="num">48,113 / 48,113</td><td class="num">3</td><td class="num">udp 2456–2457</td></tr>
-                      <tr><td>Ashwake</td><td><span class="chip st-ok">running</span></td><td class="num">12,904 / 12,904</td><td class="num">0</td><td class="num">udp 2466–2467</td></tr>
+                      <tr><td>Meadowfold</td><td><span class="chip st-ok">running</span></td><td class="num">48,113 / 48,113</td><td class="num">3</td><td class="num">udp 2456–2458</td></tr>
+                      <tr><td>Ashwake</td><td><span class="chip st-ok">running</span></td><td class="num">12,904 / 12,904</td><td class="num">0</td><td class="num">udp 2466–2468</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -206,27 +206,27 @@
           <div data-panel="settings" hidden>
             <div class="tbl">
               <table>
-                <thead><tr><th>Setting</th><th>Value</th><th>Source</th><th>Change cost</th><th>Affects</th></tr></thead>
+                <thead><tr><th>Setting</th><th>Value</th><th>Source</th><th>Change cost</th><th>Applied by</th><th>Affects</th></tr></thead>
                 <tbody>
-                  <tr><td><code>world.Meadowfold.port</code></td><td class="num">2456</td><td>manifest</td><td><span class="chip st-bad">game restart</span></td><td>That world; your firewall rule</td></tr>
-                  <tr><td><code>world.Meadowfold.memory</code></td><td class="num">6 GB</td><td>default</td><td><span class="chip st-bad">game restart</span></td><td>That world's memory limit; the host check</td></tr>
-                  <tr><td><code>world.Meadowfold.password</code></td><td class="num">set</td><td>secrets</td><td><span class="chip st-bad">game restart</span></td><td>Who can join</td></tr>
-                  <tr><td><code>telemetry.position_interval</code></td><td class="num">5 s</td><td>default</td><td><span class="chip st-ok">live</span></td><td>Intake load; web map trails</td></tr>
-                  <tr><td><code>commands.player_rate</code></td><td class="num">30 / min</td><td>manifest</td><td><span class="chip st-ok">live</span></td><td>Every player's chat commands</td></tr>
-                  <tr><td><code>web_map.public_url</code></td><td class="num">https://map.example.org</td><td>manifest</td><td><span class="chip st-warn">service restart</span></td><td>Sign-in return address; links in chat</td></tr>
-                  <tr><td><code>admin_console.listen</code></td><td class="num">127.0.0.1:9456</td><td>default</td><td><span class="chip st-warn">service restart</span></td><td>Who can reach this console</td></tr>
-                  <tr><td><code>chat_relay.enabled</code></td><td class="num">true</td><td>manifest</td><td><span class="chip st-ok">live</span></td><td>Off anyway: missing secret <code>chat_relay.token</code></td></tr>
-                  <tr><td><code>database.url</code></td><td class="num">bundled</td><td>default</td><td><span class="chip st-warn">service restart</span></td><td>Every data-layer service</td></tr>
+                  <tr><td><code>world.Meadowfold.port</code></td><td class="num">2456</td><td>manifest</td><td><span class="chip st-bad">game-server restart</span></td><td><code>vhd apply</code></td><td>That world; your firewall rule</td></tr>
+                  <tr><td><code>world.Meadowfold.memory</code></td><td class="num">6GiB</td><td>default</td><td><span class="chip st-bad">game-server restart</span></td><td><code>vhd apply</code></td><td>That world's memory limit; the host check</td></tr>
+                  <tr><td><code>world.Meadowfold.password</code></td><td class="num">set</td><td>secrets</td><td><span class="chip st-bad">game-server restart</span></td><td>control plane</td><td>Who can join</td></tr>
+                  <tr><td><code>telemetry.position_interval</code></td><td class="num">5s</td><td>default</td><td><span class="chip st-ok">live</span></td><td>control plane</td><td>Intake load; web map trails</td></tr>
+                  <tr><td><code>commands.player_rate</code></td><td class="num">30/min</td><td>manifest</td><td><span class="chip st-ok">live</span></td><td>control plane</td><td>Every player's chat commands</td></tr>
+                  <tr><td><code>web_map.public_url</code></td><td class="num">https://map.example.org</td><td>manifest</td><td><span class="chip st-warn">service restart</span></td><td>control plane</td><td>Sign-in return address; links in chat</td></tr>
+                  <tr><td><code>admin_console.listen</code></td><td class="num">127.0.0.1:9456</td><td>default</td><td><span class="chip st-warn">service restart</span></td><td><code>vhd apply</code></td><td>Who can reach this console</td></tr>
+                  <tr><td><code>assistant.enabled</code></td><td class="num">false</td><td>manifest</td><td><span class="chip st-ok">live</span></td><td>control plane</td><td>The assistant stays off, so its secret is not needed</td></tr>
+                  <tr><td><code>database.url</code></td><td class="num">bundled</td><td>default</td><td><span class="chip st-warn">service restart</span></td><td>control plane</td><td>Every data-layer service</td></tr>
                 </tbody>
               </table>
             </div>
-            <p class="note">Every value is either a default or the server manager's override; ports, addresses and resources included. Setting names and default values are illustrative; the manifest format is open (O6) and the resource defaults await a measurement under load (O13).</p>
+            <p class="note">Every value is either a default or the server manager's override; ports, addresses and resources included. Of these settings, only <code>world.&lt;name&gt;.port</code> and <code>world.&lt;name&gt;.password</code> are in schema v1; the other names and values are illustrative, and the resource defaults await a measurement under load (O13).</p>
           </div>
           <div data-panel="changes" hidden>
             <div class="c-main" style="padding:0">
               <div class="c-card warn">
                 <h3>Generation 10 · pending</h3>
-                <p>One change: secret <code>world.password</code> for Meadowfold. Change cost: game restart. Meadowfold has 3 players online, so this waits for the world to empty.</p>
+                <p>One change: secret <code>world.Meadowfold.password</code>. Change cost: game-server restart. Meadowfold has 3 players online, so this waits for the world to empty.</p>
                 <div class="c-row"><button class="btn" type="button" disabled>Wait for empty world</button><button class="btn" type="button" disabled>Apply now · disconnects 3 players</button></div>
               </div>
               <div class="c-card">
@@ -236,7 +236,7 @@
                     <thead><tr><th>Generation</th><th>When</th><th>Changes</th><th>Result</th></tr></thead>
                     <tbody>
                       <tr><td class="num">—</td><td class="num">2026-10-21 09:14</td><td>secrets file</td><td><span class="chip st-bad">rejected</span> unknown key</td></tr>
-                      <tr><td class="num">9</td><td class="num">2026-10-20 23:40</td><td>world.Ashwake.port</td><td><span class="chip st-ok">applied</span> after the world emptied</td></tr>
+                      <tr><td class="num">9</td><td class="num">2026-10-20 23:40</td><td>world.Ashwake.port</td><td><span class="chip st-ok">applied</span> by <code>vhd apply</code> after the world emptied</td></tr>
                       <tr><td class="num">8</td><td class="num">2026-10-20 18:02</td><td>commands.player_rate</td><td><span class="chip st-ok">applied</span> live</td></tr>
                     </tbody>
                   </table>
@@ -260,7 +260,7 @@
       <li>Open the admin console beyond loopback unless the manifest says so.</li>
       <li>Hold player data. Players and their records belong to the data layer.</li>
     </ul>
-    <p class="note">Open decisions behind this page: O1 supervision model (how stop and start reach a child), O3 worlds per install (the wireframes assume several), O6 manifest format.</p>
+    <p class="note">Ground rules behind this page: G13 Compose owns the containers, so a change to them waits for <code>vhd apply</code>; G15 many worlds per install; G18 the manifest format. Open: O13 default resources per world.</p>
   </section>
 
   <footer>
@@ -278,7 +278,7 @@
 
   const scenarios = {
     start: { label: 'First start', cap: 'The data layer starts before any game runtime, and a world counts as up only once it matches its save.', steps: [
-      { f: 'sm', t: 'cp', l: 'compose up', d: 'The server manager starts the install with a manifest and, optionally, secrets.' },
+      { f: 'sm', t: 'cp', l: 'vhd apply', d: 'The server manager writes a manifest and, optionally, secrets, and runs vhd apply on the host. Compose starts every child from the compose file it renders.' },
       { f: 'cp', t: 'cp', l: 'validate', d: 'Manifest against its schema; secrets against the key list.' },
       { f: 'cp', t: 'cp', l: 'host check: ports, memory, CPU, disk', d: 'What the manifest asks for, against what the host has. A shortfall becomes a warning in status; a port already taken stops only the world that needs it.' },
       { f: 'cp', t: 'cp', l: 'reconcile: generation 1', d: 'Defaults fill every unset setting, and reconcile records what each implies.' },
@@ -297,6 +297,16 @@
       { f: 'dl', t: 'cp', l: 'applied', dash: true, d: 'The child confirms the generation it now runs.' },
       { f: 'cp', t: 'ui', l: 'applied: generation 8', dash: true, d: 'The console lists what changed, and from which value.' }
     ] },
+    addworld: { label: 'Add a world', cap: 'A new world is a new container. The running control plane holds no Docker socket, so the change waits for vhd apply on the host.', steps: [
+      { f: 'sm', t: 'cp', l: 'save manifest: world.Ashwake', d: 'A new table under world, with its own port.' },
+      { f: 'cp', t: 'cp', l: 'validate, reconcile: generation 11', d: 'Valid. A new world needs a new game runtime, which only Compose can create.' },
+      { f: 'cp', t: 'ui', l: 'pending: run vhd apply', dash: true, d: 'Status names the change and the command that applies it.' },
+      { f: 'sm', t: 'cp', l: 'vhd apply', d: 'Run on the host with the server manager’s own access to Docker. It renders the install’s compose file from generation 11.' },
+      { note: 'Compose creates Ashwake; every other container stays untouched', a: 'cp', b: 'gr', d: 'Only containers whose definition changed are recreated. Meadowfold keeps running.' },
+      { f: 'cp', t: 'gr', l: 'generation 11 + scoped secrets', d: 'The new runtime reads its generation and starts its world.' },
+      { f: 'gr', t: 'cp', l: 'world loaded, matches save', dash: true, d: 'World truth for the new world. With no save under its name, the game creates a new world.' },
+      { f: 'cp', t: 'ui', l: 'applied: generation 11', dash: true, d: 'The world list shows Ashwake and its object count.' }
+    ] },
     invalid: { label: 'Invalid manifest', cap: 'A rejected manifest never reaches a child. The last good generation keeps running.', steps: [
       { f: 'sm', t: 'cp', l: 'save secrets file', d: 'Example: a mistyped key, chat_relay.tokn.' },
       { f: 'cp', t: 'cp', l: 'validate: fails', d: 'The key is not on the closed list.' },
@@ -305,12 +315,11 @@
     ] },
     restart: { label: 'Restart with players online', cap: 'A change that needs a game-server restart is stored and held until the world is empty, unless the server manager confirms.', steps: [
       { f: 'sm', t: 'cp', l: 'save secrets file', d: 'Example: a new server password for one world.' },
-      { f: 'cp', t: 'cp', l: 'reconcile: generation 10, cost game restart', d: 'Valid, and it needs a game-server restart.' },
+      { f: 'cp', t: 'cp', l: 'reconcile: generation 10, cost game-server restart', d: 'Valid, and it needs a game-server restart.' },
       { f: 'dl', t: 'cp', l: 'presence: 3 players online', dash: true, d: 'The control plane reads presence before any game-server restart.' },
       { f: 'cp', t: 'ui', l: 'pending: waits for an empty world', dash: true, d: 'Stored and held. The server manager can apply it now, with a warning that names who it disconnects, or wait.' },
       { f: 'dl', t: 'cp', l: 'presence: 0 players', dash: true, d: 'Later, the world empties.' },
-      { f: 'cp', t: 'gr', l: 'save world, stop', d: 'The world saves before it stops.' },
-      { f: 'cp', t: 'gr', l: 'start with generation 10', d: 'The runtime starts on the new generation.' },
+      { f: 'cp', t: 'gr', l: 'generation 10', d: 'The runtime saves the world and exits, and Compose restarts it on the new generation.' },
       { f: 'gr', t: 'cp', l: 'world loaded, matches save', dash: true, d: 'World truth before anything is reported as done.' },
       { f: 'cp', t: 'ui', l: 'applied: generation 10', dash: true, d: 'The pending change moves to history.' }
     ] },
@@ -319,20 +328,20 @@
       { f: 'ui', t: 'cp', l: 'operator action: import', d: 'Operator actions pass the same validation as the manifest.' },
       { f: 'cp', t: 'cp', l: 'validate save: format, name, size', d: 'Both save formats are recognised: the pre-1.0 single file and the 1.0+ chunked directory.' },
       { f: 'dl', t: 'cp', l: 'presence: 0 players', dash: true, d: 'Replacing a world waits for it to be empty.' },
-      { f: 'cp', t: 'gr', l: 'back up current world, stop', d: 'The current save is backed up before anything is replaced.' },
-      { f: 'cp', t: 'gr', l: 'place save, start', d: 'The runtime starts on the imported save.' },
+      { f: 'cp', t: 'gr', l: 'hold, back up current world', d: 'The runtime saves and stops the game but keeps its container up. The current save is backed up before anything is replaced.' },
+      { f: 'cp', t: 'gr', l: 'place save, end hold', d: 'The runtime starts the game on the imported save.' },
       { f: 'gr', t: 'cp', l: 'world loaded, matches save', dash: true, d: 'If it fails to load, the control plane restores the backup and reports why.' },
       { f: 'cp', t: 'ui', l: 'imported', dash: true, d: 'The world list shows the new world and its object count.' }
     ] },
-    update: { label: 'Game update', cap: 'Proposed: a world that does not load after a game update is stopped before it can save over the real one.', steps: [
+    update: { label: 'Game update', cap: 'A world that does not load after a game update is stopped before it can save over the real one.', steps: [
       { f: 'cp', t: 'steam', l: 'newest server build?', d: 'Policy checks on a schedule.' },
-      { f: 'steam', t: 'cp', l: 'new build available', dash: true, d: 'The update is a pending change with cost: game restart.' },
-      { f: 'cp', t: 'ui', l: 'pending: game update', dash: true, d: 'Held until the world is empty, like any game-restart change.' },
+      { f: 'steam', t: 'cp', l: 'new build available', dash: true, d: 'The update is a pending change with cost: game-server restart.' },
+      { f: 'cp', t: 'ui', l: 'pending: game update', dash: true, d: 'Held until the world is empty, like any game-server restart.' },
       { f: 'dl', t: 'cp', l: 'presence: 0 players', dash: true, d: 'The world empties.' },
-      { f: 'cp', t: 'gr', l: 'save world, stop', d: 'Saved before the update.' },
+      { f: 'cp', t: 'gr', l: 'generation with the new build', d: 'The runtime saves the world and exits; Compose restarts it.' },
       { f: 'gr', t: 'steam', l: 'download update', d: 'SteamCMD fetches the new build.' },
       { f: 'gr', t: 'cp', l: 'world truth: failed to load', dash: true, d: 'Example: the patch broke a plugin patch, and the world came up empty.' },
-      { f: 'cp', t: 'gr', l: 'stop before first autosave', d: 'An empty world must never save over the real one. The save stays intact.' },
+      { f: 'cp', t: 'gr', l: 'hold before first autosave', d: 'The game stops and the runtime holds. An empty world must never save over the real one, so the save stays intact.' },
       { f: 'cp', t: 'ui', l: 'update held: world did not load', dash: true, d: 'The server manager sees why. Release notes name the game build each release was accepted on.' }
     ] },
     down: { label: 'Control plane stops', cap: 'The control plane is needed to change an install, not to run it.', steps: [

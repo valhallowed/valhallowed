@@ -4,8 +4,9 @@ A self-hosted Valheim dedicated server with a server-side plugin, telemetry,
 governed in-game commands and a web map, configured through one manifest. VHD
 for short. Its home will be valhallowed.com; the site is not up yet.
 
-**Status: pre-release.** This repository holds the design, the release
-pipeline and a stand-in image. Nothing here is useful to install yet.
+**Status: pre-release.** This repository holds the design, the manifest
+schema, the release pipeline and a stand-in image. Nothing here is useful to
+install yet.
 
 ## Docs
 
@@ -13,6 +14,7 @@ pipeline and a stand-in image. Nothing here is useful to install yet.
 |---|---|
 | [Architecture](docs/architecture.md) | The target, ground rules, the model, boundaries, exposure, releases, open decisions |
 | [Glossary](docs/glossary.md) | Every term, with exactly one meaning |
+| [Schema](schema/) | Every setting and secret key, with its default and change cost |
 | [Brand](docs/brand.md) | The name, the two voices, what the colours mean |
 | [Design](design/README.md) | The design system: tokens and fonts |
 | [Diagrams](docs/diagrams/README.md) | Interactive pages that draw the architecture |

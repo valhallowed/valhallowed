@@ -1,0 +1,11 @@
+# Two worlds: each sets its port, and the ranges do not overlap.
+schema = 1
+
+[world.Meadowfold]
+port = 2456
+
+[world.Ashwake]
+port = 2459
+
+[web_map]
+port = 8456

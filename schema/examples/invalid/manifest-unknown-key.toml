@@ -1,0 +1,5 @@
+# expect: 'prot' was unexpected
+schema = 1
+
+[world.Meadowfold]
+prot = 2456

@@ -1,0 +1,2 @@
+# expect: 'world' is a required property
+schema = 1

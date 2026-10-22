@@ -1,0 +1,4 @@
+# One world on every default: port 2456, web map on 8456.
+schema = 1
+
+[world.Meadowfold]
