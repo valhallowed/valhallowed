@@ -23,8 +23,9 @@ install yet.
 
 Images live at `ghcr.io/valhallowed/<component>`. They are built once, on
 `main`, and a version tag promotes them without a rebuild; candidates and
-releases attach `compose.yaml`, pinned by digest, and `SHA256SUMS`. The channels
-and gates are in [Architecture § Releases](docs/architecture.md#releases).
+releases attach `compose.yaml`, pinned by digest, the manifest schema and
+`SHA256SUMS`. The channels and gates are in
+[Architecture § Releases](docs/architecture.md#releases).
 
 ## Building locally
 
