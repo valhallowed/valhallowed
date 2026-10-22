@@ -3,9 +3,19 @@
 # downloaded in a build stage and discarded. SteamCMD and the server download
 # into /data at first start, so no Valve or Iron Gate file is in any image.
 
+# Debian as it was when the pinned base image was built: the image names that
+# snapshot in its own sources, so every package pinned below stays installable,
+# and nothing an image installs moves until the base image does. A snapshot's
+# Release files expire; their signatures are still checked.
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS debian
+RUN sources=/etc/apt/sources.list.d/debian.sources \
+ && sed -i -e '/^URIs: /d' -e 's|^# \(http://snapshot\.debian\.org/archive/.*\)$|URIs: \1|' "$sources" \
+ && [ "$(grep -c '^URIs: http://snapshot\.debian\.org/' "$sources")" -eq 2 ] \
+ && printf 'Acquire::Check-Valid-Until "false";\nAcquire::Retries "5";\n' > /etc/apt/apt.conf.d/80snapshot
+
 # SteamCMD, for the plugin build and for scripts/game-build.sh, which asks Steam
 # for the dedicated server's current build.
-FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS steamcmd
+FROM debian AS steamcmd
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates=20250419+deb13u1 \
@@ -68,7 +78,7 @@ FROM scratch AS plugin
 COPY --from=check /out/Valhallowed.Plugin.dll /
 COPY --from=game /refs/game-build /
 
-FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS runtime
+FROM debian AS runtime
 # lib32gcc-s1 for SteamCMD, which is 32-bit; libatomic1 and the PulseAudio
 # libraries for the server's PlayFab library, which it loads at start; tini reaps
 # the processes SteamCMD leaves behind; Python and jsonschema for the supervisor.
