@@ -67,7 +67,12 @@ class Apply:
             self._hand(state, generation)
             self._own(host.owner)
         self._write(rendered_path, rendered, host.owner)
-        print(f"vhd apply: generation {generation.number} for {len(generation.children)} world(s)", file=self.out)
+        # Flushed, so it comes before Compose's own output.
+        print(
+            f"vhd apply: generation {generation.number} for {len(generation.children)} world(s)",
+            file=self.out,
+            flush=True,
+        )
         self.docker.stream(
             ["compose", "-p", host.project, "-f", str(rendered_path), "up", "--detach", "--wait", "--remove-orphans"]
         )
@@ -133,7 +138,11 @@ class Apply:
                 "status shows no players, or run: docker compose run --rm vhd apply --disconnect-players"
             )
         _log.warning("restarting %s with players possibly online, as the server manager asked", ", ".join(occupied))
-        print(f"vhd apply: restarting {', '.join(occupied)} with players possibly online, as asked", file=self.out)
+        print(
+            f"vhd apply: restarting {', '.join(occupied)} with players possibly online, as asked",
+            file=self.out,
+            flush=True,
+        )
 
     def _hand(self, state: State, generation: Generation) -> None:
         for directory in (self.store.root, self.control_dir):
