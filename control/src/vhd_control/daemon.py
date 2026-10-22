@@ -75,6 +75,31 @@ class Daemon:
                 _log.info("generation %d for %s waits for %s", number, generation.children[cid].world, waits)
         self._pending = pending
 
+    def status(self) -> dict[str, object] | None:
+        """What GET /status returns (contracts/control.status.schema.json), or None before the
+        first generation."""
+        state = self.store.load()
+        if state.generation is None:
+            return None
+        worlds: dict[str, object] = {}
+        for cid, child in state.generation.children.items():
+            view = self.book.view(child.world)
+            entry: dict[str, object] = {"state": view.state}
+            handed = state.handed.get(cid)
+            if handed is not None:
+                entry["published"] = handed.number
+            pending = self._pending.get(cid)
+            if pending is not None:
+                entry["pending"] = {"generation": pending[0], "waits_for": pending[1]}
+            if view.report is not None and view.age_s is not None:
+                entry["report"] = view.report
+                entry["report_age_s"] = round(view.age_s, 1)
+            worlds[child.world] = entry
+        document: dict[str, object] = {"contract": 1, "generation": state.generation.number, "worlds": worlds}
+        if self.refused is not None:
+            document["refused"] = self.refused
+        return document
+
     def pending(self, child_id: str) -> tuple[int, str] | None:
         return self._pending.get(child_id)
 

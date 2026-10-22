@@ -31,10 +31,10 @@
     "world": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["published", "state"],
+      "required": ["state"],
       "properties": {
         "published": {
-          "description": "The generation this world's runtime has been handed.",
+          "description": "The generation this world's runtime has been handed. Absent until vhd apply has created the world.",
           "type": "integer",
           "minimum": 1
         },
