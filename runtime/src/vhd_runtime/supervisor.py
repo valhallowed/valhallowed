@@ -110,10 +110,7 @@ class Supervisor:
         if generation is None:
             return 0
         reporter = status.Reporter(generation.status_url, self.post)
-        reporter.send(
-            {"contract": 1, "generation": generation.number, "world": generation.world, "state": State.INSTALLING}
-        )
-        build = self._install()
+        build = self._install(generation, reporter)
         if build is None:
             return 0
         server.install_mods(
@@ -135,13 +132,30 @@ class Supervisor:
         )
         return self._watch(process, generation, reporter, save_existed, build)
 
-    def _install(self) -> str | None:
-        """SteamCMD and the dedicated server, installed if missing: the server's build id, or
-        None when a stop arrived first, so nothing launches."""
+    def _install(self, generation: Generation, reporter: status.Reporter) -> str | None:
+        """SteamCMD and the dedicated server, installed or updated: the server's build id, or
+        None when a stop arrived first, so nothing launches. Status keeps reporting the
+        install, which can take many minutes, so the control plane never takes it for silence."""
+        installing: status.RuntimeStatus = {
+            "contract": 1,
+            "generation": generation.number,
+            "world": generation.world,
+            "state": State.INSTALLING,
+        }
+        reporter.send(installing)
+        next_report = self.clock.now() + generation.status_interval_s
+
+        def stopping() -> bool:
+            nonlocal next_report
+            if self.clock.now() >= next_report:
+                reporter.send(installing)
+                next_report = self.clock.now() + generation.status_interval_s
+            return self._stop
+
         try:
             steamcmd = steam.ensure_steamcmd(self.paths.steamcmd, self.fetch)
             if not self._stop:
-                return steam.ensure_server(steamcmd, self.paths.server, self.run_steamcmd, lambda: self._stop)
+                return steam.ensure_server(steamcmd, self.paths.server, self.run_steamcmd, stopping)
         except steam.Stopped:
             pass
         _log.info("stopping: stop requested while installing")

@@ -412,3 +412,19 @@ def test_a_stop_during_the_install_launches_nothing(world: World) -> None:
 
     assert sup.run() == 0
     assert world.launches == []
+
+
+def test_status_keeps_reporting_a_long_install(world: World) -> None:
+    world.generation()
+
+    def run_steamcmd(command: list[str], timeout: float, stopping: steam.Stopping) -> None:
+        for _ in range(4):
+            world.time.sleep(5)
+            stopping()
+
+    sup = world.supervisor(run_steamcmd)
+    world.time.at(60, lambda: sup.request_stop(signal.SIGTERM, None))
+
+    assert sup.run() == 0
+    installing = [r for r in world.reports if r["state"] == "installing"]
+    assert len(installing) >= 4
