@@ -135,6 +135,9 @@ def test_the_rendered_install_mounts_each_world_only_its_own_generation(setup: S
     assert control_plane["user"] == f"{owner.st_uid}:{owner.st_gid}"
     assert {"type": "bind", "source": "/srv/vhd", "target": "/install", "read_only": True} in control_plane["volumes"]
     assert "ports" not in control_plane
+    for service in (world, control_plane):
+        assert service["cap_drop"] == ["ALL"]
+        assert service["security_opt"] == ["no-new-privileges:true"]
     assert services["vhd"]["profiles"] == ["tools"]
 
 
