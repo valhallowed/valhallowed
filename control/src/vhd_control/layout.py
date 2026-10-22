@@ -11,4 +11,16 @@ INSTALL = Path("/install")
 # The generations volume: one directory per child, which mounts only its own.
 GENERATIONS = Path("/generations")
 # The control API's socket, in a volume only the control plane and vhd mount.
-CONTROL_SOCKET = Path("/run/vhd-control/control.sock")
+CONTROL_DIR = Path("/run/vhd-control")
+CONTROL_SOCKET = CONTROL_DIR / "control.sock"
+# The schemas the release ships, schema/ and contracts/, inside the control plane's image.
+SCHEMAS = Path("/opt/vhd")
+# Where Docker's socket appears in vhd, and only there.
+DOCKER_SOCKET = "/var/run/docker.sock"
+# The install's private network: runtimes and the control plane's status listener.
+INSTALL_NETWORK = "install"
+# Named volumes, which Compose prefixes with the project name.
+GENERATIONS_VOLUME = "generations"
+CONTROL_VOLUME = "control"
+# The file vhd apply renders into the install folder, and the folder it sits in.
+RENDERED = Path(".vhd") / "compose.json"
