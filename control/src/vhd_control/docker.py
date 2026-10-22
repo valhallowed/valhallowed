@@ -28,11 +28,11 @@ class Cli:
             [DOCKER, *args], capture_output=True, text=True, timeout=TIMEOUT_S, check=False
         )
         if result.returncode != 0:
-            raise DockerError(f"docker {' '.join(args[:2])}: {result.stderr.strip()}")
+            raise DockerError(f"docker {' '.join(args)}: {result.stderr.strip()}")
         return result.stdout
 
     def stream(self, args: list[str]) -> None:
         """Run docker with args, its output going straight to the server manager."""
         result = subprocess.run([DOCKER, *args], timeout=UP_TIMEOUT_S, check=False)  # noqa: S603
         if result.returncode != 0:
-            raise DockerError(f"docker {' '.join(args[:2])} exited with {result.returncode}")
+            raise DockerError(f"docker {' '.join(args)} exited with {result.returncode}")
