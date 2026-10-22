@@ -1,17 +1,19 @@
 """The generations volume: what each child was handed, and the install's state beside it.
 
-    <root>/state.json                    the newest generation, what each child holds, what vhd apply applied
-    <root>/<child id>/secrets.json       what that child reads (B1), secrets first
-    <root>/<child id>/generation.json
-    <root>/.lock                         held by whichever writes: the control plane or vhd apply
+    <root>/state.json                           the newest generation, what each child holds, what vhd apply applied
+    <root>/<child id>/<port>/secrets.json       what that child reads (B1), secrets first
+    <root>/<child id>/<port>/generation.json
+    <root>/.lock                                held by whichever writes: the control plane or vhd apply
 
-A child mounts only its own directory, so the root, state.json included, is the control
-plane's and vhd's alone.
+A child's container mounts only the directory for its own port, so the root, state.json
+included, is the control plane's and vhd's alone, and a world whose port changes reads its new
+documents only in the container vhd apply creates for that port.
 """
 
 import fcntl
 import json
 import os
+import shutil
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -82,17 +84,42 @@ class Store:
         # It holds every world's secrets, so only its owner reads it.
         self._write(self.root / STATE_FILE, document, 0o600)
 
-    def hand(self, state: State, child_id: str, child: Child, number: int) -> None:
-        """Publish a child's documents under number: secrets first, the generation second (B1)."""
-        directory = self.root / child_id
-        directory.mkdir(exist_ok=True)
-        directory.chmod(0o755)
-        if self.owner is not None:
-            os.chown(directory, *self.owner)
+    def hand(self, state: State, child_id: str, child: Child, number: int, record: bool = True) -> None:
+        """Publish a child's documents under number, into the directory for its port: secrets
+        first, the generation second (B1). Unless record is false, state notes that the child
+        holds them; vhd apply records a world moving to a new port only once Compose has moved it."""
+        directory = self.directory(child_id, child.port)
+        for level in (directory.parent, directory):
+            level.mkdir(exist_ok=True)
+            level.chmod(0o755)
+            if self.owner is not None:
+                os.chown(level, *self.owner)
         generation, secrets = child.numbered(number)
         self._write(directory / SECRETS_FILE, secrets, 0o644)
         self._write(directory / GENERATION_FILE, generation, 0o644)
-        state.handed[child_id] = Handed(number, child)
+        if record:
+            state.handed[child_id] = Handed(number, child)
+
+    def directory(self, child_id: str, port: int) -> Path:
+        """Where a child's documents live while its container runs on port: its subpath."""
+        return self.root / child_id / str(port)
+
+    def prune(self, ports: Mapping[str, int]) -> None:
+        """Remove every directory no container mounts any more: a removed world's, and a world's
+        old ports once Compose has moved it."""
+        for entry in self.root.iterdir():
+            if not entry.is_dir():
+                continue
+            if entry.name not in ports:
+                shutil.rmtree(entry)
+                continue
+            for stale in entry.iterdir():
+                if stale.name == str(ports[entry.name]):
+                    continue
+                if stale.is_dir():
+                    shutil.rmtree(stale)
+                else:
+                    stale.unlink()
 
     def _write(self, path: Path, document: object, mode: int) -> None:
         """Write whole and flushed to disk, then move into place, so a reader never sees half a

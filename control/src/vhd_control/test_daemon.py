@@ -57,7 +57,10 @@ class Install:
         self.book.record({"contract": 1, "generation": 1, "world": world, "state": "running", "players": players})
 
     def handed(self, cid: str) -> tuple[int, str | None]:
-        directory = self.volume / cid
+        """What the world's container reads: the documents for the port it was created with."""
+        applied = self.store.load().applied
+        assert applied is not None
+        directory = self.store.directory(cid, applied[cid])
         document = json.loads((directory / "generation.json").read_text())
         secrets = json.loads((directory / "secrets.json").read_text())
         return document["generation"], secrets.get("password")

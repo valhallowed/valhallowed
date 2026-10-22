@@ -7,6 +7,7 @@ import pytest
 
 from vhd_control import client, layout
 from vhd_control.apply import Apply, Refused
+from vhd_control.docker import DockerError
 from vhd_control.naming import child_id
 from vhd_control.render import STOP_GRACE
 from vhd_control.store import Store
@@ -27,6 +28,7 @@ class FakeDocker:
         self.running: list[str] = []
         self.mounts = {"/install": "/srv/vhd", "/var/run/docker.sock": "/var/run/docker.sock"}
         self.streamed: list[list[str]] = []
+        self.fail_up = False
 
     def output(self, args: list[str]) -> str:
         if args[0] == "version":
@@ -42,6 +44,8 @@ class FakeDocker:
 
     def stream(self, args: list[str]) -> None:
         self.streamed.append(args)
+        if self.fail_up:
+            raise DockerError("docker compose -p exited with 1")
 
 
 class Setup:
@@ -82,9 +86,15 @@ class Setup:
         document: dict[str, Any] = json.loads((self.install / layout.RENDERED).read_text())
         return document
 
-    def handed(self, cid: str) -> tuple[int, str | None]:
-        document = json.loads((self.volume / cid / "generation.json").read_text())
-        secrets = json.loads((self.volume / cid / "secrets.json").read_text())
+    def handed(self, cid: str, port: int | None = None) -> tuple[int, str | None]:
+        """What a world's container reads: by default, the documents for the port it was applied on."""
+        if port is None:
+            applied = Store(self.volume).load().applied
+            assert applied is not None
+            port = applied[cid]
+        directory = Store(self.volume).directory(cid, port)
+        document = json.loads((directory / "generation.json").read_text())
+        secrets = json.loads((directory / "secrets.json").read_text())
         return document["generation"], secrets.get("password")
 
 
@@ -118,7 +128,7 @@ def test_the_rendered_install_mounts_each_world_only_its_own_generation(setup: S
     generation = next(v for v in world["volumes"] if v["target"] == "/generation")
     assert generation == {
         "type": "volume", "source": "generations", "target": "/generation",
-        "read_only": True, "volume": {"subpath": MEADOWFOLD},
+        "read_only": True, "volume": {"subpath": f"{MEADOWFOLD}/2456"},
     }  # fmt: skip
     control_plane = services["control-plane"]
     owner = setup.install.stat()
@@ -196,3 +206,45 @@ def test_vhd_must_run_through_compose_from_the_install_folder(setup: Setup) -> N
     del setup.docker.mounts["/install"]
     with pytest.raises(Refused, match="docker compose run --rm vhd apply"):
         setup.apply()
+
+
+def test_a_port_change_compose_cannot_apply_leaves_the_world_as_it_was(setup: Setup) -> None:
+    setup.apply()
+    setup.docker.running = [MEADOWFOLD, ASHWAKE]
+    setup.players("Meadowfold", 0)
+    (setup.install / "manifest.toml").write_text(TWO_WORLDS.replace("2456", "2462"))
+    setup.docker.fail_up = True
+
+    with pytest.raises(DockerError):
+        setup.apply()
+
+    state = Store(setup.volume).load()
+    assert state.applied is not None
+    assert state.applied[MEADOWFOLD] == 2456
+    assert state.handed[MEADOWFOLD].number == 1
+    assert setup.handed(MEADOWFOLD, port=2456) == (1, None)
+    assert setup.handed(MEADOWFOLD, port=2462) == (2, None)
+
+
+def test_a_port_change_moves_the_world_and_clears_its_old_directory(setup: Setup) -> None:
+    setup.apply()
+    setup.docker.running = [MEADOWFOLD, ASHWAKE]
+    setup.players("Meadowfold", 0)
+    (setup.install / "manifest.toml").write_text(TWO_WORLDS.replace("2456", "2462"))
+
+    setup.apply()
+
+    state = Store(setup.volume).load()
+    assert state.applied == {MEADOWFOLD: 2462, ASHWAKE: 2459}
+    assert state.handed[MEADOWFOLD].number == 2
+    assert [p.name for p in (setup.volume / MEADOWFOLD).iterdir()] == ["2462"]
+
+
+def test_a_removed_world_loses_its_directory_once_compose_removes_it(setup: Setup) -> None:
+    setup.apply()
+    (setup.install / "manifest.toml").write_text("schema = 1\n\n[world.Meadowfold]\n")
+
+    setup.apply()
+
+    assert not (setup.volume / ASHWAKE).exists()
+    assert ASHWAKE not in Store(setup.volume).load().handed

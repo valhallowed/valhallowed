@@ -53,7 +53,12 @@ def render(generation: Generation, host: Host) -> dict[str, object]:
             "networks": [layout.INSTALL_NETWORK],
             "ports": [f"{first}-{last}:{first}-{last}/udp"],
             "volumes": [
-                {**generations, "target": "/generation", "read_only": True, "volume": {"subpath": cid}},
+                {
+                    **generations,
+                    "target": "/generation",
+                    "read_only": True,
+                    "volume": {"subpath": f"{cid}/{child.port}"},
+                },
                 {"type": "volume", "source": f"{cid}-data", "target": "/data"},
             ],
         }

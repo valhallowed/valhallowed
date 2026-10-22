@@ -117,7 +117,9 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   directory, read-only (a volume subpath, which needs Docker Engine 26), so it
   can read no other child's secrets. The secrets go first and the generation
   second, and a child acts on neither until both carry the same generation
-  (B1).
+  (B1). A world's directory is also keyed by its port, so when `vhd apply`
+  moves a world to a new port only the new container reads that change, and a
+  Compose run that fails leaves the running world as it was.
 - **Running as.** The control plane runs as the user who owns the install
   folder, which `vhd apply` reads from the folder, so the secrets file can stay
   readable by its owner alone. Every other child runs as VHD's own

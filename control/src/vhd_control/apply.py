@@ -6,8 +6,10 @@ The one place that holds Docker's socket, for its run alone. In order, it:
 3. learns the install's host path, Docker's socket and the Compose project from its own container;
 4. takes the release's images from the install's compose.yaml (x-vhd);
 5. refuses to restart a world that may have players online, unless told to disconnect them;
-6. hands every runtime its documents, owned by the install folder's owner;
-7. renders .vhd/compose.json, and has Compose recreate only the containers whose definition changed.
+6. hands every runtime its documents, owned by the install folder's owner, a world moving to a
+   new port in the directory only its new container mounts;
+7. renders .vhd/compose.json, and has Compose recreate only the containers whose definition changed;
+8. once Compose succeeds, records the ports the containers now publish.
 """
 
 import json
@@ -24,7 +26,7 @@ from vhd_control.reconcile import Generation, reconcile
 from vhd_control.render import Host, render
 from vhd_control.schemas import Schemas
 from vhd_control.status import WorldView
-from vhd_control.store import State, Store
+from vhd_control.store import Handed, State, Store
 
 # Docker Engine 26, the first with volume subpaths.
 MIN_ENGINE_API = (1, 45)
@@ -66,7 +68,7 @@ class Apply:
             restarts = _restarts(generation, state, rendered, previous, running)
             if restarts:
                 self._confirm(restarts, disconnect_players)
-            self._hand(state, generation)
+            moving = self._stage(state, generation)
             self._own(host.owner)
         self._write(rendered_path, rendered, host.owner)
         # Flushed, so it comes before Compose's own output.
@@ -75,9 +77,13 @@ class Apply:
             file=self.out,
             flush=True,
         )
+        # If Compose fails, state keeps the containers' old ports, and status shows the change
+        # still waiting for vhd apply.
         self.docker.stream(
             ["compose", "-p", host.project, "-f", str(rendered_path), "up", "--detach", "--wait", "--remove-orphans"]
         )
+        with self.store.locked():
+            self._commit(self.store.load(), generation, moving)
 
     def _check_engine(self) -> None:
         version = self.docker.output(["version", "--format", "{{.Server.APIVersion}}"]).strip()
@@ -146,18 +152,34 @@ class Apply:
             flush=True,
         )
 
-    def _hand(self, state: State, generation: Generation) -> None:
+    def _stage(self, state: State, generation: Generation) -> set[str]:
+        """Hand each runtime what it may read now, and return the worlds moving to a new port.
+        Those get their documents in the directory for the new port, which only the container
+        Compose creates for it mounts, so the running one never reads a port it does not publish."""
         for directory in (self.store.root, self.control_dir):
             directory.chmod(0o755)
+        applied = state.applied or {}
+        moving: set[str] = set()
         for cid, child in generation.children.items():
             handed = state.handed.get(cid)
-            if handed is None or handed.number != generation.number or handed.child != child:
+            if cid in applied and applied[cid] != child.port:
+                self.store.hand(state, cid, child, generation.number, record=False)
+                moving.add(cid)
+            elif handed is None or handed.number != generation.number or handed.child != child:
                 self.store.hand(state, cid, child, generation.number)
+        state.generation = generation
+        self.store.save(state)
+        return moving
+
+    def _commit(self, state: State, generation: Generation, moving: set[str]) -> None:
+        """Once Compose has the containers in line, record what each world now runs."""
+        for cid in moving:
+            state.handed[cid] = Handed(generation.number, generation.children[cid])
         for cid in set(state.handed) - set(generation.children):
             del state.handed[cid]
-        state.generation = generation
         state.applied = {cid: child.port for cid, child in generation.children.items()}
         self.store.save(state)
+        self.store.prune(state.applied)
 
     def _own(self, owner: tuple[int, int]) -> None:
         """Give the volumes' roots to the install folder's owner, whom the control plane runs as.
