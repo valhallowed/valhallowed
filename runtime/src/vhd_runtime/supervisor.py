@@ -113,8 +113,9 @@ class Supervisor:
         reporter.send(
             {"contract": 1, "generation": generation.number, "world": generation.world, "state": State.INSTALLING}
         )
-        steamcmd = steam.ensure_steamcmd(self.paths.steamcmd, self.fetch)
-        build = steam.ensure_server(steamcmd, self.paths.server, self.run_steamcmd)
+        build = self._install()
+        if build is None:
+            return 0
         server.install_mods(
             self.paths.pack, self.paths.plugin, self.paths.server, self.paths.world_status, generation.status_interval_s
         )
@@ -133,6 +134,18 @@ class Supervisor:
             self.paths.server,
         )
         return self._watch(process, generation, reporter, save_existed, build)
+
+    def _install(self) -> str | None:
+        """SteamCMD and the dedicated server, installed if missing: the server's build id, or
+        None when a stop arrived first, so nothing launches."""
+        try:
+            steamcmd = steam.ensure_steamcmd(self.paths.steamcmd, self.fetch)
+            if not self._stop:
+                return steam.ensure_server(steamcmd, self.paths.server, self.run_steamcmd, lambda: self._stop)
+        except steam.Stopped:
+            pass
+        _log.info("stopping: stop requested while installing")
+        return None
 
     def _watch(
         self, process: Process, generation: Generation, reporter: status.Reporter, save_existed: bool, build: str

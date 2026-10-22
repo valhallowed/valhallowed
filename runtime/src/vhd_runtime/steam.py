@@ -5,9 +5,13 @@ plane's policy (Game runtimes), and that capability comes later.
 """
 
 import logging
+import os
 import re
+import shutil
+import signal
 import subprocess
 import tarfile
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import IO, Protocol, cast
@@ -18,8 +22,16 @@ SERVER_APP_ID = 896660
 INSTALL_ATTEMPTS = 3
 DOWNLOAD_TIMEOUT_S = 60
 INSTALL_TIMEOUT_S = 3600
+TERMINATE_TIMEOUT_S = 10
+POLL_S = 1.0
+# Steam's mark for a complete install; any other value is treated as not installed.
+FULLY_INSTALLED = "4"
 
 _log = logging.getLogger(__name__)
+
+
+class Stopped(Exception):
+    """A stop was requested while SteamCMD ran."""
 
 
 class Response(Protocol):
@@ -28,44 +40,79 @@ class Response(Protocol):
 
 
 Fetch = Callable[[str, float], Response]
-Run = Callable[[list[str], float], None]
+Stopping = Callable[[], bool]
+Run = Callable[[list[str], float, Stopping], None]
 
 
 def fetch(url: str, timeout: float) -> Response:
     return cast(Response, urlopen(url, timeout=timeout))  # noqa: S310 - a fixed https URL
 
 
-def run(command: list[str], timeout: float) -> None:
-    # SteamCMD's exit code is unreliable on a first run; the caller checks the
-    # files it wrote instead.
-    subprocess.run(command, check=False, timeout=timeout)  # noqa: S603
+def run(command: list[str], timeout: float, stopping: Stopping) -> None:
+    """Run SteamCMD until it exits, the timeout passes or a stop is requested. Its exit code
+    is unreliable on a first run, so the caller checks the files it wrote instead."""
+    # A session of its own, so a stop reaches the SteamCMD binary the script starts.
+    process = subprocess.Popen(command, start_new_session=True)  # noqa: S603
+    deadline = time.monotonic() + timeout
+    while process.poll() is None:
+        if stopping():
+            _end(process)
+            raise Stopped("stop requested while SteamCMD ran")
+        if time.monotonic() > deadline:
+            _log.error("SteamCMD did not finish within %d s", timeout)
+            _end(process)
+            return
+        time.sleep(POLL_S)
+
+
+def _end(process: subprocess.Popen[bytes]) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+        process.wait(timeout=TERMINATE_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+    except ProcessLookupError:
+        process.wait()
 
 
 def ensure_steamcmd(directory: Path, fetch: Fetch = fetch) -> Path:
-    """SteamCMD in directory, downloaded from Valve on the first start."""
+    """SteamCMD in directory, downloaded from Valve on the first start. The archive is
+    unpacked beside the directory and moved into place whole, so an interrupted download
+    never leaves a SteamCMD that looks installed."""
     script = directory / "steamcmd.sh"
     if script.exists():
         return script
+    partial = directory.with_name(f"{directory.name}.partial")
+    shutil.rmtree(partial, ignore_errors=True)
+    partial.mkdir(parents=True)
     _log.info("downloading SteamCMD from %s", STEAMCMD_URL)
-    directory.mkdir(parents=True, exist_ok=True)
     with fetch(STEAMCMD_URL, DOWNLOAD_TIMEOUT_S) as response, tarfile.open(fileobj=response, mode="r|gz") as archive:
-        archive.extractall(directory, filter="data")
-    if not script.exists():
+        archive.extractall(partial, filter="data")
+    if not (partial / script.name).exists():
+        shutil.rmtree(partial)
         raise RuntimeError(f"the SteamCMD download did not contain {script.name}")
+    shutil.rmtree(directory, ignore_errors=True)
+    partial.rename(directory)
     return script
 
 
 def server_build(install_dir: Path) -> str | None:
-    """The installed dedicated server's build id, or None if it is not installed."""
+    """The installed dedicated server's build id, or None unless Steam records it fully installed."""
     manifest = install_dir / "steamapps" / f"appmanifest_{SERVER_APP_ID}.acf"
     if not manifest.exists():
         return None
-    match = re.search(r'^\s*"buildid"\s+"(\d+)"', manifest.read_text(), re.MULTILINE)
-    return match.group(1) if match else None
+    text = manifest.read_text()
+    flags = re.search(r'^\s*"StateFlags"\s+"(\d+)"', text, re.MULTILINE)
+    build = re.search(r'^\s*"buildid"\s+"(\d+)"', text, re.MULTILINE)
+    if flags is None or flags.group(1) != FULLY_INSTALLED or build is None:
+        return None
+    return build.group(1)
 
 
-def ensure_server(steamcmd: Path, install_dir: Path, run: Run = run) -> str:
-    """The dedicated server's build id, installing the server first if it is missing."""
+def ensure_server(steamcmd: Path, install_dir: Path, run: Run = run, stopping: Stopping = lambda: False) -> str:
+    """The dedicated server's build id, installing the server first if it is missing.
+    Raises Stopped when a stop is requested during the install."""
     build = server_build(install_dir)
     if build is not None:
         return build
@@ -82,7 +129,7 @@ def ensure_server(steamcmd: Path, install_dir: Path, run: Run = run) -> str:
     ]
     for attempt in range(1, INSTALL_ATTEMPTS + 1):
         _log.info("installing the dedicated server, attempt %d of %d", attempt, INSTALL_ATTEMPTS)
-        run(command, INSTALL_TIMEOUT_S)
+        run(command, INSTALL_TIMEOUT_S, stopping)
         build = server_build(install_dir)
         if build is not None:
             _log.info("dedicated server build %s installed", build)

@@ -13,11 +13,11 @@ RUN apt-get update \
 ADD https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz /tmp/steamcmd.tar.gz
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # SteamCMD's exit code is unreliable on a first run, so success is the app
-# manifest it writes, and a failed attempt is retried.
+# manifest it writes, marked fully installed, and a failed attempt is retried.
 RUN mkdir /steamcmd && tar -xzf /tmp/steamcmd.tar.gz -C /steamcmd \
  && for attempt in 1 2 3; do \
       /steamcmd/steamcmd.sh +force_install_dir /server +login anonymous +app_update 896660 validate +quit || true; \
-      [[ -f /server/steamapps/appmanifest_896660.acf ]] && break; \
+      grep -qE '^[[:space:]]*"StateFlags"[[:space:]]+"4"' /server/steamapps/appmanifest_896660.acf 2>/dev/null && break; \
       echo "steamcmd attempt $attempt failed" >&2; \
     done \
  && mkdir /refs \

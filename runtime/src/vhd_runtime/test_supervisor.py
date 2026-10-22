@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from vhd_runtime import supervisor
+from vhd_runtime import steam, supervisor
 from vhd_runtime.generation import Reader
 from vhd_runtime.supervisor import Clock, Paths, Supervisor
 
@@ -79,7 +79,9 @@ class World:
             directory.mkdir(parents=True)
         (self.paths.steamcmd / "steamcmd.sh").write_text("#!/bin/sh\n")
         (self.paths.server / "steamapps").mkdir(parents=True)
-        (self.paths.server / "steamapps" / "appmanifest_896660.acf").write_text('"buildid"\t\t"25909431"\n')
+        (self.paths.server / "steamapps" / "appmanifest_896660.acf").write_text(
+            '"StateFlags"\t\t"4"\n"buildid"\t\t"25909431"\n'
+        )
         (self.paths.pack / "BepInEx" / "core").mkdir(parents=True)
         (self.paths.pack / "doorstop_libs").mkdir()
         (self.paths.pack / "doorstop_libs" / "libdoorstop_x64.so").write_bytes(b"\x7fELF")
@@ -88,6 +90,7 @@ class World:
         self.process = FakeProcess()
         self.launches: list[list[str]] = []
         self.reports: list[dict[str, object]] = []
+        self.steamcmd_runs: list[list[str]] = []
 
     def generation(self, number: int = 1, password: str | None = None, secrets: bool = True) -> None:
         """Write a generation, and unless told not to, its secrets, as the control plane does."""
@@ -118,7 +121,7 @@ class World:
     def plugin_reports(self, objects: int) -> None:
         self.paths.world_status.write_text(json.dumps({"world": "Meadowfold", "objects": objects, "players": 0}))
 
-    def supervisor(self) -> Supervisor:
+    def supervisor(self, run_steamcmd: steam.Run | None = None) -> Supervisor:
         def launch(command: list[str], env: dict[str, str], cwd: Path) -> FakeProcess:
             self.launches.append(command)
             return self.process
@@ -130,10 +133,14 @@ class World:
             paths=self.paths,
             reader=Reader(self.paths.generation, CONTRACTS),
             launch=launch,
+            run_steamcmd=run_steamcmd or self.run_steamcmd,
             post=post,
             clock=Clock(now=lambda: self.time.now, sleep=self.time.sleep),
             environ={},
         )
+
+    def run_steamcmd(self, command: list[str], timeout: float, stopping: steam.Stopping) -> None:
+        self.steamcmd_runs.append(command)
 
     def states(self) -> list[object]:
         """The reported states, a repeated report of the same state counted once."""
@@ -389,3 +396,19 @@ def test_a_server_that_will_not_stop_is_killed(world: World) -> None:
     assert sup.run() == 0
     assert world.process.signals == [signal.SIGINT]
     assert world.process.killed
+
+
+def test_a_stop_during_the_install_launches_nothing(world: World) -> None:
+    world.generation()
+    (world.paths.server / "steamapps" / "appmanifest_896660.acf").unlink()
+    sup: Supervisor
+
+    def run_steamcmd(command: list[str], timeout: float, stopping: steam.Stopping) -> None:
+        sup.request_stop(signal.SIGTERM, None)
+        if stopping():
+            raise steam.Stopped("stop requested while SteamCMD ran")
+
+    sup = world.supervisor(run_steamcmd)
+
+    assert sup.run() == 0
+    assert world.launches == []
