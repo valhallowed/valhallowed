@@ -14,7 +14,7 @@ from types import FrameType
 from typing import Protocol
 
 from vhd_runtime import server, status, steam
-from vhd_runtime.generation import Generation, InvalidGeneration, Reader
+from vhd_runtime.generation import Generation, IncompleteGeneration, InvalidGeneration, Reader
 
 # Well below the game's autosave interval (30 minutes unless changed), so a
 # world held at this point has not saved.
@@ -98,7 +98,7 @@ class Supervisor:
     clock: Clock = field(default_factory=Clock)
     environ: Mapping[str, str] = field(default_factory=lambda: dict(os.environ))
     _stop: bool = field(default=False, init=False)
-    _invalid: str | None = field(default=None, init=False)
+    _problem: str | None = field(default=None, init=False)
     _remembered: int | None = field(default=None, init=False)
 
     def request_stop(self, signum: int, frame: FrameType | None) -> None:
@@ -144,8 +144,9 @@ class Supervisor:
         while True:
             if self._stop:
                 return self._shut_down(process, state, "stop requested")
-            if self._newer_generation(generation.number):
-                return self._shut_down(process, state, "a newer generation arrived")
+            generation, restart = self._follow(generation)
+            if restart:
+                return self._shut_down(process, state, "a newer generation changes this world's settings")
             if state is not State.HELD:
                 code = process.poll()
                 if code is not None:
@@ -243,20 +244,31 @@ class Supervisor:
             self.clock.sleep(GENERATION_POLL_S)
         return None
 
-    def _newer_generation(self, current: int) -> bool:
-        generation = self._read_generation()
-        return generation is not None and generation.number > current
+    def _follow(self, current: Generation) -> tuple[Generation, bool]:
+        """The generation to run on, and whether reaching it takes a restart. A newer generation
+        that differs only in its number is adopted in place."""
+        newer = self._read_generation()
+        if newer is None or newer.number <= current.number:
+            return current, False
+        if newer.same_settings(current):
+            _log.info("generation %d has the settings of %d; running on", newer.number, current.number)
+            return newer, False
+        return current, True
 
     def _read_generation(self) -> Generation | None:
-        """The valid generation on disk, or None. An invalid one is refused and logged once."""
+        """The complete, valid generation on disk, or None. An invalid one is refused, and an
+        incomplete one waited for, each logged once."""
         try:
             generation = self.reader.read()
-        except InvalidGeneration as error:
-            if str(error) != self._invalid:
-                _log.error("refusing the generation: %s", error)
-            self._invalid = str(error)
+        except (InvalidGeneration, IncompleteGeneration) as error:
+            if str(error) != self._problem:
+                if isinstance(error, InvalidGeneration):
+                    _log.error("refusing the generation: %s", error)
+                else:
+                    _log.info("waiting: %s", error)
+            self._problem = str(error)
             return None
-        self._invalid = None
+        self._problem = None
         return generation
 
 

@@ -89,7 +89,10 @@ class World:
         self.launches: list[list[str]] = []
         self.reports: list[dict[str, object]] = []
 
-    def generation(self, number: int = 1) -> None:
+    def generation(self, number: int = 1, password: str | None = None, secrets: bool = True) -> None:
+        """Write a generation, and unless told not to, its secrets, as the control plane does."""
+        if secrets:
+            self.secrets(number, password)
         document = {
             "contract": 1,
             "generation": number,
@@ -98,6 +101,12 @@ class World:
             "status_url": STATUS_URL,
         }
         (self.paths.generation / "generation.json").write_text(json.dumps(document))
+
+    def secrets(self, number: int, password: str | None = None) -> None:
+        document: dict[str, object] = {"contract": 1, "generation": number}
+        if password is not None:
+            document["password"] = password
+        (self.paths.generation / "secrets.json").write_text(json.dumps(document))
 
     def save(self) -> None:
         (self.paths.saves / "worlds_local" / "Meadowfold").mkdir(parents=True)
@@ -288,14 +297,58 @@ def test_no_report_for_a_world_last_seen_empty_leaves_it_unverified(world: World
     assert not world.process.killed
 
 
-def test_a_newer_generation_stops_the_server_with_a_save(world: World) -> None:
+def test_a_newer_generation_that_changes_settings_stops_the_server_with_a_save(world: World) -> None:
+    world.generation(1)
+    sup = world.supervisor()
+    world.time.at(30, lambda: world.plugin_reports(10))
+    world.time.at(60, lambda: world.generation(2, password="hearth-and-horn"))
+
+    assert sup.run() == 0
+    assert world.process.signals == [signal.SIGINT]
+
+
+def test_a_newer_generation_with_the_same_settings_runs_on(world: World) -> None:
     world.generation(1)
     sup = world.supervisor()
     world.time.at(30, lambda: world.plugin_reports(10))
     world.time.at(60, lambda: world.generation(2))
+    world.time.at(120, lambda: sup.request_stop(signal.SIGTERM, None))
 
     assert sup.run() == 0
+    assert len(world.launches) == 1
     assert world.process.signals == [signal.SIGINT]
+    assert world.reports[-1]["generation"] == 2
+
+
+def test_a_generation_without_its_secrets_launches_nothing(world: World) -> None:
+    world.generation(secrets=False)
+    sup = world.supervisor()
+    world.time.at(60, lambda: sup.request_stop(signal.SIGTERM, None))
+
+    assert sup.run() == 0
+    assert world.launches == []
+
+
+def test_secrets_for_another_generation_launch_nothing(world: World) -> None:
+    world.secrets(1, password="hearth-and-horn")
+    world.generation(2, secrets=False)
+    sup = world.supervisor()
+    world.time.at(60, lambda: sup.request_stop(signal.SIGTERM, None))
+
+    assert sup.run() == 0
+    assert world.launches == []
+
+
+def test_a_newer_generation_waits_for_its_secrets(world: World) -> None:
+    world.generation(1, password="hearth-and-horn")
+    sup = world.supervisor()
+    world.time.at(30, lambda: world.plugin_reports(10))
+    world.time.at(60, lambda: world.generation(2, password="hearth-and-horn", secrets=False))
+    world.time.at(120, lambda: sup.request_stop(signal.SIGTERM, None))
+
+    assert sup.run() == 0
+    assert len(world.launches) == 1
+    assert world.reports[-1]["generation"] == 1
 
 
 def test_the_servers_own_exit_ends_the_runtime(world: World) -> None:
