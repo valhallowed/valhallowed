@@ -30,7 +30,9 @@ jobs:
       - name: Images CI builds are the images a release ships
         run: scripts/check-images.sh
       - name: Python
-        run: scripts/check-python.sh runtime
+        run: |
+          scripts/check-python.sh runtime
+          scripts/check-python.sh control
 
   build:
     needs: checks

@@ -1,0 +1,22 @@
+# Exact pins for the control plane's checks, transitive dependencies included.
+# The runtime dependencies match the Debian trixie packages the control plane
+# image installs from its base image's snapshot, so they stay equal until the
+# base image moves.
+jsonschema==4.19.2
+attrs==25.3.0
+jsonschema-specifications==2023.12.1
+referencing==0.36.2
+rpds-py==0.21.0
+pytest==9.1.1
+iniconfig==2.3.1
+packaging==26.3
+pluggy==1.6.0
+Pygments==2.21.0
+ruff==0.16.10
+mypy==2.4.0
+ast-serialize==0.12.1
+librt==0.16.0
+mypy-extensions==1.1.0
+pathspec==1.1.1
+typing-extensions==4.16.0
+types-jsonschema==4.19.0.4
