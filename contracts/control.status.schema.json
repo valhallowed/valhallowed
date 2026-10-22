@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Control API status",
+  "description": "I0: what the control API's GET /status returns: the install's newest generation, why the newest manifest or secrets were refused if they were, and each world's state. A world's state is its runtime's own report (B1), or unknown when the runtime has not reported for three of its reporting intervals.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "generation", "worlds"],
+  "properties": {
+    "contract": {
+      "description": "The version of this contract.",
+      "const": 1
+    },
+    "generation": {
+      "description": "The newest generation reconcile produced.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "refused": {
+      "description": "Why the newest manifest or secrets were refused. The generation above keeps running.",
+      "type": "string",
+      "minLength": 1
+    },
+    "worlds": {
+      "description": "Each world of the install, keyed by its save name.",
+      "type": "object",
+      "propertyNames": { "$ref": "../schema/manifest.schema.json#/$defs/save_name" },
+      "additionalProperties": { "$ref": "#/$defs/world" }
+    }
+  },
+  "$defs": {
+    "world": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["published", "state"],
+      "properties": {
+        "published": {
+          "description": "The generation this world's runtime has been handed.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "pending": {
+          "description": "A newer generation this world waits for.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["generation", "waits_for"],
+          "properties": {
+            "generation": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "waits_for": {
+              "description": "vhd apply: the change is to the world's container. an empty world: it restarts the game while players may be online, and vhd apply --disconnect-players applies it now.",
+              "enum": ["vhd apply", "an empty world"]
+            }
+          }
+        },
+        "state": {
+          "description": "The runtime's state as it last reported it, or unknown when it has not reported recently.",
+          "enum": ["installing", "loading", "running", "unverified", "held", "unknown"]
+        },
+        "report": {
+          "description": "The runtime's last report, as contracts/game-runtime.status.schema.json defines it. The control plane validated it on arrival.",
+          "type": "object",
+          "required": ["contract", "generation", "world", "state"]
+        },
+        "report_age_s": {
+          "description": "Seconds since that report arrived.",
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

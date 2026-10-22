@@ -104,7 +104,24 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   manifest, holds a game-server restart while players are online unless the
   server manager confirms it, renders the install's compose file from the
   current generation and the release's `compose.yaml`, and has Compose
-  recreate only the containers whose definition changed.
+  recreate only the containers whose definition changed. `vhd apply
+  --disconnect-players` is that confirmation. A world whose runtime has
+  stopped reporting counts as occupied, since status cannot vouch for it. The
+  Compose it runs is the one in the control plane's image, so the host needs
+  Docker Engine 26 or newer and any Compose that can start the one-shot.
+- **Delivering a generation.** The control plane writes each child's
+  generation, and the secrets scoped to it, into that child's own directory of
+  one generations volume. The directory, like the child's container, is named
+  for it: a world's save name in lower case with a short hash, since save names
+  allow characters Compose names do not. Each child mounts only its own
+  directory, read-only (a volume subpath, which needs Docker Engine 26), so it
+  can read no other child's secrets. The secrets go first and the generation
+  second, and a child acts on neither until both carry the same generation
+  (B1).
+- **Running as.** The control plane runs as the user who owns the install
+  folder, which `vhd apply` reads from the folder, so the secrets file can stay
+  readable by its owner alone. Every other child runs as VHD's own
+  unprivileged user.
 - **Host check.** At first start and on every reconcile, the control plane
   compares what the manifest asks for with what the host has: ports, memory
   and CPU per world, disk for worlds and backups. A shortfall is a warning in
@@ -112,14 +129,20 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   the world that needs it.
 - **Interfaces.** One control API. The TUI, the admin console and the CLI,
   `vhd`, are its clients. The CLI runs from the control plane's image, so a
-  host needs only Docker. The admin console listens locally unless the
-  manifest opens it. They cover manifest errors, hot reload, status, world
-  import and export, backups and logs.
+  host needs only Docker. The control API answers on a Unix socket in a volume
+  only the control plane and `vhd` mount, so no child and no network reaches
+  it. Children report status to a separate listener on the install network
+  that accepts status and nothing else. The admin console will put the control
+  API on the host's loopback, listening locally unless the manifest opens it,
+  once its authentication is settled (O14). They cover manifest errors, hot
+  reload, status, world import and export, backups and logs.
 - **Failure domain.** Needed to start or change an install, not to keep it
   running. If it stops at steady state, children keep running on the last good
   generation.
 - **Status reports world truth, not container health:** whether the world
-  loaded, and its object count against the save.
+  loaded, and its object count against the save. A world whose runtime has not
+  reported for three of its reporting intervals shows as unknown, never as its
+  last state.
 
 ### Game runtimes
 
@@ -294,3 +317,4 @@ or withdrawn.
 |---|---|---|---|
 | O12 | TLS for a public web map | Plain HTTP with warnings · bundled TLS with automatic certificates, for a hostname or a bare public IP · the server manager's own reverse proxy | Offer all three. Bundled TLS is the recommended public profile: Let's Encrypt has issued six-day certificates for bare IP addresses since January 2026, so it needs no domain, only port 80 or 443 reachable for the challenge. |
 | O13 | Default resources per world | Fixed defaults · sized from the host at first start | Fixed defaults, set from a measurement under player load. One idle-hours reading put a game server at 1.9–2.8 GiB of memory. The host check warns when the host falls short. |
+| O14 | Authenticating the admin console to the control API | A generated token the console asks for · Steam sign-in limited to the server manager · loopback with no authentication | A generated token, kept in the control plane's volume and printed by `vhd`. Loopback alone lets any user on the host act as the server manager. |

@@ -125,8 +125,8 @@
         <tbody>
           <tr><td>Game, per world</td><td class="num">udp 2456–2458 for one world; with several, each world sets its port</td><td>all interfaces</td><td>all, public</td><td>all, public</td><td>all interfaces</td><td><code>world.&lt;name&gt;.port</code>; reconcile rejects overlapping ranges, the host check flags a port already in use</td></tr>
           <tr><td>Web map</td><td class="num">tcp 8456</td><td>all interfaces, HTTP</td><td>all, public, HTTP</td><td>127.0.0.1, behind TLS on 443</td><td>off</td><td><code>web_map.port</code>, <code>web_map.listen</code>, <code>web_map.public_url</code></td></tr>
-          <tr><td>Admin console and control API</td><td class="num">tcp 9456</td><td>127.0.0.1</td><td>127.0.0.1</td><td>127.0.0.1</td><td>127.0.0.1</td><td><code>admin_console.listen</code></td></tr>
-          <tr><td>TUI and CLI</td><td class="num">none</td><td colspan="4">Inside the control plane container, or the CLI against the loopback control API</td><td>n/a</td></tr>
+          <tr><td>Admin console (once its authentication is settled, O14)</td><td class="num">tcp 9456</td><td>127.0.0.1</td><td>127.0.0.1</td><td>127.0.0.1</td><td>127.0.0.1</td><td><code>admin_console.listen</code></td></tr>
+          <tr><td>TUI and CLI</td><td class="num">none</td><td colspan="4">Inside the control plane container, or the CLI through the control plane’s socket, which no network reaches</td><td>n/a</td></tr>
           <tr><td>Intake, broker, world render</td><td class="num">none on the host</td><td colspan="4">Install network only; the plugin is their only caller</td><td>n/a</td></tr>
           <tr><td>Database (bundled)</td><td class="num">tcp 5432, install network</td><td colspan="4">Never published</td><td><code>database.url</code> for BYO</td></tr>
         </tbody>
@@ -198,7 +198,7 @@
     docker: N('Host', 'Docker engine', [['Does', 'pulls VHD images from the registry and runs the install'], ['Not', 'part of VHD; the host’s own']]),
     gr: N('Game runtime', 'Game runtime × worlds', [['Listens', 'three udp world ports per world, on all interfaces; defaults, set per world'], ['Outbound', 'Steam CDN for the server download and updates']]),
     wm: N('Data layer', 'Web map', [['LAN', 'tcp 8456 on all interfaces, plain HTTP'], ['Public, direct', 'the same port, open to the internet'], ['Public with TLS', '127.0.0.1:8456 behind TLS'], ['Game only', 'off']]),
-    cp: N('Control plane', 'Control plane', [['Listens', 'admin console and control API on 127.0.0.1:9456 by default'], ['Outbound', 'Steam, for the game update check']]),
+    cp: N('Control plane', 'Control plane', [['Listens', 'status from the children, on the install network only; the control API on a socket only vhd shares; the admin console on 127.0.0.1:9456 by default, once it exists'], ['Outbound', 'Steam, for the game update check']]),
     ib: N('Data layer', 'Intake · broker', [['Listens', 'install network only'], ['Callers', 'the plugin; the web map and chat relay through the broker']]),
     wr: N('Data layer', 'World render', [['Listens', 'nowhere; reads the map export from a shared volume']]),
     cr: N('Data layer', 'Chat relay', [['Outbound', 'the chat service, only while its secret is set']]),
