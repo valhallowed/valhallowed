@@ -17,7 +17,8 @@ Intel or AMD processor.
 ## Ground rules
 
 Decided. Each one binds every later decision. A rule keeps its number for
-good, and an open decision's number is never reused.
+good, and an open decision's number is never reused. A rule settled from an
+open decision names it.
 
 | # | Rule | Why |
 |---|---|---|
@@ -26,13 +27,20 @@ good, and an open decision's number is never reused.
 | G3 | **Bring your own, with complete defaults.** Every external dependency has a built-in default that works with no setup, and a typed way to substitute your own. | An existing database or chat service is a setting, not a fork. |
 | G4 | **Release pipeline first.** The pipeline exists and passes before any feature lands. Every feature ships through it. | Capability stays tested as features ship. |
 | G5 | **Distribution:** images on a public registry (G10), the plugin as a release artifact. Builds run locally and in GitHub Actions from one definition. | Several ways to consume it, one way to build it. |
-| G6 | **One strict point of ingress,** in three parts: secrets, control plane, game runtimes (below). | Validate once at the boundary. Internal logic never sees raw input, and failures stay in their own domain. |
-| G7 | **License: MIT.** | The simplest terms for the people who host it and the people who contribute. |
+| G6 | **One way in.** Settings, secrets and operator actions enter only through the control plane and are validated there. Nothing past it reads raw input. | Validate once at the boundary. Internal logic never sees raw input, and failures stay in their own domain. |
+| G7 | **License: MIT.** | The simplest terms for the people who host it and the people who contribute. Settled from O9. |
 | G8 | **Name:** the product is Valhallowed, short form VHD, at valhallowed.com. | One name across code, docs and marketing. |
 | G9 | **Every port, address and resource allocation is a default.** Each has a sensible default and can be changed in the manifest. | Hosts differ. Defaults make the first install work; overrides make every install fit. |
-| G10 | **Registry: GHCR.** Images publish to the GitHub Container Registry. | The workflow's own token publishes, so no registry secret is stored anywhere, and public images cost nothing to host or pull. |
-| G11 | **Identifiers.** Repos and images live in the `valhallowed` GitHub org: repo `valhallowed/valhallowed`, images `ghcr.io/valhallowed/<component>`, CLI `vhd`. | Image paths carry the owner, so they never have to change. |
+| G10 | **Registry: GHCR.** Images publish to the GitHub Container Registry. | The workflow's own token publishes, so no registry secret is stored anywhere, and public images cost nothing to host or pull. Settled from O7. |
+| G11 | **Identifiers.** Repos and images live in the `valhallowed` GitHub org: repo `valhallowed/valhallowed`, images `ghcr.io/valhallowed/<component>`, CLI `vhd`. | Image paths carry the owner, so they never have to change. Settled from O10. |
 | G12 | **Build once, promote by tag.** Only CI on `main` builds and pushes images. A version tag applies to images already in the registry and never rebuilds them. | A release is exactly the candidate that soaked, and nothing reaches the registry from a workstation. |
+| G13 | **Compose owns the containers; the running control plane holds no Docker socket.** The control plane validates, reconciles and publishes each generation; a child applies it in place, or exits and Compose restarts it. A change to the containers themselves (a world added or removed, a published port, a resource limit, the VHD version) waits as a pending change until the server manager runs `vhd apply`, which acts with the server manager's own access to Docker. | A Docker socket is root on the host, so whatever took over the control plane, or an admin console the manifest opened, would take the host with it. Container changes are rare, and they cost one host command. Settled from O1. |
+| G14 | **The data layer runs as children,** one container per service, never inside the control plane. | It carries the heavy traffic and fails more often; the control plane stays small and always up. Settled from O2. |
+| G15 | **One install runs many worlds,** each in its own game runtime, with its own world ports and resource limits. | A server manager with several worlds runs one install, with no extra tooling to keep several installs in step. A crash, a restart or a memory limit stays inside its world. Settled from O3. |
+| G16 | **VHD builds its own game runtime image:** SteamCMD, BepInEx and the plugin on a pinned base. The dedicated server downloads into the install at first start and on each update. `lloesche/valheim-server` is a reference, not a base. | Its environment settings would be a second ingress under ours (G6), and its backups and updates duplicate control-plane work. Settled from O4. |
+| G17 | **One repo, one version, one CI.** Every component lives in `valhallowed/valhallowed` and ships in the same release. | Cross-component changes land together, and one version describes a release. Settled from O5. |
+| G18 | **The manifest and the secrets file are TOML 1.0,** each checked against a versioned JSON Schema in [`schema/`](../schema/). Each file declares its schema version. A renamed key migrates automatically or fails with a message that names the new key. | TOML has one specification, explicit types and no meaningful indentation, so a value means what it looks like. JSON Schema is language-neutral: editors, the control plane and the settings reference read the same file. Settled from O6. |
+| G19 | **Languages:** Python for the control plane and the data layer, TypeScript for the web map and the admin console's front end, C# for the plugin. | One backend language, so the generation's producer and its main consumers share a toolchain. The game fixes the plugin's language. Settled from O11. |
 
 ## The model
 
@@ -60,31 +68,47 @@ flowchart LR
   services (chat relay, LLM provider, their own database).
 - **Least privilege.** Each child receives only the secrets it needs. No child
   reads the secrets source. Status shows set, unset or invalid, never a value.
-- **Kept apart from the manifest,** so the manifest can be committed and shared.
+- **Kept apart from the manifest,** in a file of their own (G18), so the
+  manifest can be committed and shared.
 
 ### Control plane
 
 Owns ingress, reconcile, child lifecycle, operator actions and status.
 
-- **Manifest.** Strongly typed, with a versioned schema. The one schema
+- **Manifest.** Strongly typed, with a versioned schema (G18). The one schema
   produces validation, defaults, each child's configuration and the
   user-facing settings reference, so the reference cannot drift from the code.
+  Every setting records its change cost and what applies it.
+- **Setting names.** Keys are snake_case. A capability's settings sit in a
+  table named for it (`web_map`, `chat_relay`); a world's sit under
+  `world.<save name>`. A secret's key mirrors the manifest path it belongs to
+  (`world.<save name>.password`). A port is an integer; any other quantity is
+  a string that carries its unit (`5s`, `6GiB`).
 - **Reconcile.** Manifest plus defaults produce one effective configuration
   (a generation). All or nothing: an invalid manifest on hot reload is rejected
   and the last good generation keeps running. Reconcile reports what was set,
   what defaulted and what that implies.
 - **Change cost.** Every setting is classed as live, service restart or
   game-server restart. A change that needs a game-server restart waits as
-  pending while players are online.
+  pending while players are online, unless the server manager applies it now
+  after being shown who it disconnects. The override is recorded with the
+  change.
+- **Applying a change.** The control plane publishes a generation; each child
+  it affects reloads it in place, or exits and Compose restarts it. A change to
+  the containers themselves waits as pending until the server manager runs
+  `vhd apply` (G13). That command renders the install's compose file from the
+  current generation and the release's `compose.yaml`, and Compose recreates
+  only the containers whose definition changed.
 - **Host check.** At first start and on every reconcile, the control plane
   compares what the manifest asks for with what the host has: ports, memory
   and CPU per world, disk for worlds and backups. A shortfall is a warning in
   status, never a silent failure. A port already taken on the host stops only
   the world that needs it.
-- **Interfaces.** One control API. The TUI, the admin console and the CLI are
-  its clients. The admin console listens locally unless the manifest opens it.
-  They cover manifest errors, hot reload, status, world import and export,
-  backups and logs.
+- **Interfaces.** One control API. The TUI, the admin console and the CLI,
+  `vhd`, are its clients. The CLI runs from the control plane's image, so a
+  host needs only Docker. The admin console listens locally unless the
+  manifest opens it. They cover manifest errors, hot reload, status, world
+  import and export, backups and logs.
 - **Failure domain.** Needed to start or change an install, not to keep it
   running. If it stops at steady state, children keep running on the last good
   generation.
@@ -99,23 +123,30 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   restart gating belong to the control plane.
 - **Children read only the effective configuration.** Generated files, such as
   the plugin's BepInEx config, are never edited by hand.
+- **World truth gates saving.** A world that fails world truth is stopped
+  before its first autosave, so an empty world never saves over the real one,
+  and status says why.
+- **Hold.** An action that replaces a world's files, such as import or
+  restore, puts its runtime on hold: the game stops and the container stays
+  up until the action finishes. No Docker socket is needed (G13).
 - **Capabilities are independent.** Telemetry, in-game commands, chat relay,
   assistant, web map and sign-in each switch on separately and declare what
   they depend on. A failure in one degrades that capability only.
 
-### Data layer (placement open, O2)
+### Data layer
 
 Telemetry intake, persistence, the command broker, the chat relay, the web map
-and the database. Three rules hold: only the broker creates a command, only the
-plugin executes one, and markers and journal entries are records, never
-commands.
+and the database, each service a child in its own container (G14). Three rules
+hold: only the broker creates a command, only the plugin executes one, and
+markers and journal entries are records, never commands.
 
 ### Internal boundaries
 
 The ingress is the one way in from outside. Every crossing inside VHD is a
 boundary, and every boundary follows one standard:
 
-- One typed contract, versioned with the release.
+- One typed contract, versioned with the release, with a contract test in the
+  pipeline.
 - The receiving side validates.
 - One owner.
 - A stated failure behaviour. Observations fail soft: drop and count, and the
@@ -180,11 +211,17 @@ Follows from G4 and G12.
 
 - **Images record the commit they were built from.** Versions exist only as
   tags, which is what lets a tag promote an image without rebuilding it.
-- **Every channel passes acceptance before it publishes:** a clean runner
-  installs it from the registry, anonymously. An image that was never pushed,
-  or is not public, fails there, not on someone's server.
-- **Candidates and releases attach `compose.yaml`,** with every image pinned by
-  digest, and `SHA256SUMS`.
+- **Acceptance installs from the registry.** A clean runner installs a
+  channel's images anonymously and checks that the install works. An image
+  that was never pushed, or is not public, fails there, not on someone's
+  server. Commit builds are what acceptance installs; a candidate or a release
+  is published only after acceptance passes on its images.
+- **The nightly game check** builds and accepts the newest commit against the
+  newest dedicated-server build, because game patches arrive without notice.
+  A failure blocks the next candidate.
+- **Candidates and releases attach** `compose.yaml`, with every image pinned by
+  digest, the manifest schema, the plugin artifact and `SHA256SUMS`. Release
+  notes name the game build the release was accepted on.
 - **Three gates.** The merge gate: every check passes before a merge to
   `main`. The candidate gate: acceptance passes on the registry images,
   including against the newest game build, before a candidate tag. The release
@@ -193,14 +230,15 @@ Follows from G4 and G12.
 
 ## Delivery order
 
-1. **Charter.** Settle the open decisions that shape the skeleton (O1–O6) and
-   the first version of the manifest schema.
+1. **Charter.** Settle the decisions that shape the skeleton (G13–G19) and the
+   first version of the manifest schema.
 2. **Pipeline and walking skeleton.** Build, publish, install from the registry
-   on a clean host, and see one live player on the web map.
+   on a clean host, and see one live player on the web map. The skeleton runs
+   on built-in defaults.
 3. **Acceptance material.** Recorded sessions, world saves and contracts that
    every capability must keep, synthesized or anonymized.
 4. **Capabilities, one release at a time,** each passing its acceptance
-   material.
+   material and each shipping with its bring-your-own settings (G3).
 
 ## Game facts
 
@@ -210,8 +248,15 @@ What any design here must respect about the game.
   `linux/amd64`. An ARM host is not supported.
 - Two save formats are live: a single pre-1.0 file and the 1.0+ chunked
   directory. Save numbers wrap; the game picks the newest by modification time.
-- The world-name setting must equal the save name, or the server creates a new,
-  empty world.
+- The server loads the save its world setting names. When no save has that
+  name, or the save fails to load, the server creates a new, empty world under
+  the name.
+- A world's server uses its port and the next one, over UDP; the server's own
+  start script asks for its port through port+2 to be forwarded. Worlds that
+  share a host need ranges that do not overlap.
+- The server lists itself publicly unless told not to. A listed server refuses
+  to start unless its password has at least five characters and is not part of
+  the world's name or seed.
 - Harmony binds patches by name. After a game patch, a patch can apply and then
   throw, so a healthy container does not mean a loaded world.
 - Player names are client-supplied and not unique. Identity comes only from
@@ -228,14 +273,10 @@ What any design here must respect about the game.
 
 ## Open decisions
 
+A number missing from this table was settled as a ground rule, which names it,
+or withdrawn.
+
 | # | Question | Options | Lean |
 |---|---|---|---|
-| O1 | How does the control plane control its children? | Single container, control plane as process supervisor · control plane drives containers through the Docker socket · cooperative: compose owns the containers, the control plane publishes generations, children reload in place or exit to be restarted | Cooperative: the only option that keeps both isolation and least privilege. Lifecycle actions such as world import need a stop-and-wait step. |
-| O2 | Where does the data layer sit? | Children of the control plane · inside the control plane | Children. It carries heavy traffic and fails more often; the control plane stays small and always up. |
-| O3 | Worlds per install | One install runs many worlds · one install per world | Many worlds. A server manager with several worlds runs one install, with no extra tooling to keep several installs in step. |
-| O4 | Game runtime image | Own thin image · built on `lloesche/valheim-server` | Own image. lloesche's environment settings would be a second ingress under ours, and its backups and updates duplicate control-plane work. lloesche stays a reference. |
-| O5 | Repo shape | One repo, one version, one CI · one repo per component | One repo. Cross-component changes land together, and one version describes a release. |
-| O6 | Manifest format and upgrade path | — | One file with a versioned schema. A renamed key migrates automatically or fails with a clear message. |
-| O11 | Languages for the control plane and the services | Python for the data layer and TypeScript for the web map · choose fresh | Python and TypeScript; the control plane is open. The plugin's stack is fixed by the game. |
-| O12 | TLS for a public web map | Plain HTTP with warnings · bundled TLS with automatic certificates, for a hostname or a bare public IP · the server manager's own reverse proxy | Offer all three. Bundled TLS is the recommended public profile: Let's Encrypt issues certificates for bare IP addresses since January 2026, so it needs no domain, only port 80 or 443 reachable for the challenge. |
+| O12 | TLS for a public web map | Plain HTTP with warnings · bundled TLS with automatic certificates, for a hostname or a bare public IP · the server manager's own reverse proxy | Offer all three. Bundled TLS is the recommended public profile: Let's Encrypt has issued six-day certificates for bare IP addresses since January 2026, so it needs no domain, only port 80 or 443 reachable for the challenge. |
 | O13 | Default resources per world | Fixed defaults · sized from the host at first start | Fixed defaults, set from a measurement under player load. One idle-hours reading put a game server at 1.9–2.8 GiB of memory. The host check warns when the host falls short. |
