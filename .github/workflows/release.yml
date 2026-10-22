@@ -1,5 +1,6 @@
-# A version tag promotes images already in the registry, accepts them from the
-# registry, and publishes the GitHub release. Nothing is rebuilt.
+# A version tag accepts, from the registry, the images it would promote, then
+# promotes exactly those digests and publishes the GitHub release. Nothing is
+# rebuilt.
 name: release
 
 on:
@@ -23,21 +24,35 @@ jobs:
       contents: read
       packages: write
     outputs:
-      version: ${{ steps.promote.outputs.version }}
-      prerelease: ${{ steps.promote.outputs.prerelease }}
-      commit: ${{ steps.promote.outputs.commit }}
+      version: ${{ steps.check.outputs.version }}
+      prerelease: ${{ steps.check.outputs.prerelease }}
+      compose_sha256: ${{ steps.accept.outputs.compose_sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/promote.sh --check "$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+      - id: accept
+        name: Install the source images from the registry, anonymously, and accept
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+          SOURCE: ${{ steps.check.outputs.source }}
+          COMMIT: ${{ steps.check.outputs.commit }}
+        run: |
+          scripts/render-install.sh "$VERSION" dist/compose.yaml --pin "$SOURCE"
+          scripts/accept.sh dist/compose.yaml "$COMMIT"
+          echo "compose_sha256=$(sha256sum dist/compose.yaml | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - name: Log in to GHCR
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-      - id: promote
+      - name: Promote the accepted digests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: scripts/promote.sh "$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+        run: scripts/promote.sh "$GITHUB_REF_NAME" dist/compose.yaml
 
   release:
     needs: promote
@@ -48,12 +63,15 @@ jobs:
       VERSION: ${{ needs.promote.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install from the registry, anonymously, and accept
+      - name: Render the install and check it is the one accepted
         env:
-          COMMIT: ${{ needs.promote.outputs.commit }}
+          ACCEPTED: ${{ needs.promote.outputs.compose_sha256 }}
         run: |
           scripts/render-install.sh "$VERSION" dist/compose.yaml --pin
-          scripts/accept.sh dist/compose.yaml "$COMMIT"
+          if ! echo "$ACCEPTED  dist/compose.yaml" | sha256sum --check --status; then
+            echo "release: dist/compose.yaml differs from the one acceptance passed" >&2
+            exit 1
+          fi
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
