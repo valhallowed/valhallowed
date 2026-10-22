@@ -125,7 +125,9 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   plane hands it; its supervisor reads the generation, installs and updates
   the server, starts and stops it, and reports status. Updates, backups,
   schedules, world import and export, and restart gating belong to the control
-  plane.
+  plane. Until the control plane sets an update policy, the supervisor updates
+  the server at every start, and world truth holds a world the update stops
+  from loading.
 - **Children read only the effective configuration.** Generated files, such as
   the plugin's BepInEx config, are never edited by hand.
 - **World truth gates saving.** A world that fails world truth is stopped

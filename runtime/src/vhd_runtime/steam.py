@@ -1,7 +1,8 @@
 """SteamCMD and the dedicated server, downloaded into the install at first start (G16).
 
-An installed server is kept as it is: when to update the game is the control
-plane's policy (Game runtimes), and that capability comes later.
+Every start also updates the server: the default until the control plane sets an
+update policy (Game runtimes). An update that breaks loading is what world truth
+holds.
 """
 
 import logging
@@ -111,27 +112,29 @@ def server_build(install_dir: Path) -> str | None:
 
 
 def ensure_server(steamcmd: Path, install_dir: Path, run: Run = run, stopping: Stopping = lambda: False) -> str:
-    """The dedicated server's build id, installing the server first if it is missing.
-    Raises Stopped when a stop is requested during the install."""
-    build = server_build(install_dir)
-    if build is not None:
-        return build
-    command = [
-        str(steamcmd),
-        "+force_install_dir",
-        str(install_dir),
-        "+login",
-        "anonymous",
-        "+app_update",
-        str(SERVER_APP_ID),
-        "validate",
-        "+quit",
-    ]
+    """The dedicated server's build id, after installing or updating it. A first install
+    validates every file and an update does not; an update that leaves the server not fully
+    installed is retried with validation. When SteamCMD cannot reach Steam, the installed
+    build stays as it was. Raises Stopped when a stop is requested meanwhile."""
+    installed = server_build(install_dir)
+    validate = installed is None
     for attempt in range(1, INSTALL_ATTEMPTS + 1):
-        _log.info("installing the dedicated server, attempt %d of %d", attempt, INSTALL_ATTEMPTS)
-        run(command, INSTALL_TIMEOUT_S, stopping)
+        _log.info(
+            "%s the dedicated server, attempt %d of %d",
+            "installing" if validate else "updating",
+            attempt,
+            INSTALL_ATTEMPTS,
+        )
+        run(_app_update(steamcmd, install_dir, validate), INSTALL_TIMEOUT_S, stopping)
         build = server_build(install_dir)
         if build is not None:
-            _log.info("dedicated server build %s installed", build)
+            _log.info("dedicated server build %s%s", build, "" if build == installed else f", was {installed}")
             return build
+        validate = True
     raise RuntimeError(f"SteamCMD did not install the dedicated server after {INSTALL_ATTEMPTS} attempts")
+
+
+def _app_update(steamcmd: Path, install_dir: Path, validate: bool) -> list[str]:
+    command = [str(steamcmd), "+force_install_dir", str(install_dir), "+login", "anonymous"]
+    command += ["+app_update", str(SERVER_APP_ID), *(["validate"] if validate else []), "+quit"]
+    return command

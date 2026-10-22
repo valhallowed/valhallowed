@@ -72,11 +72,25 @@ def install_manifest(install_dir: Path, flags: str = "4") -> None:
     (install_dir / "steamapps" / "appmanifest_896660.acf").write_text(MANIFEST.replace("{flags}", flags))
 
 
-def test_an_installed_server_is_kept(tmp_path: Path) -> None:
+def test_an_installed_server_is_updated_without_validation(tmp_path: Path) -> None:
     install_manifest(tmp_path)
     calls: list[list[str]] = []
     assert steam.ensure_server(tmp_path / "steamcmd.sh", tmp_path, lambda c, t, s: calls.append(c)) == "25909431"
-    assert calls == []
+    assert len(calls) == 1
+    assert "+app_update" in calls[0]
+    assert "validate" not in calls[0]
+
+
+def test_an_update_that_breaks_the_install_is_validated(tmp_path: Path) -> None:
+    install_manifest(tmp_path)
+    calls: list[list[str]] = []
+
+    def run(command: list[str], timeout: float, stopping: steam.Stopping) -> None:
+        calls.append(command)
+        install_manifest(tmp_path, flags="1026" if len(calls) == 1 else "4")
+
+    assert steam.ensure_server(Path("/s/steamcmd.sh"), tmp_path, run) == "25909431"
+    assert ["validate" in c for c in calls] == [False, True]
 
 
 def test_a_server_not_fully_installed_is_installed_again(tmp_path: Path) -> None:
@@ -105,6 +119,7 @@ def test_installs_and_retries_until_the_manifest_exists(tmp_path: Path) -> None:
     assert command.index("+force_install_dir") < command.index("+login")
     assert command[command.index("+login") + 1] == "anonymous"
     assert command[command.index("+app_update") + 1] == "896660"
+    assert "validate" in command
 
 
 def test_gives_up_after_the_last_attempt(tmp_path: Path) -> None:
