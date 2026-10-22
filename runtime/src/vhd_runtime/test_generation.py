@@ -87,3 +87,11 @@ def test_refuses_malformed_json(tmp_path: Path) -> None:
     (tmp_path / "generation.json").write_text("{")
     with pytest.raises(InvalidGeneration, match=r"generation\.json"):
         Reader(tmp_path, CONTRACTS).read()
+
+
+def test_refuses_a_mount_that_shows_other_worlds(tmp_path: Path) -> None:
+    write(tmp_path, "generation.json", MINIMAL)
+    write(tmp_path, "secrets.json", {"contract": 1, "generation": 4})
+    (tmp_path / "world-ashwake-1a2b3c").mkdir()
+    with pytest.raises(InvalidGeneration, match="other worlds"):
+        Reader(tmp_path, CONTRACTS).read()

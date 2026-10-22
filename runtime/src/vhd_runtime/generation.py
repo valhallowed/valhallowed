@@ -76,6 +76,10 @@ class Reader:
         generation_path = self._directory / GENERATION_FILE
         if not generation_path.exists():
             return None
+        # Each world's directory holds two files. A directory here means the whole generations
+        # volume is mounted, every world's secrets with it.
+        if any(entry.is_dir() for entry in self._directory.iterdir()):
+            raise InvalidGeneration(f"{self._directory} shows other worlds' directories, not this world's own files")
         generation = cast(_GenerationDocument, _load(generation_path, self._generation))
         number = generation["generation"]
         secrets_path = self._directory / SECRETS_FILE
