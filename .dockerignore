@@ -3,6 +3,12 @@
 !plugin/
 plugin/bin/
 plugin/obj/
-!images/plugin/refcheck/
-images/plugin/refcheck/bin/
-images/plugin/refcheck/obj/
+!images/game-runtime/NOTICE
+!images/game-runtime/refcheck/
+images/game-runtime/refcheck/bin/
+images/game-runtime/refcheck/obj/
+!contracts/*.schema.json
+!schema/*.schema.json
+!runtime/src/vhd_runtime/
+runtime/src/vhd_runtime/test_*.py
+runtime/src/vhd_runtime/__pycache__/

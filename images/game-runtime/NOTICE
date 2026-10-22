@@ -1,0 +1,25 @@
+The Valhallowed game runtime image carries this third-party software,
+unmodified, from BepInExPack_Valheim 5.4.2351:
+
+BepInEx 5
+  MIT. License: BepInEx-LICENSE.
+  Source: https://github.com/AzumattDev/BepInEx/tree/fd72254e7debd1b8b7289c1639a8a231c49e403f
+
+HarmonyX
+  MIT. License: HarmonyX-LICENSE.
+  Source: https://github.com/BepInEx/HarmonyX
+
+MonoMod
+  MIT. License: MonoMod-LICENSE.
+  Source: https://github.com/MonoMod/MonoMod
+
+Mono.Cecil
+  MIT. License: Mono.Cecil-LICENSE.
+  Source: https://github.com/jbevain/cecil
+
+UnityDoorstop 4.4.0 (doorstop_libs/libdoorstop_x64.so)
+  LGPL-2.1. License: UnityDoorstop-LICENSE.
+  Source: https://github.com/NeighTools/UnityDoorstop/tree/v4.4.0
+
+SteamCMD and the Valheim dedicated server are not in this image. The runtime
+downloads them from Valve at first start.

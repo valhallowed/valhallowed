@@ -15,7 +15,7 @@ variable "TAGS" {
 }
 
 group "default" {
-  targets = ["skeleton"]
+  targets = ["skeleton", "game-runtime"]
 }
 
 target "_common" {
@@ -31,13 +31,22 @@ target "_common" {
 }
 
 # The plugin, built against the dedicated server's assemblies. Not in the
-# default group: its output is files, not an image.
+# default group: its output is files, not an image. The game runtime image
+# carries the same build.
 target "plugin" {
   inherits   = ["_common"]
   context    = "."
-  dockerfile = "images/plugin/Dockerfile"
+  dockerfile = "images/game-runtime/Dockerfile"
   target     = "plugin"
   output     = ["type=local,dest=dist/plugin"]
+}
+
+target "game-runtime" {
+  inherits   = ["_common"]
+  context    = "."
+  dockerfile = "images/game-runtime/Dockerfile"
+  target     = "runtime"
+  tags       = [for t in split(",", TAGS) : "${REGISTRY}/game-runtime:${t}"]
 }
 
 target "skeleton" {

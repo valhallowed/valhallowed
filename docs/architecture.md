@@ -148,7 +148,8 @@ markers and journal entries are records, never commands.
 ### Internal boundaries
 
 The ingress is the one way in from outside. Every crossing inside VHD is a
-boundary, and every boundary follows one standard:
+boundary, and every boundary follows one standard. Each contract lives in
+[`contracts/`](../contracts/), with valid and invalid examples.
 
 - One typed contract, versioned with the release, with a contract test in the
   pipeline.
