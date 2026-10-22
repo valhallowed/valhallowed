@@ -77,11 +77,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PRERELEASE: ${{ needs.promote.outputs.prerelease }}
         run: |
-          (cd dist && sha256sum compose.yaml > SHA256SUMS)
+          cp schema/manifest.schema.json schema/secrets.schema.json dist/
+          (cd dist && sha256sum compose.yaml manifest.schema.json secrets.schema.json > SHA256SUMS)
           flags=(--verify-tag --title "Valhallowed $VERSION" --generate-notes)
           if [[ $PRERELEASE == true ]]; then
             flags+=(--prerelease)
           else
             flags+=(--latest)
           fi
-          gh release create "$GITHUB_REF_NAME" "${flags[@]}" dist/compose.yaml dist/SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" "${flags[@]}" \
+            dist/compose.yaml dist/manifest.schema.json dist/secrets.schema.json dist/SHA256SUMS
