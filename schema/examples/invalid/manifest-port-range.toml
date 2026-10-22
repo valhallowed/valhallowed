@@ -1,0 +1,5 @@
+# expect: 65534 is greater than the maximum of 65533
+schema = 1
+
+[world.Meadowfold]
+port = 65534

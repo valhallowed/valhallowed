@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Valhallowed manifest",
+  "description": "The settings of one install, written in TOML (G18). Version 1 holds what the walking skeleton implements; later settings are additions. Reconcile enforces what this schema cannot express: no two worlds' port ranges overlap.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "world"],
+  "properties": {
+    "schema": {
+      "description": "The schema version this file is written against.",
+      "const": 1
+    },
+    "world": {
+      "description": "The worlds this install runs: one table per world, keyed by its save name. With more than one world, every world sets its port.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/save_name" },
+      "additionalProperties": { "$ref": "#/$defs/world" }
+    },
+    "web_map": {
+      "description": "The web map.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "port": {
+          "description": "The TCP port the web map listens on.",
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65535,
+          "default": 8456,
+          "x-change-cost": "service restart",
+          "x-applied-by": "vhd apply"
+        }
+      }
+    }
+  },
+  "if": {
+    "properties": { "world": { "minProperties": 2 } }
+  },
+  "then": {
+    "properties": { "world": { "additionalProperties": { "required": ["port"] } } }
+  },
+  "$defs": {
+    "save_name": {
+      "description": "A world's save name: the save the game loads, or creates when none has that name. VHD accepts 1 to 64 letters, digits, spaces, hyphens and underscores, starting and ending with a letter or digit. That is stricter than the game, and widens only on evidence.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9 _-]{0,62}[A-Za-z0-9])?$"
+    },
+    "world": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "port": {
+          "description": "The first of the world's three UDP ports, its port through port+2. Defaults to 2456 when the install runs one world.",
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65533,
+          "default": 2456,
+          "x-change-cost": "game-server restart",
+          "x-applied-by": "vhd apply"
+        }
+      }
+    }
+  }
+}

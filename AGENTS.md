@@ -10,6 +10,7 @@ restate the docs.
 |---|---|
 | What VHD is, its ground rules and open decisions | [docs/architecture.md](docs/architecture.md) |
 | What a word means | [docs/glossary.md](docs/glossary.md) |
+| Every setting and secret key, with its default and change cost | [schema/](schema/) |
 | Names, voices, what the colours mean | [docs/brand.md](docs/brand.md) |
 | Design tokens and fonts | [design/README.md](design/README.md) |
 | The diagram pages and their standard | [docs/diagrams/README.md](docs/diagrams/README.md) |
@@ -48,6 +49,7 @@ restate the docs.
 | Anything | `scripts/check-public.sh` |
 | Workflows | `actionlint` |
 | Shell scripts | `shellcheck scripts/*.sh` |
+| The manifest schema or its examples | `scripts/check-schema.sh` |
 | Images or the install | `make accept` |
 
 CI runs the same checks on every pull request and every push to `main`.
