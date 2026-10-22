@@ -7,6 +7,7 @@ name: valhallowed
 # equal to the images CI builds.
 x-vhd:
   images:
+    control-plane: &control-plane ghcr.io/valhallowed/control-plane:@VHD_VERSION@
     game-runtime: &game-runtime ghcr.io/valhallowed/game-runtime:@VHD_VERSION@
     skeleton: &skeleton ghcr.io/valhallowed/skeleton:@VHD_VERSION@
 

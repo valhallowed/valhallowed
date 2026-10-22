@@ -1,17 +1,8 @@
 # The game runtime: the supervisor, BepInEx and the plugin on a pinned base
-# (G16). The plugin is built here against the dedicated server's own assemblies,
-# downloaded in a build stage and discarded. SteamCMD and the server download
-# into /data at first start, so no Valve or Iron Gate file is in any image.
-
-# Debian as it was when the pinned base image was built: the image names that
-# snapshot in its own sources, so every package pinned below stays installable,
-# and nothing an image installs moves until the base image does. A snapshot's
-# Release files expire; their signatures are still checked.
-FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS debian
-RUN sources=/etc/apt/sources.list.d/debian.sources \
- && sed -i -e '/^URIs: /d' -e 's|^# \(http://snapshot\.debian\.org/archive/.*\)$|URIs: \1|' "$sources" \
- && [ "$(grep -c '^URIs: http://snapshot\.debian\.org/' "$sources")" -eq 2 ] \
- && printf 'Acquire::Check-Valid-Until "false";\nAcquire::Retries "5";\n' > /etc/apt/apt.conf.d/80snapshot
+# (G16), the snapshot Debian of images/debian. The plugin is built here against
+# the dedicated server's own assemblies, downloaded in a build stage and
+# discarded. SteamCMD and the server download into /data at first start, so no
+# Valve or Iron Gate file is in any image.
 
 # SteamCMD, for the plugin build and for scripts/game-build.sh, which asks Steam
 # for the dedicated server's current build.

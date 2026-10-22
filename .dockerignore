@@ -12,3 +12,7 @@ images/game-runtime/refcheck/obj/
 !runtime/src/vhd_runtime/
 runtime/src/vhd_runtime/test_*.py
 runtime/src/vhd_runtime/__pycache__/
+!images/control-plane/NOTICE
+!control/src/vhd_control/
+control/src/vhd_control/test_*.py
+control/src/vhd_control/__pycache__/

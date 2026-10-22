@@ -10,7 +10,7 @@ rendered=$(mktemp --suffix=.yaml)
 trap 'rm -f "$rendered"' EXIT
 scripts/render-install.sh check "$rendered"
 
-built=$(TAGS=check docker buildx bake --print 2>/dev/null | jq -r '.target[].tags[]' | sort)
+built=$(TAGS=check docker buildx bake --print 2>/dev/null | jq -r '.target[] | .tags // [] | .[]' | sort)
 listed=$(docker compose -f "$rendered" config --format json | jq -r '."x-vhd".images // {} | .[]' | sort)
 if [[ -z $built || $built != "$listed" ]]; then
   echo "check-images: CI builds and the install lists different images:" >&2
