@@ -20,6 +20,7 @@ class Schemas:
 
     def __init__(self, root: Path) -> None:
         self._root = root
+        self._validators: dict[str, Draft202012Validator] = {}
         self._registry: Registry[_Schema] = Registry()
         for path in [*(root / "schema").glob("*.schema.json"), *(root / "contracts").glob("*.schema.json")]:
             resource: Resource[_Schema] = Resource.from_contents(
@@ -34,9 +35,11 @@ class Schemas:
 
     def problem(self, name: str, instance: object) -> str | None:
         """The first way instance breaks the schema at name, or None if it meets it."""
-        schema = self.document(name)
-        schema["$id"] = (self._root / name).resolve().as_uri()
-        validator = Draft202012Validator(schema, registry=self._registry)
+        validator = self._validators.get(name)
+        if validator is None:
+            schema = self.document(name)
+            schema["$id"] = (self._root / name).resolve().as_uri()
+            validator = self._validators[name] = Draft202012Validator(schema, registry=self._registry)
         errors = sorted(validator.iter_errors(instance), key=lambda e: list(e.absolute_path))
         if not errors:
             return None
