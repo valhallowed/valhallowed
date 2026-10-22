@@ -29,7 +29,8 @@ class FakeDocker:
         self.running: list[str] = []
         self.mounts = {"/install": "/srv/vhd", "/var/run/docker.sock": "/var/run/docker.sock"}
         self.streamed: list[list[str]] = []
-        self.fail_up = False
+        # How many coming Compose runs fail.
+        self.fail_up = 0
 
     def output(self, args: list[str]) -> str:
         if args[0] == "version":
@@ -45,7 +46,8 @@ class FakeDocker:
 
     def stream(self, args: list[str]) -> None:
         self.streamed.append(args)
-        if self.fail_up:
+        if self.fail_up > 0:
+            self.fail_up -= 1
             raise DockerError("docker compose -p exited with 1")
 
 
@@ -212,16 +214,19 @@ def test_vhd_must_run_through_compose_from_the_install_folder(setup: Setup) -> N
         setup.apply()
 
 
-def test_a_port_change_compose_cannot_apply_leaves_the_world_as_it_was(setup: Setup) -> None:
+def test_a_port_change_compose_cannot_apply_is_rolled_back(setup: Setup) -> None:
     setup.apply()
     setup.docker.running = [MEADOWFOLD, ASHWAKE]
     setup.players("Meadowfold", 0)
+    before = setup.rendered()
     (setup.install / "manifest.toml").write_text(TWO_WORLDS.replace("2456", "2462"))
-    setup.docker.fail_up = True
+    setup.docker.fail_up = 1
 
-    with pytest.raises(DockerError):
+    with pytest.raises(Refused, match="runs as it did before"):
         setup.apply()
 
+    assert setup.rendered() == before
+    assert len(setup.docker.streamed) == 3
     state = Store(setup.volume).load()
     assert state.applied is not None
     assert state.applied[MEADOWFOLD] == 2456
@@ -261,3 +266,18 @@ def test_a_world_whose_directory_went_missing_gets_it_back(setup: Setup) -> None
     setup.apply()
 
     assert setup.handed(MEADOWFOLD) == (1, None)
+
+
+def test_a_failed_rollback_says_both_failed(setup: Setup) -> None:
+    setup.apply()
+    (setup.install / "manifest.toml").write_text(TWO_WORLDS.replace("2456", "2462"))
+    setup.docker.fail_up = 2
+    with pytest.raises(DockerError, match="bringing back the previous containers failed too"):
+        setup.apply()
+
+
+def test_a_first_apply_that_fails_has_nothing_to_roll_back_to(setup: Setup) -> None:
+    setup.docker.fail_up = 1
+    with pytest.raises(DockerError, match="exited with 1"):
+        setup.apply()
+    assert len(setup.docker.streamed) == 1

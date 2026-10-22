@@ -9,7 +9,8 @@ The one place that holds Docker's socket, for its run alone. In order, it:
 6. hands every runtime its documents, owned by the install folder's owner, a world moving to a
    new port in the directory only its new container mounts;
 7. renders .vhd/compose.json, and has Compose recreate only the containers whose definition changed;
-8. once Compose succeeds, records the ports the containers now publish.
+8. once Compose succeeds, records the ports the containers now publish. If Compose fails, it
+   brings the install back on the compose file it ran before.
 """
 
 import json
@@ -18,10 +19,10 @@ import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, NoReturn, TextIO
 
 from vhd_control import client, layout, manifest
-from vhd_control.docker import Docker
+from vhd_control.docker import Docker, DockerError
 from vhd_control.reconcile import Generation, reconcile
 from vhd_control.render import Host, render
 from vhd_control.schemas import Schemas
@@ -77,13 +78,35 @@ class Apply:
             file=self.out,
             flush=True,
         )
-        # If Compose fails, state keeps the containers' old ports, and status shows the change
-        # still waiting for vhd apply.
-        self.docker.stream(
-            ["compose", "-p", host.project, "-f", str(rendered_path), "up", "--detach", "--wait", "--remove-orphans"]
-        )
+        try:
+            self.docker.stream(self._up(host))
+        except DockerError as error:
+            self._roll_back(host, previous, error, generation.number)
         with self.store.locked():
             self._commit(self.store.load(), generation, moving)
+
+    def _up(self, host: Host) -> list[str]:
+        rendered = str(self.install / layout.RENDERED)
+        return ["compose", "-p", host.project, "-f", rendered, "up", "--detach", "--wait", "--remove-orphans"]
+
+    def _roll_back(self, host: Host, previous: dict[str, Any] | None, error: DockerError, number: int) -> NoReturn:
+        """Compose failed partway: a container it recreated may be gone. Bring the install back on
+        the compose file it ran before. State still records that install's ports, and the
+        directories its containers mount are untouched until a run succeeds."""
+        if previous is None:
+            raise error
+        print(
+            "vhd apply: Compose failed; bringing back the containers the install ran before", file=self.out, flush=True
+        )
+        self._write(self.install / layout.RENDERED, previous, host.owner)
+        try:
+            self.docker.stream(self._up(host))
+        except DockerError as again:
+            raise DockerError(f"{error}; bringing back the previous containers failed too: {again}") from again
+        raise Refused(
+            f"Compose could not apply generation {number} ({error}). The install runs as it did before; "
+            "fix the cause, then run vhd apply again."
+        ) from error
 
     def _check_engine(self) -> None:
         version = self.docker.output(["version", "--format", "{{.Server.APIVersion}}"]).strip()
