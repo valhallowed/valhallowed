@@ -1,7 +1,12 @@
 # Local build lane: the same bake definition CI uses, loaded into local Docker.
-BUILD ?= $(shell git rev-parse --verify -q HEAD || echo dev)
+# Each value is resolved once per run, so every step of it agrees.
+ifndef BUILD
+BUILD := $(shell git rev-parse --verify -q HEAD || echo dev)
+endif
 # The dedicated server build to compile against: Steam's current one unless given.
-GAME_BUILD ?= $(shell scripts/game-build.sh)
+ifndef GAME_BUILD
+GAME_BUILD := $(shell scripts/game-build.sh)
+endif
 
 .PHONY: build plugin accept
 
