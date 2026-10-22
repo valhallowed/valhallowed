@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Game runtime status",
+  "description": "B1, status up: what a game runtime reports to the control plane's status listener. World truth comes from the plugin's count of the loaded world's objects, not from container health.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "generation", "world", "state"],
+  "properties": {
+    "contract": {
+      "description": "The version of this contract.",
+      "const": 1
+    },
+    "generation": {
+      "description": "The generation the runtime is running.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "world": {
+      "description": "The world's save name.",
+      "$ref": "../schema/manifest.schema.json#/$defs/save_name"
+    },
+    "state": {
+      "description": "installing: downloading SteamCMD or the server. loading: launched, the world not yet reported. running: the world loaded. unverified: launched, but the plugin has not reported the world. held: stopped before its first autosave because the world loaded empty although a save existed; the container stays up.",
+      "enum": ["installing", "loading", "running", "unverified", "held"]
+    },
+    "reason": {
+      "description": "Why the runtime is held or unverified.",
+      "type": "string",
+      "minLength": 1
+    },
+    "game_build": {
+      "description": "The dedicated server's build id.",
+      "type": "string",
+      "pattern": "^[0-9]+$"
+    },
+    "objects": {
+      "description": "The loaded world's object count, as the plugin last reported it.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "players": {
+      "description": "Players connected, as the plugin last reported it.",
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "state": { "enum": ["held", "unverified"] } } },
+      "then": { "required": ["reason"] }
+    }
+  ]
+}

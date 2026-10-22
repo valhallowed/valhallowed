@@ -45,7 +45,7 @@
           <defs>
             <marker id="fd-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk" d="M0 0 L10 5 L0 10 z"/></marker>
           </defs>
-          <g class="e" data-k="e-tool"><path d="M220 53 H290" marker-end="url(#fd-arr)"/><text class="lab" x="255" y="45" text-anchor="middle">tool</text></g>
+          <g class="e dash" data-k="e-tool"><path d="M220 53 H290" marker-end="url(#fd-arr)"/><text class="lab" x="255" y="45" text-anchor="middle">tool</text></g>
           <g class="e dash" data-k="e-dl"><path d="M400 76 V100" marker-end="url(#fd-arr)"/><text class="lab" x="408" y="92">downloads</text></g>
           <g class="e dash" data-k="e-build"><path d="M220 148 H255 V123 H290" marker-end="url(#fd-arr)"/><text class="lab" x="236" y="140" text-anchor="middle">ships</text></g>
           <g class="e dot" data-k="e-same"><path d="M220 168 H262 V193 H290" marker-end="url(#fd-arr)"/></g>
@@ -61,7 +61,7 @@
           <g class="n z-external" data-k="valve"><rect x="20" y="30" width="200" height="46" rx="6"/><text class="t" x="34" y="50">Valve</text><text class="s" x="34" y="67">SteamCMD · Steam CDN</text></g>
           <g class="n z-external" data-k="irongate"><rect x="20" y="135" width="200" height="46" rx="6"/><text class="t" x="34" y="155">Iron Gate</text><text class="s" x="34" y="172">game patches, unannounced</text></g>
           <g class="n z-external" data-k="bepproj"><rect x="20" y="300" width="200" height="46" rx="6"/><text class="t" x="34" y="320">BepInEx project</text><text class="s" x="34" y="337">loader releases</text></g>
-          <g class="n z-runtime" data-k="steamcmd"><rect x="290" y="30" width="220" height="46" rx="6"/><text class="t" x="304" y="50">SteamCMD</text><text class="s" x="304" y="67">in the game runtime image</text></g>
+          <g class="n z-external soft" data-k="steamcmd"><rect x="290" y="30" width="220" height="46" rx="6"/><text class="t" x="304" y="50">SteamCMD</text><text class="s" x="304" y="67">downloaded at first start</text></g>
           <g class="n z-external soft" data-k="server"><rect x="290" y="100" width="220" height="46" rx="6"/><text class="t" x="304" y="120">Dedicated server files</text><text class="s" x="304" y="137">first start and each update</text></g>
           <g class="n z-external soft" data-k="asm"><rect x="290" y="170" width="220" height="46" rx="6"/><text class="t" x="304" y="190">Game assemblies</text><text class="s" x="304" y="207">fetched in CI, never shipped</text></g>
           <g class="n z-runtime" data-k="bepinex"><rect x="290" y="300" width="220" height="46" rx="6"/><text class="t" x="304" y="320">BepInEx + HarmonyX</text><text class="s" x="304" y="337">pinned in the image</text></g>
@@ -94,10 +94,10 @@
         <thead><tr><th>Part</th><th>Language and runtime</th><th>Libraries</th><th>Third-party pieces</th><th>Outside services</th></tr></thead>
         <tbody>
           <tr><td>Control plane</td><td><span class="chip k-fixed">Python (G19)</span></td><td class="chips"><span class="chip k-open">TUI toolkit: open</span><span class="chip k-fixed">JSON Schema (G18)</span></td><td class="muted">none</td><td class="chips"><span class="chip k-svc">Steam (update checks)</span></td></tr>
-          <tr><td>Game runtime</td><td><span class="chip k-fixed">VHD’s own image (G16)</span></td><td class="muted">none</td><td class="chips"><span class="chip k-fixed">Valheim dedicated server</span><span class="chip k-fixed">SteamCMD</span><span class="chip k-fixed">BepInEx</span><span class="chip k-fixed">HarmonyX</span></td><td class="chips"><span class="chip k-svc">Steam CDN</span></td></tr>
+          <tr><td>Game runtime</td><td class="chips"><span class="chip k-fixed">VHD’s own image (G16)</span><span class="chip k-fixed">Python supervisor (G19)</span></td><td class="muted">none</td><td class="chips"><span class="chip k-fixed">Valheim dedicated server</span><span class="chip k-fixed">SteamCMD</span><span class="chip k-fixed">BepInEx</span><span class="chip k-fixed">HarmonyX</span></td><td class="chips"><span class="chip k-svc">Steam CDN</span></td></tr>
           <tr><td>Plugin</td><td><span class="chip k-fixed">C#, .NET Standard 2.1</span></td><td class="chips"><span class="chip k-fixed">BepInEx</span><span class="chip k-fixed">HarmonyX</span></td><td class="chips"><span class="chip k-fixed">game assemblies (build only)</span></td><td class="muted">none</td></tr>
           <tr><td>Data layer</td><td><span class="chip k-fixed">Python (G19)</span></td><td class="chips"><span class="chip k-lean">httpx</span><span class="chip k-lean">pydantic</span><span class="chip k-lean">psycopg 3</span><span class="chip k-lean">inotify_simple</span></td><td class="chips"><span class="chip k-lean">PostgreSQL (bundled default)</span></td><td class="chips"><span class="chip k-svc">chat service</span><span class="chip k-svc">LLM provider</span></td></tr>
-          <tr><td>Web map</td><td class="chips"><span class="chip k-fixed">TypeScript (G19)</span><span class="chip k-lean">Node.js</span></td><td class="chips"><span class="chip k-lean">Angular</span><span class="chip k-lean">Leaflet</span><span class="chip k-lean">Express</span><span class="chip k-lean">pg</span><span class="chip k-lean">zod</span></td><td class="muted">none</td><td class="chips"><span class="chip k-svc">Steam sign-in</span></td></tr>
+          <tr><td>Web map</td><td class="chips"><span class="chip k-fixed">TypeScript (G19)</span><span class="chip k-lean">Node.js</span></td><td class="chips"><span class="chip k-open">SPA framework: open</span><span class="chip k-lean">Leaflet</span><span class="chip k-lean">Express</span><span class="chip k-lean">pg</span><span class="chip k-lean">zod</span></td><td class="muted">none</td><td class="chips"><span class="chip k-svc">Steam sign-in</span></td></tr>
           <tr><td>Pipeline</td><td class="muted">n/a</td><td class="muted">n/a</td><td class="muted">none</td><td class="chips"><span class="chip k-svc">GitHub Actions</span><span class="chip k-svc">GHCR</span><span class="chip k-svc">Steam CDN (build)</span></td></tr>
         </tbody>
       </table>
@@ -119,8 +119,9 @@
         <tbody>
           <tr data-a="start"><td>Valheim dedicated server</td><td>Game runtime</td><td>Downloaded at first start and on update</td><td>Proprietary, Iron Gate</td><td>A patch can break plugin patches and load an empty world. World truth holds the update; the nightly check blocks the next release.</td></tr>
           <tr data-a="build"><td>Game assemblies</td><td>Plugin build</td><td>Fetched in CI, discarded</td><td>Proprietary; never committed or shipped</td><td>A renamed game method fails the build or a patch. Caught by the nightly game check.</td></tr>
-          <tr data-a="image"><td>SteamCMD</td><td>Game runtime</td><td>In the game runtime image</td><td>Valve terms (not yet checked)</td><td>If Steam is unreachable, new installs and game updates wait. Running worlds keep running.</td></tr>
-          <tr data-a="image"><td>BepInEx</td><td>Game runtime, plugin</td><td>Pinned in the game runtime image</td><td>LGPL-2.1</td><td>Reaches installs only through a VHD release that passed acceptance.</td></tr>
+          <tr data-a="start"><td>SteamCMD</td><td>Game runtime</td><td>Downloaded at first start</td><td>Valve terms (not yet checked)</td><td>If Steam is unreachable, new installs and game updates wait. Running worlds keep running.</td></tr>
+          <tr data-a="image"><td>BepInEx 5</td><td>Game runtime, plugin</td><td>Pinned in the game runtime image</td><td>MIT (checked 2026-10-22)</td><td>Reaches installs only through a VHD release that passed acceptance.</td></tr>
+          <tr data-a="image"><td>UnityDoorstop</td><td>Game runtime</td><td>Ships with BepInEx</td><td>LGPL-2.1 (checked 2026-10-22)</td><td>Moves with BepInEx. Loads BepInEx into the server process.</td></tr>
           <tr data-a="image"><td>HarmonyX</td><td>Plugin</td><td>Ships with BepInEx</td><td>MIT</td><td>Moves with BepInEx.</td></tr>
           <tr data-a="image"><td>PostgreSQL</td><td>Data layer</td><td>Bundled image by default, or BYO</td><td>PostgreSQL License; image MIT</td><td>A major version needs a migration path. If unreachable, persistence turns off and other capabilities carry on.</td></tr>
           <tr data-a="image"><td>Python</td><td>Control plane, data layer</td><td>In the image</td><td>PSF (not yet checked)</td><td>Pinned per release.</td></tr>
@@ -128,7 +129,7 @@
           <tr data-a="image"><td>psycopg 3</td><td>Data layer</td><td>In the image</td><td>LGPL-3.0-only</td><td>Pinned per release.</td></tr>
           <tr data-a="image"><td>inotify_simple</td><td>Data layer</td><td>In the image</td><td>BSD-2 (not verified against the license text)</td><td>Pinned per release.</td></tr>
           <tr data-a="image"><td>Node.js</td><td>Web map</td><td>In the image</td><td>MIT (not yet checked)</td><td>Pinned per release.</td></tr>
-          <tr data-a="image"><td>Angular · Leaflet · Express · pg · zod</td><td>Web map</td><td>In the image</td><td>MIT · BSD-2 · MIT · MIT · MIT</td><td>Pinned per release.</td></tr>
+          <tr data-a="image"><td>Leaflet · Express · pg · zod</td><td>Web map</td><td>In the image</td><td>BSD-2 · MIT · MIT · MIT</td><td>Pinned per release.</td></tr>
           <tr data-a="service"><td>Steam sign-in</td><td>Web map</td><td>Outside service</td><td>Steam terms (not yet checked)</td><td>Sign-in stops; the web map stays public and read-only.</td></tr>
           <tr data-a="service"><td>Chat service</td><td>Chat relay</td><td>Outside service, optional</td><td>The service's terms</td><td>The relay switches off; the game is unaffected.</td></tr>
           <tr data-a="service"><td>LLM provider</td><td>Assistant</td><td>Outside service, optional</td><td>The provider's terms</td><td>The assistant reports itself unavailable.</td></tr>
@@ -161,10 +162,10 @@
 <script>
   const D = (kind, title, rows, text) => ({ kind, title, rows, text });
   const chainData = {
-    valve: D('Third party', 'Valve', [['Ships', 'SteamCMD and the Steam CDN'], ['VHD uses', 'SteamCMD in the game runtime image to download the server']]),
+    valve: D('Third party', 'Valve', [['Ships', 'SteamCMD and the Steam CDN'], ['VHD uses', 'SteamCMD, downloaded at first start, to download the server']]),
     irongate: D('Third party', 'Iron Gate', [['Ships', 'the Valheim dedicated server, and with it the game assemblies'], ['Cadence', 'patches arrive without notice']]),
-    bepproj: D('Third party', 'BepInEx project', [['Ships', 'BepInEx (LGPL-2.1) with HarmonyX (MIT)'], ['VHD uses', 'one pinned version per release']]),
-    steamcmd: D('Game runtime', 'SteamCMD', [['Arrives', 'in the game runtime image'], ['Does', 'downloads the dedicated server at first start and on each update']]),
+    bepproj: D('Third party', 'BepInEx project', [['Ships', 'BepInEx 5 and HarmonyX (MIT), with UnityDoorstop (LGPL-2.1)'], ['VHD uses', 'one pinned version per release']]),
+    steamcmd: D('Third party', 'SteamCMD', [['Arrives', 'downloaded into the install at first start, never shipped in an image'], ['Does', 'downloads the dedicated server at first start and on each update']]),
     server: D('Third party', 'Dedicated server files', [['Arrives', 'downloaded into the install, never shipped in an image'], ['Risk', 'a patch can break the plugin’s patches']]),
     asm: D('Third party', 'Game assemblies', [['Arrives', 'fetched in CI from the dedicated-server download, then discarded'], ['Used for', 'compiling the plugin; no publicizer step']]),
     bepinex: D('Game runtime', 'BepInEx + HarmonyX', [['Arrives', 'pinned in the game runtime image'], ['Does', 'loads the plugin and applies its Harmony patches']]),

@@ -57,7 +57,8 @@ reports on: a game runtime or a data-layer service. Compose runs it (G13).
 
 **CLI** — `vhd`, the control plane's command-line client, run from the control
 plane's image. `vhd apply` brings an install's containers in line with its
-current generation, with the server manager's own access to Docker (G13).
+current generation. It runs as a one-shot container that only the server
+manager starts, with the Docker socket for that run only (G13).
 
 **Command** — A request to change the game. Created only by the broker,
 executed only by the plugin on the game thread, and audited.
@@ -86,8 +87,8 @@ the host: LAN, public direct, public with TLS, or game only. Every port in a
 profile is a default the manifest can change.
 
 **Game runtime** — A child that runs one world: the Valheim dedicated server,
-BepInEx and the plugin. It runs what the control plane hands it and holds no
-policy.
+BepInEx and the plugin, under its supervisor. It runs what the control plane
+hands it and holds no policy.
 
 **Generation** — One numbered effective configuration. Applied whole or not at
 all; when a new one is rejected, the last good generation keeps running.
@@ -173,6 +174,10 @@ Steam (B9). Only people the game has seen can sign in.
 
 **Status** — The control plane's report on an install and its children. It
 reports world truth, not container health.
+
+**Supervisor** — The game runtime's own process. It reads the generation,
+downloads SteamCMD and the dedicated server, starts the server with BepInEx
+and the plugin, stops it with a save, holds, and reports status.
 
 **Telemetry** — What the plugin observes in a world and sends to intake (B2):
 chat, presence, positions and world events. Observations, so a failure drops

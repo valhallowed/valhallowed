@@ -98,7 +98,7 @@
         <thead><tr><th>Artifact</th><th>Built from</th><th>Published to</th><th>Consumed by</th></tr></thead>
         <tbody>
           <tr><td><span class="chip z-control">control plane image</span></td><td>The control plane</td><td>Registry</td><td>Every install</td></tr>
-          <tr><td><span class="chip z-runtime">game runtime image</span></td><td>The game runtime (G16), with the plugin inside</td><td>Registry</td><td>Every install. It downloads the dedicated server at first start; no game files ship in the image.</td></tr>
+          <tr><td><span class="chip z-runtime">game runtime image</span></td><td>The game runtime (G16), with the plugin inside</td><td>Registry</td><td>Every install. It downloads SteamCMD and the dedicated server at first start; no Valve or game file ships in the image.</td></tr>
           <tr><td><span class="chip z-data">data layer images</span></td><td>Intake, broker, persistence, world render, web map, chat relay, assistant</td><td>Registry</td><td>Every install</td></tr>
           <tr><td><span class="chip z-runtime">plugin artifact</span></td><td>The plugin, compiled against game assemblies fetched in CI</td><td>GitHub Release</td><td>The game runtime image; anyone inspecting a release</td></tr>
           <tr><td><span class="chip z-ingress">manifest schema</span></td><td>The schema source; also produces the settings reference</td><td>GitHub Release</td><td>The control plane; server managers and their editors</td></tr>

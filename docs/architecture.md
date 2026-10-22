@@ -37,10 +37,10 @@ open decision names it.
 | G13 | **Compose owns the containers; the running control plane holds no Docker socket.** The control plane validates, reconciles and publishes each generation; a child applies it in place, or exits and Compose restarts it. A change to the containers themselves (a world added or removed, a published port, a resource limit, the VHD version) waits as a pending change until the server manager runs `vhd apply`, which acts with the server manager's own access to Docker. | A Docker socket is root on the host, so whatever took over the control plane, or an admin console the manifest opened, would take the host with it. Container changes are rare, and they cost one host command. Settled from O1. |
 | G14 | **The data layer runs as children,** one container per service, never inside the control plane. | It carries the heavy traffic and fails more often; the control plane stays small and always up. Settled from O2. |
 | G15 | **One install runs many worlds,** each in its own game runtime, with its own world ports and resource limits. | A server manager with several worlds runs one install, with no extra tooling to keep several installs in step. A crash, a restart or a memory limit stays inside its world. Settled from O3. |
-| G16 | **VHD builds its own game runtime image:** SteamCMD, BepInEx and the plugin on a pinned base. The dedicated server downloads into the install at first start and on each update. `lloesche/valheim-server` is a reference, not a base. | Its environment settings would be a second ingress under ours (G6), and its backups and updates duplicate control-plane work. Settled from O4. |
+| G16 | **VHD builds its own game runtime image:** the supervisor, BepInEx and the plugin on a pinned base. SteamCMD and the dedicated server download into the install at first start, and the server again on each update. `lloesche/valheim-server` is a reference, not a base. | Its environment settings would be a second ingress under ours (G6), and its backups and updates duplicate control-plane work. Downloading SteamCMD keeps every Valve and Iron Gate file out of a public image. Settled from O4. |
 | G17 | **One repo, one version, one CI.** Every component lives in `valhallowed/valhallowed` and ships in the same release. | Cross-component changes land together, and one version describes a release. Settled from O5. |
 | G18 | **The manifest and the secrets file are TOML 1.0,** each checked against a versioned JSON Schema in [`schema/`](../schema/). Each file declares its schema version. A renamed key migrates automatically or fails with a message that names the new key. | TOML has one specification, explicit types and no meaningful indentation, so a value means what it looks like. JSON Schema is language-neutral: editors, the control plane and the settings reference read the same file. Settled from O6. |
-| G19 | **Languages:** Python for the control plane and the data layer, TypeScript for the web map and the admin console's front end, C# for the plugin. | One backend language, so the generation's producer and its main consumers share a toolchain. The game fixes the plugin's language. Settled from O11. |
+| G19 | **Languages:** Python for the control plane, the data layer and the game runtime's supervisor; TypeScript for the web map and the admin console's front end; C# for the plugin. | One backend language, so the generation's producer and its consumers share a toolchain and its tests. The game fixes the plugin's language. Settled from O11. |
 
 ## The model
 
@@ -96,9 +96,12 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
 - **Applying a change.** The control plane publishes a generation; each child
   it affects reloads it in place, or exits and Compose restarts it. A change to
   the containers themselves waits as pending until the server manager runs
-  `vhd apply` (G13). That command renders the install's compose file from the
-  current generation and the release's `compose.yaml`, and Compose recreates
-  only the containers whose definition changed.
+  `vhd apply` (G13): a one-shot container that only the server manager starts,
+  and the only one that gets the Docker socket, for that run. It validates the
+  manifest, holds a game-server restart while players are online unless the
+  server manager confirms it, renders the install's compose file from the
+  current generation and the release's `compose.yaml`, and has Compose
+  recreate only the containers whose definition changed.
 - **Host check.** At first start and on every reconcile, the control plane
   compares what the manifest asks for with what the host has: ports, memory
   and CPU per world, disk for worlds and backups. A shortfall is a warning in
@@ -119,8 +122,10 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
 
 - **The child runs the game; the control plane sets policy.** A runtime runs
   the Valheim dedicated server, BepInEx and the plugin on what the control
-  plane hands it. Updates, backups, schedules, world import and export, and
-  restart gating belong to the control plane.
+  plane hands it; its supervisor reads the generation, installs and updates
+  the server, starts and stops it, and reports status. Updates, backups,
+  schedules, world import and export, and restart gating belong to the control
+  plane.
 - **Children read only the effective configuration.** Generated files, such as
   the plugin's BepInEx config, are never edited by hand.
 - **World truth gates saving.** A world that fails world truth is stopped
@@ -143,7 +148,8 @@ markers and journal entries are records, never commands.
 ### Internal boundaries
 
 The ingress is the one way in from outside. Every crossing inside VHD is a
-boundary, and every boundary follows one standard:
+boundary, and every boundary follows one standard. Each contract lives in
+[`contracts/`](../contracts/), with valid and invalid examples.
 
 - One typed contract, versioned with the release, with a contract test in the
   pipeline.
