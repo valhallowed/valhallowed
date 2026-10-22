@@ -19,10 +19,10 @@ PLUGIN_FILE = "Valhallowed.Plugin.dll"
 def install_mods(pack: Path, plugin: Path, server_dir: Path, status_file: Path, interval_s: int) -> None:
     """Lay BepInEx, the plugin and the plugin's config into the server directory."""
     bepinex = server_dir / "BepInEx"
-    # Only VHD's plugin loads: a plugin left behind by hand would be a private
-    # code path (G2).
-    shutil.rmtree(bepinex / "plugins", ignore_errors=True)
-    shutil.copytree(pack / "BepInEx", bepinex, dirs_exist_ok=True)
+    # Only VHD's code loads: a plugin or preloader patcher left behind by hand
+    # would be a private code path (G2).
+    shutil.rmtree(bepinex, ignore_errors=True)
+    shutil.copytree(pack / "BepInEx", bepinex)
     doorstop = server_dir / "doorstop_libs"
     doorstop.mkdir(exist_ok=True)
     shutil.copy2(pack / "doorstop_libs" / "libdoorstop_x64.so", doorstop / "libdoorstop_x64.so")

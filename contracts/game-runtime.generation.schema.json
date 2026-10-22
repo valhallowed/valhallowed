@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Game runtime generation",
-  "description": "B1: the effective configuration the control plane hands one game runtime, as generation.json in that runtime's own volume. The runtime validates it, refuses a contract version it does not know, and keeps running its last good generation.",
+  "description": "B1: the effective configuration the control plane hands one game runtime, as generation.json in that runtime's own volume, beside the secrets.json of the same generation. The runtime validates both, refuses a contract version it does not know, and keeps running its last good generation. Any change to this document other than its generation number, or to its secrets, costs the world a game-server restart; a newer generation equal in everything but its number is adopted without one.",
   "type": "object",
   "additionalProperties": false,
   "required": ["contract", "generation", "world", "plugin"],

@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
@@ -19,6 +19,10 @@ _Schema = bool | Mapping[str, Any]
 
 class InvalidGeneration(Exception):
     """The generation or its secrets break the B1 contract."""
+
+
+class IncompleteGeneration(Exception):
+    """The generation's secrets are not written yet: missing, or for another generation."""
 
 
 class _World(TypedDict):
@@ -40,6 +44,7 @@ class _GenerationDocument(TypedDict):
 
 class _SecretsDocument(TypedDict):
     contract: int
+    generation: int
     password: NotRequired[str]
 
 
@@ -52,6 +57,10 @@ class Generation:
     status_url: str | None
     password: str | None
 
+    def same_settings(self, other: "Generation") -> bool:
+        """Whether other differs from this generation in nothing but its number."""
+        return replace(other, number=self.number) == self
+
 
 class Reader:
     """Reads the generation the control plane wrote into this runtime's volume."""
@@ -62,22 +71,30 @@ class Reader:
         self._secrets = _validator(contracts / "game-runtime.secrets.schema.json")
 
     def read(self) -> Generation | None:
-        """The current generation, or None while the control plane has written none."""
+        """The current generation with its secrets, or None while the control plane has written none.
+        Raises IncompleteGeneration until secrets.json carries the same generation."""
         generation_path = self._directory / GENERATION_FILE
         if not generation_path.exists():
             return None
+        # Each world's directory holds two files. A directory here means the whole generations
+        # volume is mounted, every world's secrets with it.
+        if any(entry.is_dir() for entry in self._directory.iterdir()):
+            raise InvalidGeneration(f"{self._directory} shows other worlds' directories, not this world's own files")
         generation = cast(_GenerationDocument, _load(generation_path, self._generation))
+        number = generation["generation"]
         secrets_path = self._directory / SECRETS_FILE
-        password = None
-        if secrets_path.exists():
-            password = cast(_SecretsDocument, _load(secrets_path, self._secrets)).get("password")
+        if not secrets_path.exists():
+            raise IncompleteGeneration(f"generation {number} has no {SECRETS_FILE} yet")
+        secrets = cast(_SecretsDocument, _load(secrets_path, self._secrets))
+        if secrets["generation"] != number:
+            raise IncompleteGeneration(f"{SECRETS_FILE} belongs to generation {secrets['generation']}, not {number}")
         return Generation(
-            number=generation["generation"],
+            number=number,
             world=generation["world"]["name"],
             port=generation["world"]["port"],
             status_interval_s=generation["plugin"]["status_interval_s"],
             status_url=generation.get("status_url"),
-            password=password,
+            password=secrets.get("password"),
         )
 
 

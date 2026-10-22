@@ -4,13 +4,13 @@
 # what it costs and what applies it, every valid example passes, and every
 # invalid example fails with the error it names: a TOML example on its first
 # line ("# expect: <error>"), a JSON example in a sibling <example>.expect.
-# Validation runs in a pinned Python image, so Docker and jq are the only
+# Validation runs in a pinned Python image with the packages pinned in
+# scripts/requirements-check-schema.txt, so Docker and jq are the only
 # dependencies.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 image=python:3.13.17-slim@sha256:fe14fd57a4c0361110eaa0c284112b189750bcb43fb04bb5d1ee7b7744027ccf
-checker=check-jsonschema==0.38.2
 
 failed=0
 for s in schema/*.schema.json; do
@@ -64,10 +64,10 @@ for dir in schema contracts; do
   done
 done
 
-docker run --rm -i -v "$PWD:/repo:ro" -w /repo "$image" sh -s "$checker" "${cases[@]}" <<'EOF' || failed=1
+docker run --rm -i -v "$PWD:/repo:ro" -w /repo "$image" sh -s "${cases[@]}" <<'EOF' || failed=1
 set -eu
-pip install --quiet --disable-pip-version-check --root-user-action=ignore "$1"
-shift
+pip install --quiet --disable-pip-version-check --root-user-action=ignore --no-deps -r scripts/requirements-check-schema.txt
+pip check --quiet 2>/dev/null || pip check
 failed=0
 check-jsonschema --check-metaschema schema/*.schema.json contracts/*.schema.json >/dev/null || failed=1
 while [ $# -ge 3 ]; do

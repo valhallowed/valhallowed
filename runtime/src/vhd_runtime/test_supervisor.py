@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from vhd_runtime import supervisor
+from vhd_runtime import steam, supervisor
 from vhd_runtime.generation import Reader
 from vhd_runtime.supervisor import Clock, Paths, Supervisor
 
@@ -79,7 +79,9 @@ class World:
             directory.mkdir(parents=True)
         (self.paths.steamcmd / "steamcmd.sh").write_text("#!/bin/sh\n")
         (self.paths.server / "steamapps").mkdir(parents=True)
-        (self.paths.server / "steamapps" / "appmanifest_896660.acf").write_text('"buildid"\t\t"25909431"\n')
+        (self.paths.server / "steamapps" / "appmanifest_896660.acf").write_text(
+            '"StateFlags"\t\t"4"\n"buildid"\t\t"25909431"\n'
+        )
         (self.paths.pack / "BepInEx" / "core").mkdir(parents=True)
         (self.paths.pack / "doorstop_libs").mkdir()
         (self.paths.pack / "doorstop_libs" / "libdoorstop_x64.so").write_bytes(b"\x7fELF")
@@ -88,8 +90,12 @@ class World:
         self.process = FakeProcess()
         self.launches: list[list[str]] = []
         self.reports: list[dict[str, object]] = []
+        self.steamcmd_runs: list[list[str]] = []
 
-    def generation(self, number: int = 1) -> None:
+    def generation(self, number: int = 1, password: str | None = None, secrets: bool = True) -> None:
+        """Write a generation, and unless told not to, its secrets, as the control plane does."""
+        if secrets:
+            self.secrets(number, password)
         document = {
             "contract": 1,
             "generation": number,
@@ -98,6 +104,12 @@ class World:
             "status_url": STATUS_URL,
         }
         (self.paths.generation / "generation.json").write_text(json.dumps(document))
+
+    def secrets(self, number: int, password: str | None = None) -> None:
+        document: dict[str, object] = {"contract": 1, "generation": number}
+        if password is not None:
+            document["password"] = password
+        (self.paths.generation / "secrets.json").write_text(json.dumps(document))
 
     def save(self) -> None:
         (self.paths.saves / "worlds_local" / "Meadowfold").mkdir(parents=True)
@@ -109,7 +121,7 @@ class World:
     def plugin_reports(self, objects: int) -> None:
         self.paths.world_status.write_text(json.dumps({"world": "Meadowfold", "objects": objects, "players": 0}))
 
-    def supervisor(self) -> Supervisor:
+    def supervisor(self, run_steamcmd: steam.Run | None = None) -> Supervisor:
         def launch(command: list[str], env: dict[str, str], cwd: Path) -> FakeProcess:
             self.launches.append(command)
             return self.process
@@ -121,10 +133,14 @@ class World:
             paths=self.paths,
             reader=Reader(self.paths.generation, CONTRACTS),
             launch=launch,
+            run_steamcmd=run_steamcmd or self.run_steamcmd,
             post=post,
             clock=Clock(now=lambda: self.time.now, sleep=self.time.sleep),
             environ={},
         )
+
+    def run_steamcmd(self, command: list[str], timeout: float, stopping: steam.Stopping) -> None:
+        self.steamcmd_runs.append(command)
 
     def states(self) -> list[object]:
         """The reported states, a repeated report of the same state counted once."""
@@ -242,7 +258,7 @@ def test_a_report_from_an_earlier_run_is_ignored(world: World) -> None:
     assert "held" not in world.states()
 
 
-def test_no_report_leaves_the_world_unverified_but_running(world: World) -> None:
+def test_no_report_for_a_new_world_leaves_it_unverified_but_running(world: World) -> None:
     world.generation()
     sup = world.supervisor()
     world.time.at(supervisor.LOAD_TIMEOUT_S + 10, lambda: sup.request_stop(signal.SIGTERM, None))
@@ -252,14 +268,94 @@ def test_no_report_leaves_the_world_unverified_but_running(world: World) -> None
     assert world.process.signals == [signal.SIGINT]
 
 
-def test_a_newer_generation_stops_the_server_with_a_save(world: World) -> None:
+def test_no_report_over_a_save_is_held_without_saving(world: World) -> None:
+    world.generation()
+    world.save()
+    sup = world.supervisor()
+    world.time.at(supervisor.LOAD_TIMEOUT_S + 60, lambda: sup.request_stop(signal.SIGTERM, None))
+
+    assert sup.run() == 0
+    assert world.process.killed
+    assert world.process.signals == []
+    held = [r for r in world.reports if r["state"] == "held"]
+    assert held and held[0]["reason"] == supervisor.HELD_UNREPORTED
+
+
+def test_no_report_for_a_world_that_held_objects_is_held(world: World) -> None:
+    world.generation()
+    world.remember("Meadowfold", 120)
+    sup = world.supervisor()
+    world.time.at(supervisor.LOAD_TIMEOUT_S + 60, lambda: sup.request_stop(signal.SIGTERM, None))
+
+    assert sup.run() == 0
+    assert world.process.killed
+    assert world.process.signals == []
+
+
+def test_no_report_for_a_world_last_seen_empty_leaves_it_unverified(world: World) -> None:
+    world.generation()
+    world.save()
+    world.remember("Meadowfold", 0)
+    sup = world.supervisor()
+    world.time.at(supervisor.LOAD_TIMEOUT_S + 10, lambda: sup.request_stop(signal.SIGTERM, None))
+
+    assert sup.run() == 0
+    assert "unverified" in world.states()
+    assert not world.process.killed
+
+
+def test_a_newer_generation_that_changes_settings_stops_the_server_with_a_save(world: World) -> None:
+    world.generation(1)
+    sup = world.supervisor()
+    world.time.at(30, lambda: world.plugin_reports(10))
+    world.time.at(60, lambda: world.generation(2, password="hearth-and-horn"))
+
+    assert sup.run() == 0
+    assert world.process.signals == [signal.SIGINT]
+
+
+def test_a_newer_generation_with_the_same_settings_runs_on(world: World) -> None:
     world.generation(1)
     sup = world.supervisor()
     world.time.at(30, lambda: world.plugin_reports(10))
     world.time.at(60, lambda: world.generation(2))
+    world.time.at(120, lambda: sup.request_stop(signal.SIGTERM, None))
 
     assert sup.run() == 0
+    assert len(world.launches) == 1
     assert world.process.signals == [signal.SIGINT]
+    assert world.reports[-1]["generation"] == 2
+
+
+def test_a_generation_without_its_secrets_launches_nothing(world: World) -> None:
+    world.generation(secrets=False)
+    sup = world.supervisor()
+    world.time.at(60, lambda: sup.request_stop(signal.SIGTERM, None))
+
+    assert sup.run() == 0
+    assert world.launches == []
+
+
+def test_secrets_for_another_generation_launch_nothing(world: World) -> None:
+    world.secrets(1, password="hearth-and-horn")
+    world.generation(2, secrets=False)
+    sup = world.supervisor()
+    world.time.at(60, lambda: sup.request_stop(signal.SIGTERM, None))
+
+    assert sup.run() == 0
+    assert world.launches == []
+
+
+def test_a_newer_generation_waits_for_its_secrets(world: World) -> None:
+    world.generation(1, password="hearth-and-horn")
+    sup = world.supervisor()
+    world.time.at(30, lambda: world.plugin_reports(10))
+    world.time.at(60, lambda: world.generation(2, password="hearth-and-horn", secrets=False))
+    world.time.at(120, lambda: sup.request_stop(signal.SIGTERM, None))
+
+    assert sup.run() == 0
+    assert len(world.launches) == 1
+    assert world.reports[-1]["generation"] == 1
 
 
 def test_the_servers_own_exit_ends_the_runtime(world: World) -> None:
@@ -300,3 +396,35 @@ def test_a_server_that_will_not_stop_is_killed(world: World) -> None:
     assert sup.run() == 0
     assert world.process.signals == [signal.SIGINT]
     assert world.process.killed
+
+
+def test_a_stop_during_the_install_launches_nothing(world: World) -> None:
+    world.generation()
+    (world.paths.server / "steamapps" / "appmanifest_896660.acf").unlink()
+    sup: Supervisor
+
+    def run_steamcmd(command: list[str], timeout: float, stopping: steam.Stopping) -> None:
+        sup.request_stop(signal.SIGTERM, None)
+        if stopping():
+            raise steam.Stopped("stop requested while SteamCMD ran")
+
+    sup = world.supervisor(run_steamcmd)
+
+    assert sup.run() == 0
+    assert world.launches == []
+
+
+def test_status_keeps_reporting_a_long_install(world: World) -> None:
+    world.generation()
+
+    def run_steamcmd(command: list[str], timeout: float, stopping: steam.Stopping) -> None:
+        for _ in range(4):
+            world.time.sleep(5)
+            stopping()
+
+    sup = world.supervisor(run_steamcmd)
+    world.time.at(60, lambda: sup.request_stop(signal.SIGTERM, None))
+
+    assert sup.run() == 0
+    installing = [r for r in world.reports if r["state"] == "installing"]
+    assert len(installing) >= 4

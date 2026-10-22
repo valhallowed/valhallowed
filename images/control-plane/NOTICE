@@ -1,0 +1,10 @@
+The Valhallowed control plane image carries this third-party software,
+unmodified:
+
+Docker CLI 29.7.2 (/usr/local/bin/docker)
+  Apache-2.0. License: docker-cli-LICENSE, notice: docker-cli-NOTICE.
+  Source: https://github.com/docker/cli/tree/v29.7.2
+
+Docker Compose 5.4.0 (/usr/local/libexec/docker/cli-plugins/docker-compose)
+  Apache-2.0. License: docker-compose-LICENSE.
+  Source: https://github.com/docker/compose/tree/v5.4.0

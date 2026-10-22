@@ -14,14 +14,28 @@ variable "TAGS" {
   default = "dev"
 }
 
+# The dedicated server build the plugin compiles against, as
+# scripts/game-build.sh prints it. Required by the plugin and the game runtime.
+variable "GAME_BUILD" {
+  default = ""
+}
+
 group "default" {
-  targets = ["skeleton", "game-runtime"]
+  targets = ["skeleton", "game-runtime", "control-plane"]
+}
+
+# Debian from its base image's own snapshot, the base of every image built on
+# Debian, which names it as the "debian" context. Never published itself.
+target "debian" {
+  platforms = ["linux/amd64"]
+  context   = "images/debian"
 }
 
 target "_common" {
   platforms = ["linux/amd64"]
   args = {
-    VHD_BUILD = VHD_BUILD
+    VHD_BUILD  = VHD_BUILD
+    GAME_BUILD = GAME_BUILD
   }
   labels = {
     "org.opencontainers.image.source"   = "https://github.com/valhallowed/valhallowed"
@@ -39,6 +53,7 @@ target "plugin" {
   dockerfile = "images/game-runtime/Dockerfile"
   target     = "plugin"
   output     = ["type=local,dest=dist/plugin"]
+  contexts   = { debian = "target:debian" }
 }
 
 target "game-runtime" {
@@ -47,10 +62,30 @@ target "game-runtime" {
   dockerfile = "images/game-runtime/Dockerfile"
   target     = "runtime"
   tags       = [for t in split(",", TAGS) : "${REGISTRY}/game-runtime:${t}"]
+  contexts   = { debian = "target:debian" }
 }
 
 target "skeleton" {
   inherits = ["_common"]
   context  = "images/skeleton"
   tags     = [for t in split(",", TAGS) : "${REGISTRY}/skeleton:${t}"]
+}
+
+# SteamCMD alone, loaded locally for scripts/game-build.sh. Never published.
+target "steamcmd" {
+  platforms  = ["linux/amd64"]
+  context    = "."
+  dockerfile = "images/game-runtime/Dockerfile"
+  target     = "steamcmd"
+  tags       = ["vhd-steamcmd:local"]
+  output     = ["type=docker"]
+  contexts   = { debian = "target:debian" }
+}
+
+target "control-plane" {
+  inherits   = ["_common"]
+  context    = "."
+  dockerfile = "images/control-plane/Dockerfile"
+  contexts   = { debian = "target:debian" }
+  tags       = [for t in split(",", TAGS) : "${REGISTRY}/control-plane:${t}"]
 }

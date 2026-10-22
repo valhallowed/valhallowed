@@ -1,6 +1,7 @@
 # Exact pins for the runtime's checks, transitive dependencies included. The
 # runtime dependencies match the Debian trixie packages the game runtime image
-# installs.
+# installs from its base image's snapshot, so they stay equal until the base
+# image moves.
 jsonschema==4.19.2
 attrs==25.3.0
 jsonschema-specifications==2023.12.1

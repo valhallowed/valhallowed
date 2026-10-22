@@ -14,14 +14,19 @@ from types import FrameType
 from typing import Protocol
 
 from vhd_runtime import server, status, steam
-from vhd_runtime.generation import Generation, InvalidGeneration, Reader
+from vhd_runtime.generation import Generation, IncompleteGeneration, InvalidGeneration, Reader
 
+# Well below the game's autosave interval (30 minutes unless changed), so a
+# world held at this point has not saved.
 LOAD_TIMEOUT_S = 900
 STOP_TIMEOUT_S = 120
 POLL_S = 1.0
 GENERATION_POLL_S = 2.0
 HELD_AFTER_OBJECTS = "the world loaded with no objects where it last held {last}; stopped before its first autosave"
 HELD_OVER_SAVE = "the world loaded with no objects although a save existed; stopped before its first autosave"
+HELD_UNREPORTED = (
+    "the plugin has not reported the loaded world, which held objects before; stopped before its first autosave"
+)
 UNVERIFIED_REASON = "the plugin has not reported the loaded world"
 
 _log = logging.getLogger(__name__)
@@ -93,7 +98,7 @@ class Supervisor:
     clock: Clock = field(default_factory=Clock)
     environ: Mapping[str, str] = field(default_factory=lambda: dict(os.environ))
     _stop: bool = field(default=False, init=False)
-    _invalid: str | None = field(default=None, init=False)
+    _problem: str | None = field(default=None, init=False)
     _remembered: int | None = field(default=None, init=False)
 
     def request_stop(self, signum: int, frame: FrameType | None) -> None:
@@ -105,11 +110,9 @@ class Supervisor:
         if generation is None:
             return 0
         reporter = status.Reporter(generation.status_url, self.post)
-        reporter.send(
-            {"contract": 1, "generation": generation.number, "world": generation.world, "state": State.INSTALLING}
-        )
-        steamcmd = steam.ensure_steamcmd(self.paths.steamcmd, self.fetch)
-        build = steam.ensure_server(steamcmd, self.paths.server, self.run_steamcmd)
+        build = self._install(generation, reporter)
+        if build is None:
+            return 0
         server.install_mods(
             self.paths.pack, self.paths.plugin, self.paths.server, self.paths.world_status, generation.status_interval_s
         )
@@ -129,6 +132,35 @@ class Supervisor:
         )
         return self._watch(process, generation, reporter, save_existed, build)
 
+    def _install(self, generation: Generation, reporter: status.Reporter) -> str | None:
+        """SteamCMD and the dedicated server, installed or updated: the server's build id, or
+        None when a stop arrived first, so nothing launches. Status keeps reporting the
+        install, which can take many minutes, so the control plane never takes it for silence."""
+        installing: status.RuntimeStatus = {
+            "contract": 1,
+            "generation": generation.number,
+            "world": generation.world,
+            "state": State.INSTALLING,
+        }
+        reporter.send(installing)
+        next_report = self.clock.now() + generation.status_interval_s
+
+        def stopping() -> bool:
+            nonlocal next_report
+            if self.clock.now() >= next_report:
+                reporter.send(installing)
+                next_report = self.clock.now() + generation.status_interval_s
+            return self._stop
+
+        try:
+            steamcmd = steam.ensure_steamcmd(self.paths.steamcmd, self.fetch)
+            if not self._stop:
+                return steam.ensure_server(steamcmd, self.paths.server, self.run_steamcmd, stopping)
+        except steam.Stopped:
+            pass
+        _log.info("stopping: stop requested while installing")
+        return None
+
     def _watch(
         self, process: Process, generation: Generation, reporter: status.Reporter, save_existed: bool, build: str
     ) -> int:
@@ -139,8 +171,9 @@ class Supervisor:
         while True:
             if self._stop:
                 return self._shut_down(process, state, "stop requested")
-            if self._newer_generation(generation.number):
-                return self._shut_down(process, state, "a newer generation arrived")
+            generation, restart = self._follow(generation)
+            if restart:
+                return self._shut_down(process, state, "a newer generation changes this world's settings")
             if state is not State.HELD:
                 code = process.poll()
                 if code is not None:
@@ -149,25 +182,43 @@ class Supervisor:
                 world = status.read_world(self.paths.world_status, generation.world) or world
             previous = state
             if state in (State.LOADING, State.UNVERIFIED) and world is not None:
-                held = self._loaded_empty(generation.world, world.objects, save_existed)
-                if held is not None:
-                    # Killed, not interrupted: SIGINT would save the empty world over the real one.
-                    process.kill()
-                    process.wait()
-                    state, reason = State.HELD, held
-                    _log.error("held: %s", reason)
-                else:
-                    state, reason = State.RUNNING, None
-                    _log.info("world %s loaded with %d objects", generation.world, world.objects)
+                state, reason = self._on_report(process, generation.world, world.objects, save_existed)
             if state is State.RUNNING and world is not None:
                 self._remember_objects(generation.world, world.objects)
             elif state is State.LOADING and self.clock.now() - launched > LOAD_TIMEOUT_S:
-                state, reason = State.UNVERIFIED, UNVERIFIED_REASON
-                _log.warning("unverified: %s", reason)
+                state, reason = self._on_load_timeout(process, generation.world, save_existed)
             if state is not previous or self.clock.now() >= next_report:
                 reporter.send(_status(generation, state, reason, build, world))
                 next_report = self.clock.now() + generation.status_interval_s
             self.clock.sleep(POLL_S)
+
+    def _on_report(self, process: Process, world: str, objects: int, save_existed: bool) -> tuple[State, str | None]:
+        """World truth on the plugin's first report: run the world, or hold it if it loaded empty."""
+        held = self._loaded_empty(world, objects, save_existed)
+        if held is not None:
+            return self._hold(process, held)
+        _log.info("world %s loaded with %d objects", world, objects)
+        return State.RUNNING, None
+
+    def _on_load_timeout(self, process: Process, world: str, save_existed: bool) -> tuple[State, str | None]:
+        """World truth when the plugin never reported: what loaded is unknown, so a world with
+        something to lose is held, and one with nothing to lose runs unverified."""
+        if self._expects_objects(world, save_existed):
+            return self._hold(process, HELD_UNREPORTED)
+        _log.warning("unverified: %s", UNVERIFIED_REASON)
+        return State.UNVERIFIED, UNVERIFIED_REASON
+
+    def _hold(self, process: Process, reason: str) -> tuple[State, str]:
+        # Killed, not interrupted: SIGINT would save whatever loaded over the real world.
+        process.kill()
+        process.wait()
+        _log.error("held: %s", reason)
+        return State.HELD, reason
+
+    def _expects_objects(self, world: str, save_existed: bool) -> bool:
+        """Whether the world held objects when last seen, or, with nothing remembered, had a save."""
+        last = self._last_objects(world)
+        return save_existed if last is None else last > 0
 
     def _loaded_empty(self, world: str, objects: int, save_existed: bool) -> str | None:
         """Why the world must be held, or None. An empty load fails world truth when the
@@ -220,20 +271,31 @@ class Supervisor:
             self.clock.sleep(GENERATION_POLL_S)
         return None
 
-    def _newer_generation(self, current: int) -> bool:
-        generation = self._read_generation()
-        return generation is not None and generation.number > current
+    def _follow(self, current: Generation) -> tuple[Generation, bool]:
+        """The generation to run on, and whether reaching it takes a restart. A newer generation
+        that differs only in its number is adopted in place."""
+        newer = self._read_generation()
+        if newer is None or newer.number <= current.number:
+            return current, False
+        if newer.same_settings(current):
+            _log.info("generation %d has the settings of %d; running on", newer.number, current.number)
+            return newer, False
+        return current, True
 
     def _read_generation(self) -> Generation | None:
-        """The valid generation on disk, or None. An invalid one is refused and logged once."""
+        """The complete, valid generation on disk, or None. An invalid one is refused, and an
+        incomplete one waited for, each logged once."""
         try:
             generation = self.reader.read()
-        except InvalidGeneration as error:
-            if str(error) != self._invalid:
-                _log.error("refusing the generation: %s", error)
-            self._invalid = str(error)
+        except (InvalidGeneration, IncompleteGeneration) as error:
+            if str(error) != self._problem:
+                if isinstance(error, InvalidGeneration):
+                    _log.error("refusing the generation: %s", error)
+                else:
+                    _log.info("waiting: %s", error)
+            self._problem = str(error)
             return None
-        self._invalid = None
+        self._problem = None
         return generation
 
 

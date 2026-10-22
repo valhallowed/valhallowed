@@ -1,0 +1,26 @@
+[project]
+name = "vhd-control"
+version = "0.0.0"
+description = "The Valhallowed control plane and its CLI, vhd."
+requires-python = ">=3.13"
+# The image installs Debian's python3-jsonschema at this version; tests pin the same.
+dependencies = ["jsonschema==4.19.2"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "PL", "RUF"]
+ignore = ["PLR2004"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/**/test_*.py" = ["S101", "S105", "S106", "PLR0913"]
+
+[tool.mypy]
+strict = true
+mypy_path = "src"

@@ -1,0 +1,36 @@
+# Pinned dependencies move only through pull requests that pass the same checks
+# as any other change.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  # A new Debian base digest moves the package snapshot with it; its pins are
+  # updated in the same pull request.
+  - package-ecosystem: docker
+    directories:
+      - /images/control-plane
+      - /images/debian
+      - /images/game-runtime
+      - /images/skeleton
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directories:
+      - /control
+      - /runtime
+    schedule:
+      interval: weekly
+    # These mirror the Debian packages the images install, and move with the
+    # base image instead.
+    ignore:
+      - dependency-name: jsonschema
+      - dependency-name: jsonschema-specifications
+      - dependency-name: referencing
+      - dependency-name: rpds-py
+      - dependency-name: attrs
+  - package-ecosystem: pip
+    directory: /scripts
+    schedule:
+      interval: weekly

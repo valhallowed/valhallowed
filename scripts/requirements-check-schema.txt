@@ -1,0 +1,15 @@
+# Exact pins for scripts/check-schema.sh, transitive dependencies included.
+check-jsonschema==0.38.2
+attrs==26.1.0
+certifi==2026.10.19
+charset-normalizer==3.5.2
+click==8.5.0
+idna==3.20
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+referencing==0.37.0
+regress==2026.9.1
+requests==2.34.2
+rpds-py==2026.9.1
+ruamel.yaml==0.19.1
+urllib3==2.8.0
