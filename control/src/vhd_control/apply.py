@@ -165,7 +165,13 @@ class Apply:
             if cid in applied and applied[cid] != child.port:
                 self.store.hand(state, cid, child, generation.number, record=False)
                 moving.add(cid)
-            elif handed is None or handed.number != generation.number or handed.child != child:
+            elif (
+                handed is None
+                or handed.number != generation.number
+                or handed.child != child
+                or not self.store.holds(cid, child.port)
+            ):
+                # Rewritten when missing too: Compose cannot mount a subpath that is not there.
                 self.store.hand(state, cid, child, generation.number)
         state.generation = generation
         self.store.save(state)

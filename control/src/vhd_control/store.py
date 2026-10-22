@@ -100,6 +100,11 @@ class Store:
         if record:
             state.handed[child_id] = Handed(number, child)
 
+    def holds(self, child_id: str, port: int) -> bool:
+        """Whether the directory for port has both of the child's files."""
+        directory = self.directory(child_id, port)
+        return (directory / SECRETS_FILE).exists() and (directory / GENERATION_FILE).exists()
+
     def directory(self, child_id: str, port: int) -> Path:
         """Where a child's documents live while its container runs on port: its subpath."""
         return self.root / child_id / str(port)

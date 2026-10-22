@@ -1,5 +1,6 @@
 import io
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -251,3 +252,12 @@ def test_a_removed_world_loses_its_directory_once_compose_removes_it(setup: Setu
 
     assert not (setup.volume / ASHWAKE).exists()
     assert ASHWAKE not in Store(setup.volume).load().handed
+
+
+def test_a_world_whose_directory_went_missing_gets_it_back(setup: Setup) -> None:
+    setup.apply()
+    shutil.rmtree(setup.volume / MEADOWFOLD)
+
+    setup.apply()
+
+    assert setup.handed(MEADOWFOLD) == (1, None)
