@@ -5,9 +5,10 @@
 #                           that commit
 #   vX.Y.Z       release    promotes the newest candidate on the same commit,
 #                           and moves latest
-# With --check, only checks that TAG can be promoted and prints version=,
-# prerelease=, commit= and source= lines for the workflow. Without it, tags
-# exactly the digests COMPOSE_FILE pins: the file acceptance just passed.
+# The images are the install's x-vhd block, which check-images.sh holds equal to
+# what CI builds. With --check, only checks that TAG can be promoted and prints
+# version=, prerelease=, commit= and source= lines for the workflow. Without it,
+# tags exactly the digests COMPOSE_FILE pins: the file acceptance just passed.
 # Reading ci's result needs GITHUB_TOKEN and GITHUB_REPOSITORY.
 set -euo pipefail
 
@@ -15,10 +16,11 @@ usage() { echo "usage: $0 --check TAG | $0 TAG COMPOSE_FILE" >&2; exit 2; }
 if [[ $# -eq 2 && $1 == --check ]]; then
   check=true tag=$2
 elif [[ $# -eq 2 ]]; then
-  check=false tag=$1 compose_file=$2
+  check=false tag=$1 compose_file=$(realpath -e "$2")
 else
   usage
 fi
+cd "$(git rev-parse --show-toplevel)"
 if [[ $tag =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-rc\.[0-9]+$ ]]; then
   prerelease=true
 elif [[ $tag =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
@@ -37,6 +39,13 @@ github() {
     -H 'Accept: application/vnd.github+json' \
     "https://api.github.com/repos/${GITHUB_REPOSITORY:?promote: GITHUB_REPOSITORY is required}/$1"
 }
+
+# The images a compose file lists in its x-vhd block, one per line.
+listed() {
+  docker compose -f "$1" config --format json | jq -r '."x-vhd".images // {} | .[]'
+}
+
+scripts/check-images.sh >&2
 
 if [[ $prerelease == true ]]; then
   source=sha-${commit::7}
@@ -62,16 +71,14 @@ else
   source=${rc#v}
 fi
 
-mapfile -t refs < <(TAGS=$version docker buildx bake --print 2>/dev/null | jq -r '.target[].tags[]')
-if [[ ${#refs[@]} -eq 0 ]]; then
-  echo "promote: docker buildx bake --print lists no images" >&2
-  exit 1
-fi
-
 if [[ $check == true ]]; then
+  rendered=$(mktemp --suffix=.yaml)
+  trap 'rm -f "$rendered"' EXIT
+  scripts/render-install.sh "$version" "$rendered"
+  mapfile -t refs < <(listed "$rendered")
   for ref in "${refs[@]}"; do
     repo=${ref%:*}
-    if ! docker buildx imagetools inspect "$repo:$source" >/dev/null 2>&1; then
+    if ! timeout 60 docker buildx imagetools inspect "$repo:$source" >/dev/null 2>&1; then
       echo "promote: $repo:$source is not in the registry; wait for ci on main to publish it" >&2
       exit 1
     fi
@@ -80,13 +87,24 @@ if [[ $check == true ]]; then
   exit 0
 fi
 
-for ref in "${refs[@]}"; do
-  repo=${ref%:*}
-  digest=$(awk -v ref="$ref" '$1 == "image:" && index($2, ref "@") == 1 { print substr($2, length(ref) + 2) }' "$compose_file")
-  if [[ ! $digest =~ ^sha256:[0-9a-f]{64}$ ]]; then
-    echo "promote: $compose_file does not pin $ref; only accepted images are promoted" >&2
+# Every image must be pinned for this version before anything is tagged, so a
+# refusal never leaves a partial promotion behind.
+mapfile -t pinned < <(listed "$compose_file")
+if [[ ${#pinned[@]} -eq 0 ]]; then
+  echo "promote: $compose_file lists no images in x-vhd" >&2
+  exit 1
+fi
+for value in "${pinned[@]}"; do
+  ref=${value%@*} digest=${value##*@}
+  if [[ $ref != *:"$version" || ! $digest =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    echo "promote: $compose_file pins '$value', not a $version image by digest; only accepted images are promoted" >&2
     exit 1
   fi
+done
+
+for value in "${pinned[@]}"; do
+  ref=${value%@*} digest=${value##*@}
+  repo=${ref%:*}
   tags=(--tag "$ref")
   if [[ $prerelease == false ]]; then
     tags+=(--tag "$repo:latest")

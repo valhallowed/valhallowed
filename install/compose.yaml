@@ -2,9 +2,17 @@
 # version, with every image pinned by digest (scripts/render-install.sh).
 name: valhallowed
 
+# Every image a release ships, listed once. Services name them by anchor;
+# promotion tags exactly these, and scripts/check-images.sh keeps the list
+# equal to the images CI builds.
+x-vhd:
+  images:
+    game-runtime: &game-runtime ghcr.io/valhallowed/game-runtime:@VHD_VERSION@
+    skeleton: &skeleton ghcr.io/valhallowed/skeleton:@VHD_VERSION@
+
 services:
   skeleton:
-    image: ghcr.io/valhallowed/skeleton:@VHD_VERSION@
+    image: *skeleton
     # The web map's default port (G9). The manifest takes it over once it exists.
     ports:
       - "8456:8456"
