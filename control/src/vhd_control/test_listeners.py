@@ -8,17 +8,30 @@ from pathlib import Path
 import pytest
 
 from vhd_control import client
-from vhd_control.listeners import MAX_BODY, control_server, status_server
+from vhd_control.listeners import MAX_BODY, Senders, control_server, status_server
+from vhd_control.naming import child_id
 from vhd_control.status import StatusBook
 from vhd_control.test_daemon import SCHEMAS, Install
 
 REPORT = {"contract": 1, "generation": 1, "world": "Meadowfold", "state": "running", "objects": 10, "players": 2}
 
 
+class Resolver:
+    """Docker's DNS, as the control plane sees it: Meadowfold's container is this test."""
+
+    def __init__(self) -> None:
+        self.addresses = {child_id("Meadowfold"): {"127.0.0.1"}, child_id("Ashwake"): {"192.0.2.10"}}
+
+    def __call__(self, name: str) -> set[str]:
+        if name not in self.addresses:
+            raise OSError(f"no such service: {name}")
+        return self.addresses[name]
+
+
 @pytest.fixture
 def status_url() -> Iterator[tuple[str, StatusBook]]:
     book = StatusBook()
-    server = status_server(book, SCHEMAS, ("127.0.0.1", 0))
+    server = status_server(book, SCHEMAS, Senders(Resolver()), ("127.0.0.1", 0))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         yield f"http://127.0.0.1:{server.server_address[1]}/status", book
@@ -48,6 +61,23 @@ def test_a_report_that_breaks_the_contract_is_dropped(status_url: tuple[str, Sta
     assert post(url, json.dumps({**REPORT, "state": "healthy"}).encode()) == 400
     assert post(url, b"{") == 400
     assert book.view("Meadowfold").report is None
+
+
+def test_a_runtime_cannot_report_for_another_world(status_url: tuple[str, StatusBook]) -> None:
+    url, book = status_url
+    spoof = {**REPORT, "world": "Ashwake", "players": 0}
+    assert post(url, json.dumps(spoof).encode()) == 403
+    assert post(url, json.dumps({**REPORT, "world": "Elsewhere"}).encode()) == 403
+    assert book.view("Ashwake").report is None
+
+
+def test_senders_follow_a_container_docker_recreated() -> None:
+    resolver = Resolver()
+    senders = Senders(resolver)
+    assert senders.allows("Meadowfold", "127.0.0.1")
+    resolver.addresses[child_id("Meadowfold")] = {"192.0.2.20"}
+    assert senders.allows("Meadowfold", "192.0.2.20")
+    assert not senders.allows("Meadowfold", "127.0.0.1")
 
 
 def test_an_oversized_report_is_refused_unread(status_url: tuple[str, StatusBook]) -> None:

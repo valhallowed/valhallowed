@@ -1,19 +1,23 @@
 """The control plane's two listeners.
 
 - Status (B1): runtimes POST their reports on the install network. It accepts status and
-  nothing else, so a runtime, which faces players, can reach no operator action.
+  nothing else, so a runtime, which faces players, can reach no operator action, and it takes
+  a world's report only from that world's own container, so no runtime can speak for another.
 - The control API (I0): GET /status on a Unix socket in a volume only the control plane
   and vhd mount, so no child and no network reaches it.
 """
 
 import json
 import logging
+import socket
 import socketserver
+from collections.abc import Callable
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from vhd_control.daemon import Daemon
+from vhd_control.naming import child_id
 from vhd_control.schemas import Schemas
 from vhd_control.status import StatusBook
 
@@ -22,6 +26,25 @@ MAX_BODY = 16 * 1024
 TIMEOUT_S = 5
 
 _log = logging.getLogger(__name__)
+
+
+def _resolve(name: str) -> set[str]:
+    return {str(info[4][0]) for info in socket.getaddrinfo(name, None, proto=socket.IPPROTO_TCP)}
+
+
+class Senders:
+    """Which address may report for a world: the one Docker's DNS gives the world's service on
+    the install network, asked on every report. A container Compose recreates gets a new
+    address, and its old one can pass to another world's container, so none is remembered."""
+
+    def __init__(self, resolve: Callable[[str], set[str]] = _resolve) -> None:
+        self._resolve = resolve
+
+    def allows(self, world: str, address: str) -> bool:
+        try:
+            return address in self._resolve(child_id(world))
+        except OSError:
+            return False
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -40,7 +63,9 @@ class _Handler(BaseHTTPRequestHandler):
         _log.debug(format, *args)
 
 
-def status_server(book: StatusBook, schemas: Schemas, address: tuple[str, int]) -> ThreadingHTTPServer:
+def status_server(
+    book: StatusBook, schemas: Schemas, senders: Senders, address: tuple[str, int]
+) -> ThreadingHTTPServer:
     class Handler(_Handler):
         def do_POST(self) -> None:
             if self.path != "/status":
@@ -64,6 +89,12 @@ def status_server(book: StatusBook, schemas: Schemas, address: tuple[str, int]) 
                 # Observations fail soft: the report is dropped, and the runtime runs on.
                 _log.warning("dropped a status report %s", problem)
                 self.reply(HTTPStatus.BAD_REQUEST, {"error": problem})
+                return
+            if not senders.allows(report["world"], self.client_address[0]):
+                _log.warning(
+                    "dropped a status report for %s from %s, not its container", report["world"], self.client_address[0]
+                )
+                self.reply(HTTPStatus.FORBIDDEN, {"error": "a world reports only from its own container"})
                 return
             book.record(report)
             self.reply(HTTPStatus.NO_CONTENT)
