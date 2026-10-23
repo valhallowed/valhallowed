@@ -7,35 +7,30 @@
 # vhd apply renders the install's own compose file into .vhd/ and starts it.
 name: valhallowed
 
-# Every image a release ships, listed once. Services name them by anchor;
+# Every image a release ships, listed once: vhd apply takes them from here,
 # promotion tags exactly these, and scripts/check-images.sh keeps the list
 # equal to the images CI builds.
 x-vhd:
   images:
     control-plane: &control-plane ghcr.io/valhallowed/control-plane:@VHD_VERSION@
-    game-runtime: &game-runtime ghcr.io/valhallowed/game-runtime:@VHD_VERSION@
-    skeleton: &skeleton ghcr.io/valhallowed/skeleton:@VHD_VERSION@
+    game-runtime: ghcr.io/valhallowed/game-runtime:@VHD_VERSION@
+    skeleton: ghcr.io/valhallowed/skeleton:@VHD_VERSION@
 
+# vhd apply renders every other service from these images into .vhd/.
 services:
   # vhd, the control plane's CLI: the only container that gets Docker's socket,
   # and only for its run (G13). It starts only through docker compose run.
+  # VHD_DOCKER_SOCKET names another socket, such as rootless Docker's.
   vhd:
     image: *control-plane
     profiles: [tools]
     user: "0"
     network_mode: none
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - ${VHD_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
       - .:/install
       - generations:/generations
       - control:/run/vhd-control
-
-  skeleton:
-    image: *skeleton
-    # The web map's default port (G9). The manifest takes it over once it exists.
-    ports:
-      - "8456:8456"
-    restart: unless-stopped
 
 volumes:
   generations: {}

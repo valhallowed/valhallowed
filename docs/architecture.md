@@ -3,7 +3,8 @@
 Valhallowed (VHD): what it is, the rules it is built under, and the decisions
 still open. Terms mean exactly what [glossary.md](glossary.md) says; the name
 and its rules live in [brand.md](brand.md). The [diagrams](diagrams/README.md)
-draw this document; where they disagree, this document wins.
+draw this document; where they disagree, this document wins. It describes VHD
+as designed; the [board](https://github.com/orgs/valhallowed/projects/1) shows what is built.
 
 ## Target
 
@@ -30,14 +31,14 @@ open decision names it.
 | G6 | **One way in.** Settings, secrets and operator actions enter only through the control plane and are validated there. Nothing past it reads raw input. | Validate once at the boundary. Internal logic never sees raw input, and failures stay in their own domain. |
 | G7 | **License: MIT.** | The simplest terms for the people who host it and the people who contribute. Settled from O9. |
 | G8 | **Name:** the product is Valhallowed, short form VHD, at valhallowed.com. | One name across code, docs and marketing. |
-| G9 | **Every port, address and resource allocation is a default.** Each has a sensible default and can be changed in the manifest. | Hosts differ. Defaults make the first install work; overrides make every install fit. |
+| G9 | **Every port, address and resource allocation is a default.** Each has a sensible default and can be changed in the manifest. That covers what meets the host: published ports, addresses, and each world's resources. Wiring inside an install, between VHD's own containers, is fixed. | Hosts differ. Defaults make the first install work; overrides make every install fit. |
 | G10 | **Registry: GHCR.** Images publish to the GitHub Container Registry. | The workflow's own token publishes, so no registry secret is stored anywhere, and public images cost nothing to host or pull. Settled from O7. |
 | G11 | **Identifiers.** Repos and images live in the `valhallowed` GitHub org: repo `valhallowed/valhallowed`, images `ghcr.io/valhallowed/<component>`, CLI `vhd`. | Image paths carry the owner, so they never have to change. Settled from O10. |
 | G12 | **Build once, promote by tag.** Only CI on `main` builds and pushes images. A version tag applies to images already in the registry and never rebuilds them. | A release is exactly the candidate that soaked, and nothing reaches the registry from a workstation. |
-| G13 | **Compose owns the containers; the running control plane holds no Docker socket.** The control plane validates, reconciles and publishes each generation; a child applies it in place, or exits and Compose restarts it. A change to the containers themselves (a world added or removed, a published port, a resource limit, the VHD version) waits as a pending change until the server manager runs `vhd apply`, which acts with the server manager's own access to Docker. | A Docker socket is root on the host, so whatever took over the control plane, or an admin console the manifest opened, would take the host with it. Container changes are rare, and they cost one host command. Settled from O1. |
+| G13 | **Compose owns the containers; the running control plane holds no Docker socket.** The control plane validates, reconciles and publishes each generation; a child applies it in place, or exits and Docker restarts it under the policy Compose set. A change to the containers themselves (a world added or removed, a published port, a resource limit, the VHD version) waits as a pending change until the server manager runs `vhd apply`, which acts with the server manager's own access to Docker. | A Docker socket is root on the host, so whatever took over the control plane, or an admin console the manifest opened, would take the host with it. Container changes are rare, and they cost one host command. Settled from O1. |
 | G14 | **The data layer runs as children,** one container per service, never inside the control plane. | It carries the heavy traffic and fails more often; the control plane stays small and always up. Settled from O2. |
 | G15 | **One install runs many worlds,** each in its own game runtime, with its own world ports and resource limits. | A server manager with several worlds runs one install, with no extra tooling to keep several installs in step. A crash, a restart or a memory limit stays inside its world. Settled from O3. |
-| G16 | **VHD builds its own game runtime image:** the supervisor, BepInEx and the plugin on a pinned base. SteamCMD and the dedicated server download into the install at first start, and the server again on each update. `lloesche/valheim-server` is a reference, not a base. | Its environment settings would be a second ingress under ours (G6), and its backups and updates duplicate control-plane work. Downloading SteamCMD keeps every Valve and Iron Gate file out of a public image. Settled from O4. |
+| G16 | **VHD builds its own game runtime image:** the supervisor, BepInEx and the plugin on a pinned base. SteamCMD and the dedicated server download into the install at first start, and the server again on each update. Neither is pinned: Valve updates SteamCMD in place, and the server is the game's newest build, which world truth guards. `lloesche/valheim-server` is a reference, not a base. | Its environment settings would be a second ingress under ours (G6), and its backups and updates duplicate control-plane work. Downloading SteamCMD keeps every Valve and Iron Gate file out of a public image. Settled from O4. |
 | G17 | **One repo, one version, one CI.** Every component lives in `valhallowed/valhallowed` and ships in the same release. | Cross-component changes land together, and one version describes a release. Settled from O5. |
 | G18 | **The manifest and the secrets file are TOML 1.0,** each checked against a versioned JSON Schema in [`schema/`](../schema/). Each file declares its schema version. A renamed key migrates automatically or fails with a message that names the new key. | TOML has one specification, explicit types and no meaningful indentation, so a value means what it looks like. JSON Schema is language-neutral: editors, the control plane and the settings reference read the same file. Settled from O6. |
 | G19 | **Languages:** Python for the control plane, the data layer and the game runtime's supervisor; TypeScript for the web map and the admin console's front end; C# for the plugin. | One backend language, so the generation's producer and its consumers share a toolchain and its tests. The game fixes the plugin's language. Settled from O11. |
@@ -94,10 +95,11 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
 - **Change cost.** Every setting is classed as live, service restart or
   game-server restart. A change that needs a game-server restart waits as
   pending while players are online, unless the server manager applies it now
-  after being shown who it disconnects. The override is recorded with the
+  after being shown which worlds and how many players it disconnects. The
+  override is recorded with the
   change.
 - **Applying a change.** The control plane publishes a generation; each child
-  it affects reloads it in place, or exits and Compose restarts it. A change to
+  it affects reloads it in place, or exits and Docker restarts it. A change to
   the containers themselves waits as pending until the server manager runs
   `vhd apply` (G13): a one-shot container that only the server manager starts,
   and the only one that gets the Docker socket, for that run. It validates the
@@ -106,13 +108,16 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   current generation and the release's `compose.yaml`, and has Compose
   recreate only the containers whose definition changed. `vhd apply
   --disconnect-players` is that confirmation. A world whose runtime has
-  stopped reporting counts as occupied, since status cannot vouch for it. The
+  stopped reporting counts as occupied, since status cannot vouch for it. A
+  player who joins in the seconds between that check and Compose recreating
+  a container is disconnected; a change a runtime applies in place has no
+  such window. The
   Compose it runs is the one in the control plane's image, so the host needs
   Docker Engine 26 or newer and any Compose that can start the one-shot.
 - **Delivering a generation.** The control plane writes each child's
   generation, and the secrets scoped to it, into that child's own directory of
-  one generations volume. The directory, like the child's container, is named
-  for it: a world's save name in lower case with a short hash, since save names
+  one generations volume. The directory, like the child's Compose service, is
+  named for it: a world's save name in lower case with a short hash, since save names
   allow characters Compose names do not. Each child mounts only its own
   directory, read-only (a volume subpath, which needs Docker Engine 26), so it
   can read no other child's secrets. The secrets go first and the generation
@@ -120,8 +125,8 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   (B1). A world's directory is also keyed by its port, so when `vhd apply`
   moves a world to a new port only the new container reads that change. If
   Compose fails partway, `vhd apply` brings the install back on the compose
-  file it ran before, whose directories it leaves untouched until a run
-  succeeds.
+  file Compose last ran successfully, which it replaces only once a run
+  succeeds; a moving world's old directory stays as it was until then.
 - **Running as.** The control plane runs as the user who owns the install
   folder, which `vhd apply` reads from the folder, so the secrets file can stay
   readable by its owner alone. Every other child runs as VHD's own
@@ -136,7 +141,9 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   host needs only Docker. The control API answers on a Unix socket in a volume
   only the control plane and `vhd` mount, so no child and no network reaches
   it. Children report status to a separate listener on the install network
-  that accepts status and nothing else. The admin console will put the control
+  that accepts status and nothing else, and only from the reporting
+  world's own container: it trusts source addresses, which holds because no
+  child has the capability to forge one. The admin console will put the control
   API on the host's loopback, listening locally unless the manifest opens it,
   once its authentication is settled (O14). They cover manifest errors, hot
   reload, status, world import and export, backups and logs.
@@ -154,10 +161,18 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   the Valheim dedicated server, BepInEx and the plugin on what the control
   plane hands it; its supervisor reads the generation, installs and updates
   the server, starts and stops it, and reports status. Updates, backups,
-  schedules, world import and export, and restart gating belong to the control
-  plane. Until the control plane sets an update policy, the supervisor updates
-  the server at every start, and world truth holds a world the update stops
-  from loading.
+  schedules, and world import and export belong to the control plane. Until
+  the control plane sets an update policy, the supervisor updates the server
+  at every start, and world truth holds a world the update stops from loading.
+  Each world downloads and updates a server of its own, so a crash, an update
+  or a full disk stays inside it; worlds on one host pay that disk space and
+  download once each.
+- **Restart gating is shared.** The control plane holds a change while status
+  shows players, and the runtime makes the final check when it would restart
+  the game, since only it sees the count at that moment: it restarts only for
+  a current count of no players, or for a generation that carries the server
+  manager's confirmation (B1). Only that confirmation, or a stop, ends a
+  load, and then by a kill, which saves nothing.
 - **Children read only the effective configuration.** Generated files, such as
   the plugin's BepInEx config, are never edited by hand.
 - **World truth gates saving.** A world that fails world truth is stopped
@@ -258,10 +273,13 @@ Follows from G4 and G12.
   server. Commit builds are what acceptance installs; a candidate or a release
   is published only after acceptance passes on its images.
 - **The nightly game check** builds and accepts the newest commit against the
-  newest dedicated-server build, because game patches arrive without notice.
-  A failure blocks the next candidate.
+  newest game build, because game patches arrive without notice. A failure
+  blocks the next candidate. Beside it, the pinned downloads Dependabot cannot
+  watch are compared with their newest releases; a newer one opens an issue and
+  blocks nothing, since a game-patch fix must not wait on an unrelated bump.
 - **Candidates and releases attach** `compose.yaml`, with every image pinned by
-  digest, the manifest schema, the plugin artifact and `SHA256SUMS`. Release
+  digest, the manifest and secrets schemas, the plugin artifact and
+  `SHA256SUMS`. Release
   notes name the game build the release was accepted on.
 - **Three gates.** The merge gate: every check passes before a merge to
   `main`. The candidate gate: acceptance passes on the registry images,
@@ -291,7 +309,10 @@ What any design here must respect about the game.
   directory. Save numbers wrap; the game picks the newest by modification time.
 - The server loads the save its world setting names. When no save has that
   name, or the save fails to load, the server creates a new, empty world under
-  the name.
+  the name, and writes that world's small `_main.0.fwl2` into the save's
+  directory before any plugin loads; recovering a held world removes it.
+- A new world counts no objects when it first loads, and its real count about
+  30 seconds later. A world loaded from a save counts its objects at once.
 - A world's server uses its port and the next one, over UDP; the server's own
   start script asks for its port through port+2 to be forwarded. Worlds that
   share a host need ranges that do not overlap.
@@ -307,9 +328,9 @@ What any design here must respect about the game.
   against.
 - The plugin builds against stock, unmodified game assemblies plus BepInEx and
   Harmony, with no publicizer step. The dedicated-server download carries every
-  assembly it references (`assembly_valheim`, `assembly_utils`, `Splatform`,
-  `UnityEngine`, `UnityEngine.CoreModule`), so a build stage fetches them and
-  the plugin builds anywhere, including GitHub Actions. Game files never enter
+  game assembly it references (`assembly_valheim`, `UnityEngine`,
+  `UnityEngine.CoreModule`), so a build stage fetches them and the plugin
+  builds anywhere, including GitHub Actions. Game files never enter
   an image or a release.
 
 ## Open decisions

@@ -4,19 +4,21 @@
 # what it costs and what applies it, every valid example passes, and every
 # invalid example fails with the error it names: a TOML example on its first
 # line ("# expect: <error>"), a JSON example in a sibling <example>.expect.
+# .github/dependabot.yml is checked against Dependabot's schema too, since
+# GitHub reads it only after a merge.
 # Validation runs in a pinned Python image with the packages pinned in
 # scripts/requirements-check-schema.txt, so Docker and jq are the only
 # dependencies.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-image=python:3.13.17-slim@sha256:fe14fd57a4c0361110eaa0c284112b189750bcb43fb04bb5d1ee7b7744027ccf
+image=$(scripts/tool-image.sh python)
 
 failed=0
 for s in schema/*.schema.json; do
   bad=$(jq -r '
     [.. | objects | select(has("properties")) | .properties | to_entries[]
-      | select(.key != "schema" and (.value | has("type")) and .value.type != "object")
+      | select(.key != "schema" and ((.value | has("$ref")) or ((.value | has("type")) and .value.type != "object")))
       | select((.value | has("description") | not)
           or (.value["x-change-cost"] | IN("live", "service restart", "game-server restart") | not)
           or (.value["x-applied-by"] | IN("control plane", "vhd apply") | not))
@@ -70,6 +72,7 @@ pip install --quiet --disable-pip-version-check --root-user-action=ignore --no-d
 pip check --quiet 2>/dev/null || pip check
 failed=0
 check-jsonschema --check-metaschema schema/*.schema.json contracts/*.schema.json >/dev/null || failed=1
+check-jsonschema --builtin-schema vendor.dependabot .github/dependabot.yml >/dev/null || failed=1
 while [ $# -ge 3 ]; do
   schema=$1 example=$2 expect=$3
   shift 3
@@ -86,6 +89,6 @@ exit $failed
 EOF
 
 if (( failed == 0 )); then
-  echo "check-schema: schemas, contracts and examples agree"
+  echo "check-schema: schemas, contracts, examples and dependabot.yml agree"
 fi
 exit "$failed"

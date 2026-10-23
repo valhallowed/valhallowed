@@ -18,7 +18,7 @@
 
 <main class="wrap">
   <header class="mast">
-    <p class="eyebrow"><span class="wordmark">Valhallowed</span><span>Planning</span><span>Network exposure</span><span>Proposal</span></p>
+    <p class="eyebrow"><span class="wordmark">Valhallowed</span><span>Network exposure</span></p>
     <h1>What an install exposes, and to whom</h1>
     <p class="lede">An install opens as little as it can: the game ports for each world, the web map when it is on, and nothing else beyond the host. Every port and address on this page is a default; the manifest can change any of them, and reconcile rejects a clash. Whether an open port reaches the internet is up to the host's network: behind a home router it takes a port forward, and on a server with its own public address it is public unless a firewall closes it.</p>
     <div class="legend">
@@ -126,8 +126,8 @@
           <tr><td>Game, per world</td><td class="num">udp 2456–2458 for one world; with several, each world sets its port</td><td>all interfaces</td><td>all, public</td><td>all, public</td><td>all interfaces</td><td><code>world.&lt;name&gt;.port</code>; reconcile rejects overlapping ranges, the host check flags a port already in use</td></tr>
           <tr><td>Web map</td><td class="num">tcp 8456</td><td>all interfaces, HTTP</td><td>all, public, HTTP</td><td>127.0.0.1, behind TLS on 443</td><td>off</td><td><code>web_map.port</code>, <code>web_map.listen</code>, <code>web_map.public_url</code></td></tr>
           <tr><td>Admin console (once its authentication is settled, O14)</td><td class="num">tcp 9456</td><td>127.0.0.1</td><td>127.0.0.1</td><td>127.0.0.1</td><td>127.0.0.1</td><td><code>admin_console.listen</code></td></tr>
-          <tr><td>TUI and CLI</td><td class="num">none</td><td colspan="4">Inside the control plane container, or the CLI through the control plane’s socket, which no network reaches</td><td>n/a</td></tr>
-          <tr><td>Intake, broker, world render</td><td class="num">none on the host</td><td colspan="4">Install network only; the plugin is their only caller</td><td>n/a</td></tr>
+          <tr><td>TUI and CLI</td><td class="num">none</td><td colspan="4">The CLI in a one-shot container from the control plane’s image, through the control plane’s socket, which no network reaches</td><td>n/a</td></tr>
+          <tr><td>Intake, broker, world render</td><td class="num">none on the host</td><td colspan="4">Install network only; the plugin calls intake and the broker, and the web map and chat relay reach the broker</td><td>n/a</td></tr>
           <tr><td>Database (bundled)</td><td class="num">tcp 5432, install network</td><td colspan="4">Never published</td><td><code>database.url</code> for BYO</td></tr>
         </tbody>
       </table>

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Valhallowed manifest",
-  "description": "The settings of one install, written in TOML (G18). Version 1 holds what the walking skeleton implements; later settings are additions. Reconcile enforces what this schema cannot express: no two worlds' port ranges overlap.",
+  "description": "The settings of one install, written in TOML (G18). A later version only adds settings, or migrates a renamed key. Reconcile enforces what this schema cannot express: no two worlds' port ranges overlap.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "world"],

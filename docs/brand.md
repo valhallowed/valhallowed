@@ -16,9 +16,11 @@ system. Terms follow [glossary.md](glossary.md).
   `ghcr.io/valhallowed/<component>`, CLI `vhd`.
 - The product name and its marks never include "Valheim" or imitate the game's
   logo.
-- Every public surface carries one line: *Valhallowed is not affiliated with or
-  endorsed by Iron Gate. Valheim is a trademark of Iron Gate AB.* One
-  exemption: the valhallowed.com landing page, which stays almost wordless.
+- Every public page, one made for people outside the project (the README, the
+  diagram pages, release notes, valhallowed.com), carries one line:
+  *Valhallowed is not affiliated with or endorsed by Iron Gate. Valheim is a
+  trademark of Iron Gate AB.* One exemption: the valhallowed.com landing page,
+  which stays almost wordless.
 
 ## Voices
 
@@ -30,13 +32,11 @@ system. Terms follow [glossary.md](glossary.md).
 A surface uses one voice. The admin console never speaks in-world; a line a
 player reads in game always does.
 
-## Design system seed
-
-Status: proposed. It grows as the product's own interfaces are built.
+## Design system
 
 - **Tokens:** [`design/tokens.css`](../design/tokens.css), with its fonts, is the
   single source ([design/README.md](../design/README.md)). Every surface uses
-  it: the diagrams today, the product's interfaces and the site as they come.
+  it: the diagrams, the site and the product's interfaces.
 - **Palette:** night surfaces with a hearth-gold accent. Dark is the home theme;
   the light theme is derived from it.
 - **Zone colours:** one colour per part of the architecture, identical in every
@@ -49,8 +49,9 @@ Status: proposed. It grows as the product's own interfaces are built.
 | Runtime | green | Game runtimes: server, BepInEx, plugin |
 | Data | orange | Data layer: intake, broker, persistence, chat relay, web map, database |
 | People | pink | Server managers and players |
-| External | grey | Third-party services and dependencies |
+| External | grey | Outside services and third-party dependencies |
+| Neutral | the line colour | The pipeline's own steps and gates, and the host |
 
-- **Type (proposed):** Alegreya SC for display, Alegreya Sans for text,
+- **Type:** Alegreya SC for display, Alegreya Sans for text,
   IBM Plex Mono for code and identifiers. The Alegreya family's book-and-saga
   feel fits the subject while staying readable in dense technical pages.

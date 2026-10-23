@@ -20,13 +20,15 @@
       "$ref": "../schema/manifest.schema.json#/$defs/save_name"
     },
     "state": {
-      "description": "installing: downloading SteamCMD or the server. loading: launched, the world not yet reported. running: the world loaded. unverified: launched, but the plugin has not reported a world that had nothing to lose: no save, or last seen empty. held: stopped before its first autosave because the world loaded empty, or the plugin never reported it, although it held objects before; the container stays up.",
+      "description": "installing: downloading SteamCMD or the server. loading: launched, the world not yet reported. running: the world loaded. unverified: launched, but the plugin has not reported a world that had nothing to lose: no save, or last seen empty. held: stopped before its first autosave because the world loaded empty, or the plugin never reported it, although it held objects when last seen or, with nothing remembered, a save existed; the container stays up.",
       "enum": ["installing", "loading", "running", "unverified", "held"]
     },
     "reason": {
-      "description": "Why the runtime is held or unverified.",
+      "description": "Why the runtime is held or unverified, in one line of printable text: vhd status shows it to the server manager.",
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
     },
     "game_build": {
       "description": "The dedicated server's build id.",
@@ -34,12 +36,12 @@
       "pattern": "^[0-9]+$"
     },
     "objects": {
-      "description": "The loaded world's object count, as the plugin last reported it.",
+      "description": "The loaded world's object count, as the plugin last reported it. Absent while the plugin's report is missing or stale.",
       "type": "integer",
       "minimum": 0
     },
     "players": {
-      "description": "Players connected, as the plugin last reported it.",
+      "description": "Players connected, as the plugin last reported it. Absent while the plugin's report is missing or stale.",
       "type": "integer",
       "minimum": 0
     }

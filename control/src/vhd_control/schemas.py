@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, ValidationError
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
 
@@ -33,8 +33,10 @@ class Schemas:
         document: dict[str, Any] = json.loads((self._root / name).read_text())
         return document
 
-    def problem(self, name: str, instance: object) -> str | None:
-        """The first way instance breaks the schema at name, or None if it meets it."""
+    def problem(self, name: str, instance: object, *, secret: bool = False) -> str | None:
+        """The first way instance breaks the schema at name, or None if it meets it. For a
+        secret document it names where and which rule, never the value: jsonschema's own
+        message quotes the instance, and this text reaches logs and status."""
         validator = self._validators.get(name)
         if validator is None:
             schema = self.document(name)
@@ -43,5 +45,15 @@ class Schemas:
         errors = sorted(validator.iter_errors(instance), key=lambda e: list(e.absolute_path))
         if not errors:
             return None
-        where = "/".join(str(p) for p in errors[0].absolute_path) or "(root)"
-        return f"at {where}: {errors[0].message}"
+        error = errors[0]
+        where = "/".join(str(p) for p in error.absolute_path) or "(root)"
+        return f"at {where}: {_rule(error) if secret else error.message}"
+
+
+def _rule(error: ValidationError) -> str:
+    """What a value breaks, without the value. The messages kept name keys, never values."""
+    # jsonschema's stubs type the keyword as a validator; at run time it is the keyword's name.
+    keyword = str(error.validator)
+    if keyword in ("additionalProperties", "required"):
+        return error.message
+    return f"breaks {keyword} {json.dumps(error.validator_value)}"

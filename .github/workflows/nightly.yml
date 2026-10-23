@@ -1,0 +1,85 @@
+# The nightly checks. A game patch arrives without notice, so every night the
+# plugin is built against the newest game build; promote.sh refuses a candidate
+# unless that job passed within 36 hours. Apart from it, the pinned downloads
+# Dependabot cannot watch are compared with their newest releases. Each job's
+# failure opens an issue of its own, which the next pass closes. It pushes
+# nothing (G12).
+name: nightly
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  # promote.sh reads this job by its name; renaming it here means renaming it there.
+  game:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - id: game
+        name: The newest game build
+        run: |
+          build=$(scripts/game-build.sh)
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+      - name: Plugin, against it
+        env:
+          GAME_BUILD: ${{ steps.game.outputs.build }}
+        run: make plugin BUILD="$GITHUB_SHA"
+
+  upstream:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Pinned downloads are current
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/check-upstream.sh
+
+  report:
+    needs: [game, upstream]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open, add to or close each check's issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GAME: ${{ needs.game.result }}
+          UPSTREAM: ${{ needs.upstream.result }}
+        run: |
+          report() {
+            local title=$1 result=$2 body=$3 open
+            open=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+            if [[ $result == success ]]; then
+              if [[ -n $open ]]; then
+                gh issue close "$open" --comment "It passed again: $RUN"
+              fi
+            elif [[ -n $open ]]; then
+              gh issue comment "$open" --body "It failed again: $RUN"
+            else
+              gh issue create --title "$title" --body "$body $RUN"
+            fi
+          }
+          report "Nightly game check failed" "$GAME" \
+            "The plugin no longer builds against the newest game build. No candidate can be promoted until it does:"
+          report "A pinned download has a newer release" "$UPSTREAM" \
+            "scripts/check-upstream.sh found a newer release of a download Dependabot cannot watch; move its ARG and checksums:"

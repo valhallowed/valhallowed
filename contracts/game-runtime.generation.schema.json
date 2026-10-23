@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Game runtime generation",
-  "description": "B1: the effective configuration the control plane hands one game runtime, as generation.json in that runtime's own volume, beside the secrets.json of the same generation. The runtime validates both, refuses a contract version it does not know, and keeps running its last good generation. Any change to this document other than its generation number, or to its secrets, costs the world a game-server restart; a newer generation equal in everything but its number is adopted without one.",
+  "description": "B1: the effective configuration the control plane hands one game runtime, as generation.json in that runtime's own directory of the generations volume, beside the secrets.json of the same generation. The runtime validates both, refuses a contract version it does not know, and keeps running its last good generation. Any change to this document other than its generation number and disconnect_players, or to its secrets, costs the world a game-server restart; a newer generation equal in everything else is adopted without one. The runtime makes that restart only once it counts no players, unless disconnect_players says the server manager confirmed it.",
   "type": "object",
   "additionalProperties": false,
   "required": ["contract", "generation", "world", "plugin"],
   "properties": {
     "contract": {
       "description": "The version of this contract.",
-      "const": 1
+      "const": 2
     },
     "generation": {
       "description": "The generation number. A higher number replaces a lower one.",
@@ -38,12 +38,16 @@
       "required": ["status_interval_s"],
       "properties": {
         "status_interval_s": {
-          "description": "How often the plugin rewrites the runtime's world status file, in seconds.",
+          "description": "How often the plugin rewrites the runtime's world status file, and the runtime reports its status, in seconds.",
           "type": "integer",
           "minimum": 1,
           "maximum": 60
         }
       }
+    },
+    "disconnect_players": {
+      "description": "Whether the server manager confirmed restarting this world with players online, for this generation alone (vhd apply --disconnect-players). Absent or false, a runtime waits until it counts no players before restarting the game for this generation.",
+      "type": "boolean"
     },
     "status_url": {
       "description": "Where the runtime reports its status to the control plane. Absent, the runtime only logs it.",

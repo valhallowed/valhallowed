@@ -2,11 +2,11 @@
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, ValidationError
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
 
@@ -40,6 +40,7 @@ class _GenerationDocument(TypedDict):
     world: _World
     plugin: _Plugin
     status_url: NotRequired[str]
+    disconnect_players: NotRequired[bool]
 
 
 class _SecretsDocument(TypedDict):
@@ -55,11 +56,15 @@ class Generation:
     port: int
     status_interval_s: int
     status_url: str | None
-    password: str | None
+    # Never in a repr, so no log line or test diff can carry it.
+    password: str | None = field(repr=False)
+    # The server manager confirmed restarting this world with players online, for this
+    # generation alone. It is no setting: it never makes two generations differ.
+    disconnect_players: bool = False
 
     def same_settings(self, other: "Generation") -> bool:
-        """Whether other differs from this generation in nothing but its number."""
-        return replace(other, number=self.number) == self
+        """Whether other differs from this generation in nothing but its number and confirmation."""
+        return replace(other, number=self.number, disconnect_players=self.disconnect_players) == self
 
 
 class Reader:
@@ -67,38 +72,61 @@ class Reader:
 
     def __init__(self, directory: Path, contracts: Path) -> None:
         self._directory = directory
-        self._generation = _validator(contracts / "game-runtime.generation.schema.json")
-        self._secrets = _validator(contracts / "game-runtime.secrets.schema.json")
+        self._generation = validator(contracts / "game-runtime.generation.schema.json")
+        self._secrets = validator(contracts / "game-runtime.secrets.schema.json")
+        self._read: tuple[tuple[int, ...], Generation] | None = None
 
     def read(self) -> Generation | None:
         """The current generation with its secrets, or None while the control plane has written none.
         Raises IncompleteGeneration until secrets.json carries the same generation."""
         generation_path = self._directory / GENERATION_FILE
+        secrets_path = self._directory / SECRETS_FILE
+        # The supervisor asks every second; the files change only when the control plane
+        # replaces them, which gives each a new inode.
+        stamp = _stamp(generation_path, secrets_path)
+        if self._read is not None and self._read[0] == stamp:
+            return self._read[1]
+        # Each world's directory holds two files. A directory here means the whole generations
+        # volume is mounted, every world's secrets with it; its root holds no generation.json.
+        if self._directory.is_dir() and any(entry.is_dir() for entry in self._directory.iterdir()):
+            raise InvalidGeneration(f"{self._directory} shows other worlds' directories, not this world's own files")
         if not generation_path.exists():
             return None
-        # Each world's directory holds two files. A directory here means the whole generations
-        # volume is mounted, every world's secrets with it.
-        if any(entry.is_dir() for entry in self._directory.iterdir()):
-            raise InvalidGeneration(f"{self._directory} shows other worlds' directories, not this world's own files")
         generation = cast(_GenerationDocument, _load(generation_path, self._generation))
         number = generation["generation"]
-        secrets_path = self._directory / SECRETS_FILE
         if not secrets_path.exists():
             raise IncompleteGeneration(f"generation {number} has no {SECRETS_FILE} yet")
-        secrets = cast(_SecretsDocument, _load(secrets_path, self._secrets))
+        secrets = cast(_SecretsDocument, _load(secrets_path, self._secrets, secret=True))
         if secrets["generation"] != number:
             raise IncompleteGeneration(f"{SECRETS_FILE} belongs to generation {secrets['generation']}, not {number}")
-        return Generation(
+        read = Generation(
             number=number,
             world=generation["world"]["name"],
             port=generation["world"]["port"],
             status_interval_s=generation["plugin"]["status_interval_s"],
             status_url=generation.get("status_url"),
             password=secrets.get("password"),
+            disconnect_players=generation.get("disconnect_players", False),
         )
+        self._read = stamp, read
+        return read
 
 
-def _validator(schema_path: Path) -> Draft202012Validator:
+def _stamp(*paths: Path) -> tuple[int, ...]:
+    """Which version of each file is on disk, or a stamp that matches nothing when one is missing."""
+    stamp: list[int] = []
+    for path in paths:
+        try:
+            info = path.stat()
+        except FileNotFoundError:
+            return (-1,)
+        stamp += [info.st_ino, info.st_mtime_ns, info.st_size]
+    return tuple(stamp)
+
+
+def validator(schema_path: Path) -> Draft202012Validator:
+    """A validator for one contract. The control plane's schemas.Schemas does the same; the two
+    ship in separate images, so each carries its own."""
     schema = json.loads(schema_path.read_text())
     # A contract refers to the manifest schema by relative path: the schema gets
     # its own file URI as base, and the registry holds every schema it may name,
@@ -117,14 +145,26 @@ def _registry(contracts: Path) -> Registry[_Schema]:
     return registry
 
 
-def _load(path: Path, validator: Draft202012Validator) -> object:
-    """The document at path, once it meets its contract. Callers cast to its shape."""
+def _load(path: Path, validator: Draft202012Validator, *, secret: bool = False) -> object:
+    """The document at path, once it meets its contract. Callers cast to its shape. For a
+    secret document the error names where and which rule, never the value it logs."""
     try:
         document: object = json.loads(path.read_text())
     except (OSError, ValueError) as error:
         raise InvalidGeneration(f"{path.name}: {error}") from error
     errors = sorted(validator.iter_errors(document), key=lambda e: list(e.absolute_path))
     if errors:
-        where = "/".join(str(p) for p in errors[0].absolute_path) or "(root)"
-        raise InvalidGeneration(f"{path.name} at {where}: {errors[0].message}")
+        first = errors[0]
+        where = "/".join(str(p) for p in first.absolute_path) or "(root)"
+        raise InvalidGeneration(f"{path.name} at {where}: {_rule(first) if secret else first.message}")
     return document
+
+
+def _rule(error: ValidationError) -> str:
+    """What a value breaks, without the value; the control plane's schemas._rule, which ships in
+    another image. The messages kept name keys, never values."""
+    # jsonschema's stubs type the keyword as a validator; at run time it is the keyword's name.
+    keyword = str(error.validator)
+    if keyword in ("additionalProperties", "required"):
+        return error.message
+    return f"breaks {keyword} {json.dumps(error.validator_value)}"

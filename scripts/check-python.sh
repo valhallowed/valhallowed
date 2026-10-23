@@ -10,7 +10,7 @@ cd "$(git rev-parse --show-toplevel)"
   exit 2
 }
 component=$1
-image=python:3.13.17-slim@sha256:fe14fd57a4c0361110eaa0c284112b189750bcb43fb04bb5d1ee7b7744027ccf
+image=$(scripts/tool-image.sh python)
 
 docker run --rm -i -v "$PWD:/repo:ro" -w "/repo/$component" \
   -e PYTHONDONTWRITEBYTECODE=1 -e RUFF_CACHE_DIR=/tmp/ruff -e MYPY_CACHE_DIR=/tmp/mypy \

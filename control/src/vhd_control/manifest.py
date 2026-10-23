@@ -5,14 +5,14 @@ taken from the manifest schema.
 """
 
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
 from vhd_control.schemas import Schemas
 
-MANIFEST_FILE = "manifest.toml"
-SECRETS_FILE = "secrets.toml"
+MANIFEST_TOML = "manifest.toml"
+SECRETS_TOML = "secrets.toml"
 MANIFEST_SCHEMA = "schema/manifest.schema.json"
 SECRETS_SCHEMA = "schema/secrets.schema.json"
 
@@ -25,7 +25,8 @@ class InvalidSettings(Exception):
 class World:
     name: str
     port: int
-    password: str | None
+    # Never in a repr, so no log line or test diff can carry it.
+    password: str | None = field(repr=False)
 
 
 @dataclass(frozen=True)
@@ -38,9 +39,9 @@ class Settings:
 
 def load(install: Path, schemas: Schemas) -> Settings:
     """The install's settings. The secrets file is optional; the manifest is not."""
-    manifest = _read(install / MANIFEST_FILE, MANIFEST_SCHEMA, schemas)
-    secrets_path = install / SECRETS_FILE
-    secrets = _read(secrets_path, SECRETS_SCHEMA, schemas) if secrets_path.exists() else {}
+    manifest = _read(install / MANIFEST_TOML, MANIFEST_SCHEMA, schemas)
+    secrets_path = install / SECRETS_TOML
+    secrets = _read(secrets_path, SECRETS_SCHEMA, schemas, secret=True) if secrets_path.exists() else {}
     schema = schemas.document(MANIFEST_SCHEMA)
     default_port = cast(int, schema["$defs"]["world"]["properties"]["port"]["default"])
     default_web_map_port = cast(int, schema["properties"]["web_map"]["properties"]["port"]["default"])
@@ -49,7 +50,7 @@ def load(install: Path, schemas: Schemas) -> Settings:
     world_secrets = cast(dict[str, dict[str, Any]], secrets.get("world", {}))
     unknown = sorted(set(world_secrets) - set(world_tables))
     if unknown:
-        raise InvalidSettings(f"{SECRETS_FILE} names world {unknown[0]!r}, which {MANIFEST_FILE} does not")
+        raise InvalidSettings(f"{SECRETS_TOML} names world {unknown[0]!r}, which {MANIFEST_TOML} does not")
     worlds = tuple(
         World(
             name=name,
@@ -62,12 +63,12 @@ def load(install: Path, schemas: Schemas) -> Settings:
     return Settings(worlds=worlds, web_map_port=cast(int, web_map.get("port", default_web_map_port)))
 
 
-def _read(path: Path, schema: str, schemas: Schemas) -> dict[str, Any]:
+def _read(path: Path, schema: str, schemas: Schemas, *, secret: bool = False) -> dict[str, Any]:
     try:
         document = tomllib.loads(path.read_text())
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
         raise InvalidSettings(f"{path.name}: {error}") from error
-    problem = schemas.problem(schema, document)
+    problem = schemas.problem(schema, document, secret=secret)
     if problem is not None:
         raise InvalidSettings(f"{path.name} {problem}")
     return document
