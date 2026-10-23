@@ -4,12 +4,12 @@
 # vhd apply runs this Compose, not the host's, so every install renders and
 # starts the same way.
 
-FROM debian AS docker
+FROM vhd-debian AS docker
 ADD --checksum=sha256:803d433f226db4776e1768fd319fc6c6e4935a456acf84fcc0080818b854bc8f \
     https://download.docker.com/linux/static/stable/x86_64/docker-29.7.2.tgz /tmp/docker.tgz
 RUN tar -xzf /tmp/docker.tgz -C /tmp docker/docker
 
-FROM debian AS control-plane
+FROM vhd-debian AS control-plane
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       python3=3.13.5-1 \

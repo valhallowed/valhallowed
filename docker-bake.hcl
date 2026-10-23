@@ -25,7 +25,9 @@ group "default" {
 }
 
 # Debian from its base image's own snapshot, the base of every image built on
-# Debian, which names it as the "debian" context. Never published itself.
+# Debian, which names it as the "vhd-debian" context: a name no registry serves,
+# so a build outside bake fails instead of pulling an unpinned debian. Never
+# published itself.
 target "debian" {
   platforms = ["linux/amd64"]
   context   = "images/debian"
@@ -53,7 +55,7 @@ target "plugin" {
   dockerfile = "images/game-runtime/Dockerfile"
   target     = "plugin"
   output     = ["type=local,dest=dist/plugin"]
-  contexts   = { debian = "target:debian" }
+  contexts   = { vhd-debian = "target:debian" }
 }
 
 target "game-runtime" {
@@ -62,7 +64,7 @@ target "game-runtime" {
   dockerfile = "images/game-runtime/Dockerfile"
   target     = "runtime"
   tags       = [for t in split(",", TAGS) : "${REGISTRY}/game-runtime:${t}"]
-  contexts   = { debian = "target:debian" }
+  contexts   = { vhd-debian = "target:debian" }
 }
 
 target "skeleton" {
@@ -79,13 +81,13 @@ target "steamcmd" {
   target     = "steamcmd"
   tags       = ["vhd-steamcmd:local"]
   output     = ["type=docker"]
-  contexts   = { debian = "target:debian" }
+  contexts   = { vhd-debian = "target:debian" }
 }
 
 target "control-plane" {
   inherits   = ["_common"]
   context    = "."
   dockerfile = "images/control-plane/Dockerfile"
-  contexts   = { debian = "target:debian" }
+  contexts   = { vhd-debian = "target:debian" }
   tags       = [for t in split(",", TAGS) : "${REGISTRY}/control-plane:${t}"]
 }

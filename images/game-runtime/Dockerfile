@@ -6,7 +6,7 @@
 
 # SteamCMD, for the plugin build and for scripts/game-build.sh, which asks Steam
 # for the dedicated server's current build.
-FROM debian AS steamcmd
+FROM vhd-debian AS steamcmd
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates=20250419+deb13u1 \
@@ -69,7 +69,7 @@ FROM scratch AS plugin
 COPY --from=check /out/Valhallowed.Plugin.dll /
 COPY --from=game /refs/game-build /
 
-FROM debian AS runtime
+FROM vhd-debian AS runtime
 # lib32gcc-s1 for SteamCMD, which is 32-bit; libatomic1 and the PulseAudio
 # libraries for the server's PlayFab library, which it loads at start; tini reaps
 # the processes SteamCMD leaves behind; Python and jsonschema for the supervisor.
