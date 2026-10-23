@@ -2,8 +2,10 @@
 # Promote images already in the registry to a version tag. Nothing is rebuilt:
 #   vX.Y.Z-rc.N  candidate  promotes the commit channel's sha-<commit> images,
 #                           and is refused unless ci's accept job passed on
-#                           that commit and the newest nightly game check
-#                           passed
+#                           that commit, and the plugin built against the
+#                           newest game build in a nightly run on main of the
+#                           last 36 hours (it vouches for main, which a
+#                           candidate's commit is on)
 #   vX.Y.Z       release    promotes the newest candidate on the same commit,
 #                           and moves latest
 # The images are the install's x-vhd block, which check-images.sh holds equal to
@@ -12,7 +14,8 @@
 # tags exactly the digests COMPOSE_FILE pins: the file acceptance just passed,
 # every version tag first and latest after, each retried, so a registry failure
 # never leaves latest on a version some image lacks, and a re-run finishes the
-# job. Reading CI's results needs GITHUB_TOKEN and GITHUB_REPOSITORY.
+# job. A version tag that already names another digest is never moved. Reading
+# CI's results needs GITHUB_TOKEN and GITHUB_REPOSITORY.
 set -euo pipefail
 
 usage() { echo "usage: $0 --check TAG | $0 TAG COMPOSE_FILE" >&2; exit 2; }
@@ -36,27 +39,29 @@ base=${BASH_REMATCH[1]}
 version=${tag#v}
 commit=$(git rev-parse "$tag^{commit}")
 
+# The token goes on stdin, not curl's command line, where the process list shows it.
 github() {
-  curl -fsS --max-time 20 --retry 3 \
-    -H "Authorization: Bearer ${GITHUB_TOKEN:?promote: GITHUB_TOKEN is required}" \
-    -H 'Accept: application/vnd.github+json' \
-    "https://api.github.com/repos/${GITHUB_REPOSITORY:?promote: GITHUB_REPOSITORY is required}/$1"
-}
-
-# The images a compose file lists in its x-vhd block, one per line.
-listed() {
-  docker compose -f "$1" config --format json | jq -r '."x-vhd".images // {} | .[]'
+  printf 'Authorization: Bearer %s\n' "${GITHUB_TOKEN:?promote: GITHUB_TOKEN is required}" \
+    | curl -fsS --max-time 20 --retry 3 -H @- -H 'Accept: application/vnd.github+json' \
+      "https://api.github.com/repos/${GITHUB_REPOSITORY:?promote: GITHUB_REPOSITORY is required}/$1"
 }
 
 scripts/check-images.sh >&2
 
 if [[ $prerelease == true ]]; then
   source=sha-${commit::7}
-  # A game patch arrives without notice; the newest check against it must pass.
-  nightly=$(github "actions/workflows/nightly.yml/runs?branch=main&status=completed&per_page=1" \
-    | jq -r '.workflow_runs[0].conclusion // "none"')
-  if [[ $nightly != success ]]; then
-    echo "promote: the newest nightly game check on main ended '$nightly'; a candidate needs it to pass" >&2
+  # A game patch arrives without notice; the newest check against it must have
+  # passed, and recently, since a schedule can stop or a run hang.
+  read -r nightly_run nightly_age < <(github "actions/workflows/nightly.yml/runs?branch=main&status=completed&per_page=1" \
+    | jq -r '.workflow_runs[0] // {} | "\(.id // "none") \((now - (.created_at // "1970-01-01T00:00:00Z" | fromdateiso8601)) | floor)"')
+  game=none
+  if [[ $nightly_run != none ]]; then
+    # nightly.yml's job "game"; renaming it there means renaming it here.
+    game=$(github "actions/runs/$nightly_run/jobs?per_page=100" | jq -r '[.jobs[] | select(.name == "game")][0].conclusion // "none"')
+  fi
+  if [[ $game != success || $nightly_age -gt $((36 * 3600)) ]]; then
+    echo "promote: the newest nightly game check on main ended '$game', $((nightly_age / 3600)) hours ago;" \
+      "a candidate needs one that passed within 36 hours: gh workflow run nightly.yml" >&2
     exit 1
   fi
   runs=$(github "actions/workflows/ci.yml/runs?head_sha=$commit&event=push&branch=main&per_page=100" \
@@ -64,6 +69,7 @@ if [[ $prerelease == true ]]; then
   accepted=false
   for run in $runs; do
     jobs=$(github "actions/runs/$run/jobs?per_page=100")
+    # ci.yml's job "accept"; renaming it there means renaming it here.
     if jq -e 'any(.jobs[]; .name == "accept" and .conclusion == "success")' <<< "$jobs" >/dev/null; then
       accepted=true
       break
@@ -86,7 +92,7 @@ if [[ $check == true ]]; then
   rendered=$(mktemp --suffix=.yaml)
   trap 'rm -f "$rendered"' EXIT
   scripts/render-install.sh "$version" "$rendered"
-  mapfile -t refs < <(listed "$rendered")
+  mapfile -t refs < <(scripts/install-images.sh "$rendered")
   for ref in "${refs[@]}"; do
     repo=${ref%:*}
     if ! timeout 60 docker buildx imagetools inspect "$repo:$source" >/dev/null 2>&1; then
@@ -100,25 +106,37 @@ fi
 
 # Every image must be pinned for this version before anything is tagged, so a
 # refusal never leaves a partial promotion behind.
-mapfile -t pinned < <(listed "$compose_file")
+mapfile -t pinned < <(scripts/install-images.sh "$compose_file")
 if [[ ${#pinned[@]} -eq 0 ]]; then
   echo "promote: $compose_file lists no images in x-vhd" >&2
   exit 1
 fi
+repos=() digests=()
 for value in "${pinned[@]}"; do
   ref=${value%@*} digest=${value##*@}
   if [[ $ref != *:"$version" || ! $digest =~ ^sha256:[0-9a-f]{64}$ ]]; then
     echo "promote: $compose_file pins '$value', not a $version image by digest; only accepted images are promoted" >&2
     exit 1
   fi
+  repos+=("${ref%:*}") digests+=("$digest")
 done
 
-# Tag a digest in the registry. Tagging the same digest again changes nothing,
-# so a failure is retried with backoff before giving up.
-tag() {
-  local name=$1 from=$2 attempt
+# Point a tag at a digest. Tagging the same digest again changes nothing, so a
+# failure is retried with backoff; a version tag already on another digest is
+# refused, since a version names one set of images for good.
+retag() {
+  local name=$1 digest=$2 movable=$3 current attempt
+  current=$(timeout 60 docker buildx imagetools inspect "$name" --format '{{json .Manifest}}' 2>/dev/null \
+    | jq -r '.digest // empty' || true)
+  if [[ $current == "$digest" ]]; then
+    return 0
+  fi
+  if [[ -n $current && $movable == false ]]; then
+    echo "promote: $name already names $current, not $digest; a version is never moved" >&2
+    return 1
+  fi
   for attempt in 1 2 3 4; do
-    if timeout 120 docker buildx imagetools create --tag "$name" "$from" >&2; then
+    if timeout 120 docker buildx imagetools create --tag "$name" "${name%:*}@$digest" >&2; then
       return 0
     fi
     if (( attempt < 4 )); then
@@ -129,13 +147,11 @@ tag() {
   return 1
 }
 
-for value in "${pinned[@]}"; do
-  ref=${value%@*} digest=${value##*@}
-  tag "$ref" "${ref%:*}@$digest"
+for i in "${!repos[@]}"; do
+  retag "${repos[i]}:$version" "${digests[i]}" false
 done
 if [[ $prerelease == false ]]; then
-  for value in "${pinned[@]}"; do
-    ref=${value%@*} digest=${value##*@}
-    tag "${ref%:*}:latest" "${ref%:*}@$digest"
+  for i in "${!repos[@]}"; do
+    retag "${repos[i]}:latest" "${digests[i]}" true
   done
 fi
