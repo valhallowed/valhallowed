@@ -22,7 +22,7 @@ INSTALL_NETWORK = "install"
 # Named volumes, which Compose prefixes with the project name.
 GENERATIONS_VOLUME = "generations"
 CONTROL_VOLUME = "control"
-# In the install folder: the compose file the install runs, which vhd apply replaces only once
-# Compose has run its successor, the candidate, so it always names what last ran.
+# In the install folder: the compose file the install runs, which vhd apply replaces with the
+# next one only once Compose has run it, so it always names what last ran.
 RENDERED = Path(".vhd") / "compose.json"
-CANDIDATE = Path(".vhd") / "compose.next.json"
+NEXT = Path(".vhd") / "compose.next.json"

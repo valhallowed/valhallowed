@@ -4,6 +4,7 @@
     <root>/<child id>/<port>/secrets.json       what that child reads (B1), secrets first
     <root>/<child id>/<port>/generation.json
     <root>/.lock                                held by whichever writes: the control plane or vhd apply
+    <root>/.apply.lock                          held by vhd apply for its whole run
 
 A child's container mounts only the directory for its own port, so the root, state.json
 included, is the control plane's and vhd's alone, and a world whose port changes reads its new
@@ -89,9 +90,9 @@ class Store:
         # It holds every world's secrets, so only its owner reads it.
         self._write(self.root / STATE_FILE, document, 0o600)
 
-    def hand(self, state: State, child_id: str, child: Child, number: int) -> None:
+    def hand(self, state: State, child_id: str, child: Child, number: int, disconnect_players: bool = False) -> None:
         """Publish a child's documents under number, and note in state that the child holds them."""
-        self.publish(child_id, child, number)
+        self.publish(child_id, child, number, disconnect_players)
         state.handed[child_id] = Handed(number, child)
 
     def publish(self, child_id: str, child: Child, number: int, disconnect_players: bool = False) -> None:

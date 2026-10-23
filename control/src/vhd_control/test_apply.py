@@ -1,3 +1,4 @@
+import fcntl
 import io
 import json
 import shutil
@@ -10,6 +11,8 @@ import pytest
 from vhd_control import client, layout
 from vhd_control.apply import WAIT_TIMEOUT_S, Apply, Refused
 from vhd_control.docker import DockerError
+from vhd_control.manifest import load
+from vhd_control.reconcile import reconcile
 from vhd_control.render import STOP_GRACE
 from vhd_control.store import Store
 from vhd_control.test_daemon import ASHWAKE, MEADOWFOLD, PASSWORD, SCHEMAS, TWO_WORLDS
@@ -136,12 +139,12 @@ def test_a_first_apply_hands_every_world_and_starts_the_install(setup: Setup) ->
     assert Store(setup.volume).load().applied == {MEADOWFOLD: 2456, ASHWAKE: 2459}
     assert setup.docker.streamed == [
         [
-            "compose", "-p", "valhallowed", "-f", str(setup.install / layout.CANDIDATE),
+            "compose", "-p", "valhallowed", "-f", str(setup.install / layout.NEXT),
             "up", "--detach", "--wait", "--wait-timeout", str(WAIT_TIMEOUT_S), "--remove-orphans",
         ]
     ]  # fmt: skip
     assert (setup.install / layout.RENDERED).exists()
-    assert not (setup.install / layout.CANDIDATE).exists()
+    assert not (setup.install / layout.NEXT).exists()
 
 
 def test_images_the_host_lacks_are_pulled_before_anything_restarts(setup: Setup) -> None:
@@ -184,12 +187,8 @@ def test_the_rendered_install_mounts_each_world_only_its_own_generation(setup: S
     assert control_plane["user"] == f"{owner.st_uid}:{owner.st_gid}"
     assert {"type": "bind", "source": "/srv/vhd", "target": "/install", "read_only": True} in control_plane["volumes"]
     assert "ports" not in control_plane
-    for service in (world, control_plane):
-        assert service["cap_drop"] == ["ALL"]
-        assert service["security_opt"] == ["no-new-privileges:true"]
     assert services["vhd"] == {"image": IMAGES["control-plane"], "profiles": ["tools"]}
     assert services["skeleton"]["ports"] == ["8456:8456"]
-    assert services["skeleton"]["cap_drop"] == ["ALL"]
 
 
 def test_the_skeleton_takes_the_web_maps_port_from_the_manifest(setup: Setup) -> None:
@@ -297,7 +296,7 @@ def test_a_port_change_compose_cannot_apply_is_rolled_back(setup: Setup) -> None
     (setup.install / "manifest.toml").write_text(TWO_WORLDS.replace("2456", "2462"))
     setup.docker.fail_up = 1
 
-    with pytest.raises(Refused, match="back on the containers it ran before"):
+    with pytest.raises(Refused, match="back as it ran before"):
         setup.apply()
 
     assert setup.rendered() == before
@@ -307,7 +306,7 @@ def test_a_port_change_compose_cannot_apply_is_rolled_back(setup: Setup) -> None
     assert state.applied[MEADOWFOLD] == 2456
     assert state.handed[MEADOWFOLD].number == 1
     assert setup.handed(MEADOWFOLD, port=2456) == (1, None)
-    assert setup.handed(MEADOWFOLD, port=2462) == (2, None)
+    assert not (setup.volume / MEADOWFOLD / "2462").exists()
 
 
 def test_a_port_change_moves_the_world_and_clears_its_old_directory(setup: Setup) -> None:
@@ -342,13 +341,15 @@ def test_a_directory_vhd_never_handed_is_left_alone(setup: Setup) -> None:
 
 
 def test_every_service_on_the_install_network_runs_without_capabilities(setup: Setup) -> None:
-    """The status listener's sender check needs it: no child may forge a source address."""
+    """The status listener's sender check needs it on the install network: no child may forge a
+    source address. Every other service runs as locked down, and logs to a rotating driver."""
     setup.apply()
     services = setup.rendered()["services"]
     on_network = [name for name, service in services.items() if layout.INSTALL_NETWORK in service.get("networks", [])]
     assert len(on_network) == 3
-    for name in on_network:
+    for name in [*on_network, "skeleton"]:
         assert services[name]["cap_drop"] == ["ALL"], name
+        assert services[name]["security_opt"] == ["no-new-privileges:true"], name
         assert services[name]["logging"] == {"driver": "local"}, name
 
 
@@ -365,7 +366,7 @@ def test_a_failed_rollback_says_both_failed(setup: Setup) -> None:
     setup.apply()
     (setup.install / "manifest.toml").write_text(TWO_WORLDS.replace("2456", "2462"))
     setup.docker.fail_up = 2
-    with pytest.raises(DockerError, match="bringing back the previous containers failed too"):
+    with pytest.raises(DockerError, match="bringing back the previous install failed too"):
         setup.apply()
 
 
@@ -374,3 +375,87 @@ def test_a_first_apply_that_fails_has_nothing_to_roll_back_to(setup: Setup) -> N
     with pytest.raises(DockerError, match="exited with 1"):
         setup.apply()
     assert len(setup.docker.streamed) == 1
+
+
+def test_a_failed_compose_run_gives_same_port_worlds_back_their_documents(setup: Setup) -> None:
+    """A runtime from the previous release may refuse the new documents, so it gets the old ones."""
+    setup.apply()
+    setup.docker.running = [MEADOWFOLD, ASHWAKE]
+    setup.players("Meadowfold", 0)
+    setup.players("Ashwake", 0)
+    setup.docker.images["game-runtime"] = "ghcr.io/valhallowed/game-runtime:0.2.0@sha256:" + "d" * 64
+    (setup.install / "secrets.toml").write_text(PASSWORD)
+    setup.docker.fail_up = 1
+
+    with pytest.raises(Refused, match="back as it ran before"):
+        setup.apply()
+
+    assert setup.handed(MEADOWFOLD) == (1, None)
+    state = Store(setup.volume).load()
+    assert state.handed[MEADOWFOLD].number == 1
+    assert state.generation is not None and state.generation.number == 1
+
+
+def test_a_failure_after_worlds_stopped_brings_the_install_back(setup: Setup, monkeypatch: pytest.MonkeyPatch) -> None:
+    setup.apply()
+    setup.docker.running = [MEADOWFOLD, ASHWAKE]
+    setup.players("Meadowfold", 0)
+    setup.players("Ashwake", 0)
+    setup.docker.images["game-runtime"] = "ghcr.io/valhallowed/game-runtime:0.2.0@sha256:" + "d" * 64
+    (setup.install / "secrets.toml").write_text(PASSWORD)
+    publish = Store.publish
+    calls: list[int] = []
+
+    def full_disk(store: Store, *args: Any, **kwargs: Any) -> None:
+        calls.append(1)
+        if len(calls) == 1:
+            raise OSError(28, "No space left on device")
+        publish(store, *args, **kwargs)
+
+    monkeypatch.setattr(Store, "publish", full_disk)
+    with pytest.raises(Refused, match="No space left on device"):
+        setup.apply()
+
+    assert any("stop" in args for args in setup.docker.streamed)
+    assert setup.docker.streamed[-1][4] == str(setup.install / layout.RENDERED)
+    assert setup.handed(MEADOWFOLD) == (1, None)
+    assert not (setup.install / layout.NEXT).exists()
+
+
+def test_disconnect_players_frees_a_runtime_waiting_for_an_empty_world(setup: Setup) -> None:
+    setup.apply()
+    setup.docker.running = [MEADOWFOLD, ASHWAKE]
+    # The control plane handed generation 2 while the world looked empty; then a player joined,
+    # and the runtime runs generation 1 still, waiting.
+    (setup.install / "secrets.toml").write_text(PASSWORD)
+    store = Store(setup.volume)
+    with store.locked():
+        state = store.load()
+        generation = reconcile(load(setup.install, SCHEMAS), state.generation)
+        store.hand(state, MEADOWFOLD, generation.children[MEADOWFOLD], generation.number)
+        state.generation = generation
+        store.save(state)
+    setup.players("Meadowfold", 2)
+
+    with pytest.raises(Refused, match=r"restarts Meadowfold \(2 player\(s\)\)"):
+        setup.apply()
+    setup.apply(disconnect_players=True)
+
+    assert setup.document(MEADOWFOLD)["disconnect_players"] is True
+    assert setup.handed(MEADOWFOLD) == (2, "hearth-and-horn")
+
+
+def test_a_second_apply_while_one_runs_is_refused(setup: Setup) -> None:
+    with (setup.volume / ".apply.lock").open("a") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        with pytest.raises(Refused, match="another vhd apply is running"):
+            setup.apply()
+
+
+def test_removing_an_empty_world_needs_no_confirmation(setup: Setup) -> None:
+    setup.apply()
+    setup.docker.running = [MEADOWFOLD, ASHWAKE]
+    setup.players("Ashwake", 0)
+    (setup.install / "manifest.toml").write_text("schema = 1\n\n[world.Meadowfold]\n")
+    setup.apply()
+    assert ASHWAKE not in Store(setup.volume).load().handed
