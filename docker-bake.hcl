@@ -29,8 +29,8 @@ group "default" {
 # so a build outside bake fails instead of pulling an unpinned debian. Never
 # published itself.
 target "debian" {
-  platforms = ["linux/amd64"]
-  context   = "images/debian"
+  inherits = ["_amd64"]
+  context  = "images/debian"
 }
 
 function "tags" {
@@ -38,9 +38,14 @@ function "tags" {
   result = [for t in split(",", TAGS) : "${REGISTRY}/${name}:${t}"]
 }
 
+# The dedicated server ships for x86-64 only (Game facts).
+target "_amd64" {
+  platforms = ["linux/amd64"]
+}
+
 # What every published image records.
 target "_common" {
-  platforms = ["linux/amd64"]
+  inherits = ["_amd64"]
   args = {
     VHD_BUILD = VHD_BUILD
   }
@@ -53,7 +58,7 @@ target "_common" {
 
 # An image built from the repo root on the snapshot Debian.
 target "_on_debian" {
-  platforms = ["linux/amd64"]
+  inherits  = ["_amd64"]
   context   = "."
   contexts  = { vhd-debian = "target:debian" }
 }
@@ -63,7 +68,6 @@ target "_game" {
   inherits   = ["_common", "_on_debian"]
   dockerfile = "images/game-runtime/Dockerfile"
   args = {
-    VHD_BUILD  = VHD_BUILD
     GAME_BUILD = GAME_BUILD
   }
 }

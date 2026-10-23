@@ -1,0 +1,5 @@
+The Valhallowed skeleton image carries this third-party software, unmodified:
+
+BusyBox 1.38.0 (the image's base, from the official busybox image)
+  GPL-2.0. License: https://busybox.net/license.html
+  Source: https://busybox.net/downloads/busybox-1.38.0.tar.bz2

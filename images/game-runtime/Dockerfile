@@ -31,7 +31,7 @@ RUN if [[ ! $GAME_BUILD =~ ^[0-9]+$ ]]; then \
  && manifest=/server/steamapps/appmanifest_896660.acf \
  && installed() { grep -qE '^[[:space:]]*"StateFlags"[[:space:]]+"4"' "$manifest" 2>/dev/null; } \
  && for attempt in 1 2 3; do \
-      /steamcmd/steamcmd.sh +force_install_dir /server +login anonymous +app_update 896660 validate +quit || true; \
+      timeout -k 30 1200 /steamcmd/steamcmd.sh +force_install_dir /server +login anonymous +app_update 896660 validate +quit || true; \
       installed && break; \
       echo "steamcmd attempt $attempt failed" >&2; \
     done \
