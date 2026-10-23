@@ -119,5 +119,4 @@ COPY runtime/src/vhd_runtime/ /opt/vhd/runtime/vhd_runtime/
 ENV PYTHONPATH=/opt/vhd/runtime PYTHONDONTWRITEBYTECODE=1
 USER vhd
 WORKDIR /data
-EXPOSE 2456-2458/udp
 ENTRYPOINT ["tini", "--", "python3", "-m", "vhd_runtime"]

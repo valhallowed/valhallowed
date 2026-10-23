@@ -40,6 +40,7 @@ COPY contracts/*.schema.json /opt/vhd/contracts/
 COPY schema/*.schema.json /opt/vhd/schema/
 COPY control/src/vhd_control/ /opt/vhd/control/vhd_control/
 ENV PYTHONPATH=/opt/vhd/control PYTHONDONTWRITEBYTECODE=1
-# vhd apply renders who the control plane runs as; vhd itself runs as root for the socket.
+# The control plane's user when nothing says otherwise: vhd apply renders it as
+# the install folder's owner, and compose.yaml runs vhd itself as root, for the socket.
 USER vhd
 ENTRYPOINT ["tini", "--", "python3", "-m", "vhd_control"]

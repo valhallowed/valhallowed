@@ -1,6 +1,5 @@
 # Stand-in that proves the release pipeline end to end: it serves the commit it
-# was built from on the web map's default port. Removed when the first real
-# image lands.
+# was built from on 8456, which vhd apply publishes on the web map's port.
 FROM busybox:1.38.0@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e
 
 ARG VHD_BUILD=dev
