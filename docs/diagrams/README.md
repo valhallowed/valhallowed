@@ -1,7 +1,8 @@
 # Diagrams
 
 Interactive pages that draw [architecture.md](../architecture.md). Where a page
-and the doc disagree, the doc wins and the page is out of date. Open a page in
+and the doc disagree, the doc wins and the page is out of date. Like the doc,
+they show VHD as designed; the [board](https://github.com/orgs/valhallowed/projects/1) shows what is built. Open a page in
 any current browser; it needs no build step.
 
 | Page | Shows |

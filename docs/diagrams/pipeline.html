@@ -15,7 +15,7 @@
 
 <main class="wrap">
   <header class="mast">
-    <p class="eyebrow"><span class="wordmark">Valhallowed</span><span>Planning</span><span>Release pipeline</span><span>Proposal</span></p>
+    <p class="eyebrow"><span class="wordmark">Valhallowed</span><span>Release pipeline</span></p>
     <h1>From a commit to every install</h1>
     <p class="lede">Every change reaches consumers through the same gates and the same registry. CI never deploys to an install; installs pull released artifacts, and a release is exactly the images its candidate was.</p>
     <div class="legend">
@@ -66,7 +66,7 @@
           </g>
           <g class="n z-neutral" data-k="schedule"><rect x="35" y="410" width="210" height="56" rx="6"/><text class="t" x="49" y="433">Nightly game check</text><text class="s" x="49" y="452">newest dedicated server</text></g>
           <g class="n z-neutral" data-k="accept"><rect x="310" y="410" width="320" height="56" rx="6"/><text class="t" x="324" y="433">Acceptance</text><text class="s" x="324" y="452">clean runner installs from the registry</text></g>
-          <g class="n z-external" data-k="rc"><rect x="685" y="520" width="230" height="56" rx="6"/><text class="t" x="699" y="543">Release candidate</text><text class="s" x="699" y="562">same images, retagged</text></g>
+          <g class="n z-external" data-k="rc"><rect x="685" y="520" width="230" height="56" rx="6"/><text class="t" x="699" y="543">Candidate</text><text class="s" x="699" y="562">same images, retagged</text></g>
           <g class="n z-people" data-k="candch"><rect x="965" y="520" width="200" height="56" rx="6"/><text class="t" x="979" y="543">Candidate channel</text><text class="s" x="979" y="562">dev lane, opted-in installs</text></g>
           <g class="n z-neutral" data-k="reltag"><rect x="35" y="630" width="210" height="56" rx="6"/><text class="t" x="49" y="653">Release tag</text><text class="s" x="49" y="672">a maintainer promotes</text></g>
           <g class="n z-external" data-k="release"><rect x="685" y="630" width="230" height="56" rx="6"/><text class="t" x="699" y="653">Release</text><text class="s" x="699" y="672">version tag + GitHub Release</text></g>
@@ -100,11 +100,11 @@
           <tr><td><span class="chip z-control">control plane image</span></td><td>The control plane</td><td>Registry</td><td>Every install</td></tr>
           <tr><td><span class="chip z-runtime">game runtime image</span></td><td>The game runtime (G16), with the plugin inside</td><td>Registry</td><td>Every install. It downloads SteamCMD and the dedicated server at first start; no Valve or game file ships in the image.</td></tr>
           <tr><td><span class="chip z-data">data layer images</span></td><td>Intake, broker, persistence, world render, web map, chat relay, assistant</td><td>Registry</td><td>Every install</td></tr>
-          <tr><td><span class="chip z-runtime">plugin artifact</span></td><td>The plugin, compiled against game assemblies fetched in CI</td><td>GitHub Release</td><td>The game runtime image; anyone inspecting a release</td></tr>
+          <tr><td><span class="chip z-runtime">plugin artifact</span></td><td>The plugin, compiled against game assemblies fetched in CI, taken out of the accepted game runtime image</td><td>GitHub Release</td><td>Anyone inspecting a release</td></tr>
           <tr><td><span class="chip z-ingress">manifest schema</span></td><td>The schema source; also produces the settings reference</td><td>GitHub Release</td><td>The control plane; server managers and their editors</td></tr>
           <tr><td><span class="chip z-control">compose.yaml</span></td><td>Rendered per release, every image pinned by digest</td><td>GitHub Release</td><td><code>vhd apply</code>, which renders each install’s compose file from it</td></tr>
           <tr><td><span class="chip z-neutral">SHA256SUMS</span></td><td>Checksums of the release’s files</td><td>GitHub Release</td><td>Anyone verifying a download</td></tr>
-          <tr><td><span class="chip z-neutral">release notes</span></td><td>Written per release; record the game build it was accepted on</td><td>GitHub Release</td><td>Server managers</td></tr>
+          <tr><td><span class="chip z-neutral">release notes</span></td><td>Written per release; name the game build the plugin was built against</td><td>GitHub Release</td><td>Server managers</td></tr>
         </tbody>
       </table>
     </div>
@@ -117,7 +117,7 @@
         <thead><tr><th>Channel</th><th>Tag</th><th>Who follows it</th><th>Moves when</th></tr></thead>
         <tbody>
           <tr><td>Commit</td><td class="num">sha-&lt;commit&gt;, edge</td><td>CI acceptance, the dev lane</td><td>Every merge to main that builds</td></tr>
-          <tr><td>Candidate</td><td class="num">X.Y.Z-rc.N</td><td>The dev lane, installs that opt in</td><td>Acceptance passes (candidate gate)</td></tr>
+          <tr><td>Candidate</td><td class="num">X.Y.Z-rc.N</td><td>The dev lane, installs that opt in</td><td>A maintainer tags a commit that passed the candidate gate</td></tr>
           <tr><td>Release</td><td class="num">X.Y.Z, latest</td><td>Every install by default, the maintainers' own included</td><td>A maintainer promotes a soaked candidate (release gate)</td></tr>
         </tbody>
       </table>
@@ -145,20 +145,20 @@
 <script src="vhd.js"></script>
 <script>
   const pipeData = {
-    src: { kind: 'Source control', title: 'Commit or pull request', text: 'All of VHD lives in one repo (G17), so one commit moves the plugin, the services and the manifest schema together.', rows: [['Trigger', 'push to a branch'], ['Next', 'checks']] },
-    checks: { kind: 'CI runner', title: 'Checks', text: 'Fast checks on every push. They gate the merge.', rows: [['Runs', 'lint, unit tests, a contract test for every boundary, the manifest schema check, the public-content check'], ['Public-content check', 'rejects private addresses, internal host names, personal paths and email addresses, so none enters the public history'], ['Gate', 'merge gate']] },
+    src: { kind: 'Source control', title: 'Commit or pull request', text: 'All of VHD lives in one repo (G17), so one commit moves the plugin, the services and the manifest schema together.', rows: [['Trigger', 'a pull request, or a merge to main'], ['Next', 'checks']] },
+    checks: { kind: 'CI runner', title: 'Checks', text: 'Fast checks on every pull request and every push to main. They gate the merge.', rows: [['Runs', 'lint, unit tests, a contract test for every boundary, the manifest schema check, the public-content check'], ['Public-content check', 'rejects private addresses, internal host names, personal paths and email addresses, so none enters the public history'], ['Gate', 'merge gate']] },
     merge: { kind: 'Source control', title: 'Merge to main', text: 'Main always builds. Branch protection holds the merge until the merge gate passes.', rows: [['Requires', 'merge gate green']] },
-    build: { kind: 'CI runner', title: 'Build', text: 'Asks Steam for the dedicated server’s current build, downloads that build, keeps its assemblies and discards the rest. CI keeps no cache of them. Nothing proprietary is committed or shipped.', rows: [['Produces', 'control plane, game runtime and data layer images; the plugin artifact'], ['Inputs', 'the repo at one commit; the game build and its assemblies; the BepInEx pack'], ['Locally', 'the same steps run in the build lane']] },
-    commitbuild: { kind: 'Registry', title: 'Commit build', text: 'Every merge publishes its images and plugin under the commit tag. Nothing on this tag is meant for consumers.', rows: [['Tags', 'sha-<commit>, edge'], ['Followed by', 'CI acceptance, the dev lane']] },
-    accept: { kind: 'CI runner', title: 'Acceptance', text: 'A clean runner installs VHD from the registry, the way a stranger would, and runs the acceptance material.', rows: [['Pulls', 'registry images, not the local build cache, so a missing push fails here'], ['Runs', 'the walking skeleton (one live player on the web map) and the acceptance material'], ['Gate', 'candidate gate']] },
-    schedule: { kind: 'Source control', title: 'Nightly game check', text: 'Game patches arrive without notice. A nightly run builds and accepts against the newest dedicated-server build.', rows: [['Catches', 'a Harmony patch that applies and then throws; a changed save format'], ['On failure', 'an issue opens and the candidate gate blocks the next candidate']] },
-    rc: { kind: 'Registry', title: 'Release candidate', text: 'The commit build that passed the candidate gate, promoted. Same image digests.', rows: [['Tag', 'X.Y.Z-rc.N'], ['Rebuilds', 'never']] },
+    build: { kind: 'CI runner', title: 'Build', text: 'Asks Steam for the dedicated server’s current build, downloads that build, keeps its assemblies and discards the rest. CI keeps no cache of them. Nothing proprietary is committed or shipped.', rows: [['Produces', 'every image the install lists; the plugin, inside the game runtime image'], ['Inputs', 'the repo at one commit; the game build and its assemblies; the BepInEx pack'], ['Locally', 'the same steps run in the build lane']] },
+    commitbuild: { kind: 'Registry', title: 'Commit build', text: 'Every merge publishes its images under the commit tag, the plugin inside the game runtime image. Nothing on this tag is meant for consumers.', rows: [['Tags', 'sha-<commit>, edge'], ['Followed by', 'CI acceptance, the dev lane']] },
+    accept: { kind: 'CI runner', title: 'Acceptance', text: 'A clean runner installs VHD from the registry the way a server manager does, with vhd apply, and checks the install.', rows: [['Pulls', 'registry images, not the local build cache, so a missing push fails here'], ['Checks', 'every image is from the commit; the world gets its generation and its status reaches the control plane'], ['Gate', 'candidate gate']] },
+    schedule: { kind: 'Source control', title: 'Nightly game check', text: 'Game patches arrive without notice. Every night the plugin is built against the newest dedicated-server build, and the pinned downloads Dependabot cannot watch are checked for newer releases.', rows: [['Catches', 'a game patch that breaks the plugin’s build; a pinned download that fell behind'], ['On failure', 'an issue opens, and no candidate is promoted until a run passes']] },
+    rc: { kind: 'Registry', title: 'Candidate', text: 'The commit build that passed the candidate gate, promoted. Same image digests.', rows: [['Tag', 'X.Y.Z-rc.N'], ['Rebuilds', 'never']] },
     candch: { kind: 'Consumers', title: 'Candidate channel', text: 'Installs that opt in to candidates: the dev lane, and any consumer who wants early releases.', rows: [['Watches', 'world truth, errors, pending changes'], ['Feeds', 'the release gate']] },
     reltag: { kind: 'Source control', title: 'Release tag', text: 'A maintainer promotes a candidate that soaked clean.', rows: [['Requires', 'the release gate']] },
-    release: { kind: 'Registry · GitHub Releases', title: 'Release', text: 'The candidate retagged with its version, plus a GitHub Release.', rows: [['Registry', 'images under the version tag'], ['GitHub Release', 'compose.yaml, the manifest schema, the plugin artifact and checksums; the notes name the game build it was accepted on'], ['Site', 'valhallowed.com links to each release']] },
+    release: { kind: 'Registry · GitHub Releases', title: 'Release', text: 'The candidate retagged with its version, plus a GitHub Release.', rows: [['Registry', 'images under the version tag'], ['GitHub Release', 'compose.yaml, both schemas, the plugin artifact and checksums; the notes name the game build the plugin was built against'], ['Site', 'valhallowed.com links to each release']] },
     relch: { kind: 'Consumers', title: 'Release channel', text: 'The default for every install. The maintainers’ own installs follow it like any other consumer.', rows: [['Updates', 'applied by the server manager with vhd apply; a game-server restart waits while players are online unless the server manager confirms it']] },
     g1: { kind: 'Gate', title: 'Merge gate', text: 'Every check is green.', rows: [['Blocks', 'merge to main']] },
-    g2: { kind: 'Gate', title: 'Candidate gate', text: 'Acceptance passes on registry images, including against the newest game build.', rows: [['Blocks', 'the candidate tag']] },
+    g2: { kind: 'Gate', title: 'Candidate gate', text: 'Acceptance passed on the commit’s registry images, and the newest nightly game check passed.', rows: [['Blocks', 'the candidate tag']] },
     g3: { kind: 'Gate', title: 'Release gate', text: 'The candidate soaked on the candidate channel with no open blockers.', rows: [['Blocks', 'the release tag']] }
   };
 
@@ -178,24 +178,24 @@
       ] },
       merge: { label: 'Merge to main', steps: [
         { t: 'Merge', d: 'Every merge builds.', on: ['merge', 'e-merge', 'build'] },
-        { t: 'Build', d: 'Fetch game assemblies (cached), build the plugin, build every image.', on: ['build'] },
-        { t: 'Push the commit build', d: 'Images and plugin land in the registry under the commit tag.', on: ['build', 'e-pushc', 'commitbuild'] },
-        { t: 'Acceptance', d: 'A clean runner installs from the registry and runs the walking skeleton and the acceptance material.', on: ['commitbuild', 'e-pull', 'accept'] }
+        { t: 'Build', d: 'Fetch the newest game build’s assemblies, build the plugin, build every image.', on: ['build'] },
+        { t: 'Push the commit build', d: 'Images land in the registry under the commit tag, the plugin inside the game runtime image.', on: ['build', 'e-pushc', 'commitbuild'] },
+        { t: 'Acceptance', d: 'A clean runner installs from the registry with vhd apply and checks the install.', on: ['commitbuild', 'e-pull', 'accept'] }
       ] },
       nightly: { label: 'Nightly game check', steps: [
         { t: 'Schedule fires', d: 'Once a night, against the newest dedicated-server build.', on: ['schedule', 'e-sched'] },
-        { t: 'Rebuild and accept', d: 'Catches a game patch that breaks the plugin before a consumer meets it.', on: ['schedule', 'e-sched', 'build', 'accept'] },
-        { t: 'Result', d: 'Pass: release notes record the game build it was accepted on. Fail: an issue opens and the candidate gate blocks.', on: ['accept'] }
+        { t: 'Build the plugin', d: 'Catches a game patch that breaks the plugin’s build before a consumer meets it.', on: ['schedule', 'e-sched', 'build'] },
+        { t: 'Result', d: 'Pass: the candidate gate may open. Fail: an issue opens, and no candidate is promoted until a run passes.', on: ['schedule'] }
       ] },
       candidate: { label: 'Candidate', steps: [
-        { t: 'Candidate gate', d: 'Walking skeleton and acceptance material pass on the registry images.', on: ['accept', 'e-cand', 'g2'] },
+        { t: 'Candidate gate', d: 'Acceptance passed on the registry images, and so did the newest nightly game check.', on: ['accept', 'e-cand', 'g2'] },
         { t: 'Retag as candidate', d: 'Same images, new tag. Nothing rebuilds.', on: ['e-cand', 'g2', 'rc'] },
         { t: 'Soak', d: 'The dev lane and opted-in installs run the candidate.', on: ['rc', 'e-pullrc', 'candch'] }
       ] },
       release: { label: 'Release', steps: [
         { t: 'Release gate', d: 'The candidate soaked with no open blockers.', on: ['candch', 'e-soak', 'g3'] },
         { t: 'Release tag', d: 'A maintainer promotes the soaked candidate.', on: ['reltag', 'e-promote'] },
-        { t: 'Publish', d: 'Retag the same images; the GitHub Release carries compose.yaml, the schema, the plugin, checksums and notes.', on: ['e-promote', 'release'] },
+        { t: 'Publish', d: 'Retag the same images; the GitHub Release carries compose.yaml, both schemas, the plugin, checksums and notes.', on: ['e-promote', 'release'] },
         { t: 'Consumers pull', d: 'Every install on the release channel pulls the same artifacts.', on: ['release', 'e-pullrel', 'relch'] }
       ] }
     }
