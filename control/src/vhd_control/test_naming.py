@@ -17,4 +17,4 @@ def test_the_longest_save_name_still_makes_a_dns_label() -> None:
     cid = child_id(longest)
     assert len(cid) <= 63
     assert re.fullmatch(r"world-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?-[0-9a-f]{6}", cid)
-    assert child_id(longest + "") != child_id(longest[:-1] + "d")
+    assert child_id(longest) != child_id(longest[:-1] + "d")

@@ -47,10 +47,10 @@ class Schemas:
             return None
         error = errors[0]
         where = "/".join(str(p) for p in error.absolute_path) or "(root)"
-        return f"at {where}: {rule(error) if secret else error.message}"
+        return f"at {where}: {_rule(error) if secret else error.message}"
 
 
-def rule(error: ValidationError) -> str:
+def _rule(error: ValidationError) -> str:
     """What a value breaks, without the value. The messages kept name keys, never values."""
     # jsonschema's stubs type the keyword as a validator; at run time it is the keyword's name.
     keyword = str(error.validator)

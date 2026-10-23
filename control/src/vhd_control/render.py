@@ -7,7 +7,7 @@ vhd and hands the paths to the host's Docker.
 from dataclasses import dataclass
 
 from vhd_control import layout
-from vhd_control.reconcile import WORLD_PORTS, Generation
+from vhd_control.reconcile import Generation, last_port
 
 # The release's images, by their keys in compose.yaml's x-vhd block.
 CONTROL_PLANE_IMAGE = "control-plane"
@@ -65,7 +65,7 @@ def render(generation: Generation, host: Host, web_map_port: int) -> dict[str, o
     }
     volumes: dict[str, object] = {layout.GENERATIONS_VOLUME: {}, layout.CONTROL_VOLUME: {}}
     for cid, child in sorted(generation.children.items()):
-        first, last = child.port, child.port + WORLD_PORTS - 1
+        first, last = child.port, last_port(child.port)
         services[cid] = {
             "image": host.images[GAME_RUNTIME_IMAGE],
             "restart": "unless-stopped",

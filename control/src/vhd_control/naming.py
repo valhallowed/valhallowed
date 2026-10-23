@@ -1,4 +1,4 @@
-"""The name a world's container and generation directory share."""
+"""The name a world's Compose service and generation directory share."""
 
 import hashlib
 import re
@@ -9,7 +9,7 @@ MAX_SLUG = 63 - len("world-") - 1 - 6
 
 
 def child_id(save_name: str) -> str:
-    """The world's Compose service and container name: "world-", the save name in lower case
+    """The world's Compose service name, which Docker's DNS answers to: "world-", the save name in lower case
     with each run of other characters as one hyphen and cut to fit a DNS label, then six hex
     digits of the save name's hash, which tells apart names that read alike. Reconcile refuses
     the rare two names that still share one."""

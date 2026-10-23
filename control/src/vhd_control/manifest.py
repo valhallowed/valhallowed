@@ -5,7 +5,7 @@ taken from the manifest schema.
 """
 
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
@@ -25,7 +25,8 @@ class InvalidSettings(Exception):
 class World:
     name: str
     port: int
-    password: str | None
+    # Never in a repr, so no log line or test diff can carry it.
+    password: str | None = field(repr=False)
 
 
 @dataclass(frozen=True)

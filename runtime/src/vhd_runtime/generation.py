@@ -161,7 +161,7 @@ def _load(path: Path, validator: Draft202012Validator, *, secret: bool = False) 
 
 
 def _rule(error: ValidationError) -> str:
-    """What a value breaks, without the value; the control plane's schemas.rule, which ships in
+    """What a value breaks, without the value; the control plane's schemas._rule, which ships in
     another image. The messages kept name keys, never values."""
     # jsonschema's stubs type the keyword as a validator; at run time it is the keyword's name.
     keyword = str(error.validator)

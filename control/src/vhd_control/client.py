@@ -10,7 +10,7 @@ TIMEOUT_S = 10
 
 
 class Unreachable(Exception):
-    """The control plane is not running, or did not answer."""
+    """The control plane is not running, did not answer, or answered with an error."""
 
 
 class _UnixConnection(http.client.HTTPConnection):

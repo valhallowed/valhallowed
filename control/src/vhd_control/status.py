@@ -10,8 +10,8 @@ from vhd_control.reconcile import STATUS_INTERVAL_S
 
 # A runtime silent for this many of its reporting intervals is unknown, never its last state.
 STALE_AFTER = 3
-# Only a report this many intervals old vouches for an empty world: one arrives every interval,
-# give or take its delivery, and an older one may predate a player who joined since.
+# Only a report no older than this many intervals vouches for an empty world: one arrives every
+# interval, give or take its delivery, and an older one may predate a player who joined since.
 EMPTY_WITHIN = 1.5
 # States in which no game process runs, so no player can be connected.
 NO_GAME = frozenset({"installing", "held"})

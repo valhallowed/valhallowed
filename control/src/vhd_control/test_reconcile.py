@@ -55,7 +55,7 @@ def test_adjacent_world_ports_are_accepted() -> None:
     assert len(generation.children) == 2
 
 
-def test_two_worlds_that_would_share_a_container_name_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_two_worlds_that_would_share_a_service_name_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("vhd_control.reconcile.child_id", lambda name: "world-same-000000")
-    with pytest.raises(InvalidSettings, match="would share the container name"):
+    with pytest.raises(InvalidSettings, match="would share the service name"):
         reconcile(settings(World("Ashwake", 2456, None), World("Meadowfold", 2459, None)), None)

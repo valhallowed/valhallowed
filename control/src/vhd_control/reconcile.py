@@ -6,7 +6,7 @@ restart, so a change to one world never restarts another.
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import pairwise
 
 from vhd_control import layout
@@ -15,8 +15,13 @@ from vhd_control.naming import child_id
 
 STATUS_URL = f"http://{layout.CONTROL_PLANE}:{layout.STATUS_PORT}/status"
 STATUS_INTERVAL_S = 5
-# A world's server uses its port through port+2 (Game facts).
+# A world reserves its port through port+2 (Game facts).
 WORLD_PORTS = 3
+
+
+def last_port(port: int) -> int:
+    """The last of the ports a world on port reserves."""
+    return port + WORLD_PORTS - 1
 
 
 @dataclass(frozen=True)
@@ -27,7 +32,8 @@ class Child:
     world: str
     port: int
     generation: Mapping[str, object]
-    secrets: Mapping[str, object]
+    # Never in a repr, so no log line or test diff can carry a password.
+    secrets: Mapping[str, object] = field(repr=False)
 
     def numbered(self, number: int, disconnect_players: bool = False) -> tuple[dict[str, object], dict[str, object]]:
         """The generation and secrets documents as the runtime reads them. disconnect_players
@@ -53,7 +59,7 @@ def reconcile(settings: Settings, previous: Generation | None) -> Generation:
         cid = child_id(world.name)
         if cid in children:
             raise InvalidSettings(
-                f"worlds {children[cid].world!r} and {world.name!r} would share the container name {cid}; rename one"
+                f"worlds {children[cid].world!r} and {world.name!r} would share the service name {cid}; rename one"
             )
         children[cid] = _child(world)
     if previous is not None and dict(previous.children) == children:
@@ -81,9 +87,9 @@ def _child(world: World) -> Child:
 def _check_ports(worlds: tuple[World, ...]) -> None:
     """What the manifest schema cannot express: no two worlds' port ranges overlap."""
     for lower, upper in pairwise(sorted(worlds, key=lambda w: w.port)):
-        last = lower.port + WORLD_PORTS - 1
+        last = last_port(lower.port)
         if upper.port <= last:
             raise InvalidSettings(
-                f"worlds {lower.name!r} and {upper.name!r} share ports: a world uses its port through "
+                f"worlds {lower.name!r} and {upper.name!r} share ports: a world reserves its port through "
                 f"port+{WORLD_PORTS - 1}, so {lower.name!r} on {lower.port} reaches {last}"
             )
