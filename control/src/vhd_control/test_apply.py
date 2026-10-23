@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from vhd_control import client, layout
-from vhd_control.apply import Apply, Refused
+from vhd_control.apply import WAIT_TIMEOUT_S, Apply, Refused
 from vhd_control.docker import DockerError
 from vhd_control.naming import child_id
 from vhd_control.render import STOP_GRACE
@@ -29,8 +29,11 @@ class FakeDocker:
         self.running: list[str] = []
         self.mounts = {"/install": "/srv/vhd", "/var/run/docker.sock": "/var/run/docker.sock"}
         self.streamed: list[list[str]] = []
-        # How many coming Compose runs fail.
+        # Images the host lacks.
+        self.missing: set[str] = set()
+        # How many coming Compose runs fail, and whether the next is interrupted.
         self.fail_up = 0
+        self.interrupt = False
 
     def output(self, args: list[str]) -> str:
         if args[0] == "version":
@@ -42,10 +45,20 @@ class FakeDocker:
             return json.dumps({"name": "valhallowed", "x-vhd": {"images": IMAGES}})
         if args[0] == "ps":
             return "".join(f"{service}\n" for service in self.running)
+        if args[:2] == ["image", "inspect"]:
+            if args[-1] in self.missing:
+                raise DockerError(f"No such image: {args[-1]}")
+            return "sha256:" + "c" * 64 + "\n"
         raise AssertionError(f"unexpected docker {args}")
 
     def stream(self, args: list[str]) -> None:
         self.streamed.append(args)
+        if args[0] == "pull":
+            self.missing.discard(args[1])
+            return
+        if self.interrupt:
+            self.interrupt = False
+            raise KeyboardInterrupt
         if self.fail_up > 0:
             self.fail_up -= 1
             raise DockerError("docker compose -p exited with 1")
@@ -114,10 +127,34 @@ def test_a_first_apply_hands_every_world_and_starts_the_install(setup: Setup) ->
     assert Store(setup.volume).load().applied == {MEADOWFOLD: 2456, ASHWAKE: 2459}
     assert setup.docker.streamed == [
         [
-            "compose", "-p", "valhallowed", "-f", str(setup.install / layout.RENDERED),
-            "up", "--detach", "--wait", "--remove-orphans",
+            "compose", "-p", "valhallowed", "-f", str(setup.install / layout.CANDIDATE),
+            "up", "--detach", "--wait", "--wait-timeout", str(WAIT_TIMEOUT_S), "--remove-orphans",
         ]
     ]  # fmt: skip
+    assert (setup.install / layout.RENDERED).exists()
+    assert not (setup.install / layout.CANDIDATE).exists()
+
+
+def test_images_the_host_lacks_are_pulled_before_anything_restarts(setup: Setup) -> None:
+    setup.docker.missing = {IMAGES["game-runtime"]}
+    setup.apply()
+    assert setup.docker.streamed[0] == ["pull", IMAGES["game-runtime"]]
+    assert setup.docker.streamed[1][:2] == ["compose", "-p"]
+
+
+def test_an_interrupted_apply_still_asks_before_the_next_restart(setup: Setup) -> None:
+    setup.apply()
+    before = setup.rendered()
+    (setup.install / "manifest.toml").write_text(TWO_WORLDS.replace("2456", "2462"))
+    setup.docker.interrupt = True
+    with pytest.raises(KeyboardInterrupt):
+        setup.apply()
+    assert setup.rendered() == before
+
+    setup.docker.running = [MEADOWFOLD, ASHWAKE]
+    setup.players("Meadowfold", 2)
+    with pytest.raises(Refused, match="restarts Meadowfold"):
+        setup.apply()
 
 
 def test_the_rendered_install_mounts_each_world_only_its_own_generation(setup: Setup) -> None:
@@ -222,7 +259,7 @@ def test_a_port_change_compose_cannot_apply_is_rolled_back(setup: Setup) -> None
     (setup.install / "manifest.toml").write_text(TWO_WORLDS.replace("2456", "2462"))
     setup.docker.fail_up = 1
 
-    with pytest.raises(Refused, match="runs as it did before"):
+    with pytest.raises(Refused, match="back on the containers it ran before"):
         setup.apply()
 
     assert setup.rendered() == before

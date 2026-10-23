@@ -34,6 +34,8 @@ MIN_ENGINE_API = (1, 45)
 PROJECT_LABEL = "com.docker.compose.project"
 SERVICE_LABEL = "com.docker.compose.service"
 IMAGES = ("control-plane", "game-runtime")
+# How long Compose waits for the containers it starts to run.
+WAIT_TIMEOUT_S = 300
 
 _log = logging.getLogger(__name__)
 
@@ -59,9 +61,11 @@ class Apply:
         host = self._host()
         # vhd runs as root; everything it writes belongs to whom the control plane runs as.
         self.store = Store(self.store.root, host.owner)
+        # Before the players check, not after it: a pull can take minutes.
+        self._pull(host)
         running = self._running(host.project)
-        rendered_path = self.install / layout.RENDERED
-        previous = json.loads(rendered_path.read_text()) if rendered_path.exists() else None
+        applied_path = self.install / layout.RENDERED
+        previous = json.loads(applied_path.read_text()) if applied_path.exists() else None
         with self.store.locked():
             state = self.store.load()
             generation = reconcile(settings, state.generation)
@@ -71,7 +75,8 @@ class Apply:
                 self._confirm(restarts, disconnect_players)
             moving = self._stage(state, generation)
             self._own(host.owner)
-        self._write(rendered_path, rendered, host.owner)
+        candidate = self.install / layout.CANDIDATE
+        self._write(candidate, rendered, host.owner)
         # Flushed, so it comes before Compose's own output.
         print(
             f"vhd apply: generation {generation.number} for {len(generation.children)} world(s)",
@@ -79,33 +84,44 @@ class Apply:
             flush=True,
         )
         try:
-            self.docker.stream(self._up(host))
+            self.docker.stream(self._up(host, candidate))
         except DockerError as error:
-            self._roll_back(host, previous, error, generation.number)
+            candidate.unlink()
+            self._roll_back(host, previous is not None, error, generation.number)
+        candidate.replace(applied_path)
         with self.store.locked():
             self._commit(self.store.load(), generation, moving)
 
-    def _up(self, host: Host) -> list[str]:
-        rendered = str(self.install / layout.RENDERED)
-        return ["compose", "-p", host.project, "-f", rendered, "up", "--detach", "--wait", "--remove-orphans"]
+    def _pull(self, host: Host) -> None:
+        """Every image the install runs, pulled when the host lacks it."""
+        for image in sorted(set(host.images.values())):
+            try:
+                self.docker.output(["image", "inspect", "--format", "{{.Id}}", image])
+            except DockerError:
+                self.docker.stream(["pull", image])
 
-    def _roll_back(self, host: Host, previous: dict[str, Any] | None, error: DockerError, number: int) -> NoReturn:
+    def _up(self, host: Host, compose_file: Path) -> list[str]:
+        return [
+            "compose", "-p", host.project, "-f", str(compose_file),
+            "up", "--detach", "--wait", "--wait-timeout", str(WAIT_TIMEOUT_S), "--remove-orphans",
+        ]  # fmt: skip
+
+    def _roll_back(self, host: Host, ran_before: bool, error: DockerError, number: int) -> NoReturn:
         """Compose failed partway: a container it recreated may be gone. Bring the install back on
-        the compose file it ran before. State still records that install's ports, and the
-        directories its containers mount are untouched until a run succeeds."""
-        if previous is None:
+        the compose file it ran before, which vhd apply has not touched, and whose directories
+        state still records."""
+        if not ran_before:
             raise error
         print(
             "vhd apply: Compose failed; bringing back the containers the install ran before", file=self.out, flush=True
         )
-        self._write(self.install / layout.RENDERED, previous, host.owner)
         try:
-            self.docker.stream(self._up(host))
+            self.docker.stream(self._up(host, self.install / layout.RENDERED))
         except DockerError as again:
             raise DockerError(f"{error}; bringing back the previous containers failed too: {again}") from again
         raise Refused(
-            f"Compose could not apply generation {number} ({error}). The install runs as it did before; "
-            "fix the cause, then run vhd apply again."
+            f"Compose could not apply generation {number} ({error}). The install is back on the "
+            "containers it ran before; fix the cause, then run vhd apply again."
         ) from error
 
     def _check_engine(self) -> None:
