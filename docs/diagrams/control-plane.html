@@ -254,7 +254,7 @@
     <ul>
       <li>Sit on the game's path. No player traffic, telemetry or command passes through it, so its failure stops changes, not play.</li>
       <li>Apply part of a world’s settings. Each world gets its whole generation, or keeps running the one it has.</li>
-      <li>Restart a game server with players online unless the server manager confirms it, knowing who it disconnects.</li>
+      <li>Restart a game server with players online unless the server manager confirms it, shown which worlds and how many players it disconnects.</li>
       <li>Let a world that failed to load save over the real one.</li>
       <li>Start an install on a host that falls short without saying so. The host check warns in status.</li>
       <li>Open the admin console beyond loopback unless the manifest says so.</li>
@@ -302,8 +302,8 @@
       { f: 'cp', t: 'cp', l: 'validate, reconcile: generation 11', d: 'Valid. A new world needs a new game runtime, which only Compose can create.' },
       { f: 'cp', t: 'ui', l: 'pending: run vhd apply', dash: true, d: 'Status names the change and the command that applies it.' },
       { f: 'sm', t: 'cp', l: 'vhd apply', d: 'Run on the host with the server manager’s own access to Docker. It renders the install’s compose file from generation 11.' },
-      { note: 'Compose creates Ashwake; every other container stays untouched', a: 'cp', b: 'gr', d: 'Only containers whose definition changed are recreated. Meadowfold keeps running.' },
-      { f: 'cp', t: 'gr', l: 'generation 11 + scoped secrets', d: 'The new runtime reads its generation and starts its world.' },
+      { f: 'cp', t: 'cp', l: 'write generation 11 + scoped secrets', d: 'Into the new world’s own directory first: Compose cannot mount a directory that is not there.' },
+      { note: 'Compose creates Ashwake; every other container stays untouched', a: 'cp', b: 'gr', d: 'Only containers whose definition changed are recreated. Meadowfold keeps running. The new runtime reads its generation and starts its world.' },
       { f: 'gr', t: 'cp', l: 'status: world loaded', dash: true, d: 'World truth for the new world. With no save under its name, the game creates a new world.' },
       { f: 'cp', t: 'ui', l: 'applied: generation 11', dash: true, d: 'The world list shows Ashwake and its object count.' }
     ] },
@@ -317,9 +317,9 @@
       { f: 'sm', t: 'cp', l: 'save secrets file', d: 'Example: a new server password for one world.' },
       { f: 'cp', t: 'cp', l: 'reconcile: generation 10, cost game-server restart', d: 'Valid, and it needs a game-server restart.' },
       { f: 'gr', t: 'cp', l: 'status: 3 players online', dash: true, d: 'Each runtime reports its players; the control plane holds a game-server restart while there are any.' },
-      { f: 'cp', t: 'ui', l: 'pending: waits for an empty world', dash: true, d: 'Stored and held. The server manager can apply it now, with a warning that names who it disconnects, or wait.' },
+      { f: 'cp', t: 'ui', l: 'pending: waits for an empty world', dash: true, d: 'Stored and held. The server manager can apply it now, with a warning that names the worlds and how many players it disconnects, or wait.' },
       { f: 'gr', t: 'cp', l: 'status: 0 players', dash: true, d: 'Later, the world empties.' },
-      { f: 'cp', t: 'gr', l: 'generation 10', d: 'The runtime counts its players once more, then saves the world and exits, and Compose restarts it on the new generation.' },
+      { f: 'cp', t: 'gr', l: 'generation 10', d: 'The runtime counts its players once more, then saves the world and exits, and Docker restarts it on the new generation, under the policy Compose set.' },
       { f: 'gr', t: 'cp', l: 'status: world loaded', dash: true, d: 'World truth before anything is reported as done.' },
       { f: 'cp', t: 'ui', l: 'applied: generation 10', dash: true, d: 'The pending change moves to history.' }
     ] },
@@ -338,7 +338,7 @@
       { f: 'steam', t: 'cp', l: 'new build available', dash: true, d: 'The update is a pending change with cost: game-server restart.' },
       { f: 'cp', t: 'ui', l: 'pending: game update', dash: true, d: 'Held until the world is empty, like any game-server restart.' },
       { f: 'gr', t: 'cp', l: 'status: 0 players', dash: true, d: 'The world empties.' },
-      { f: 'cp', t: 'gr', l: 'generation with the new build', d: 'The runtime saves the world and exits; Compose restarts it.' },
+      { f: 'cp', t: 'gr', l: 'generation with the new build', d: 'The runtime saves the world and exits; Docker restarts it, under the policy Compose set.' },
       { f: 'gr', t: 'steam', l: 'download update', d: 'SteamCMD fetches the new build.' },
       { f: 'gr', t: 'cp', l: 'world truth: failed to load', dash: true, d: 'Example: the patch broke a plugin patch, and the world came up empty.' },
       { f: 'gr', t: 'cp', l: 'status: held before first autosave', dash: true, d: 'The supervisor kills the game before its first autosave and holds. An empty world must never save over the real one, so the save stays intact.' },

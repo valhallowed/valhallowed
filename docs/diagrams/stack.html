@@ -93,7 +93,7 @@
       <table class="stack">
         <thead><tr><th>Part</th><th>Language and runtime</th><th>Libraries</th><th>Third-party pieces</th><th>Outside services</th></tr></thead>
         <tbody>
-          <tr><td>Control plane</td><td><span class="chip k-fixed">Python (G19)</span></td><td class="chips"><span class="chip k-open">TUI toolkit: open</span><span class="chip k-fixed">JSON Schema (G18)</span><span class="chip k-fixed">Docker CLI and Compose (vhd apply)</span></td><td class="muted">none</td><td class="chips"><span class="chip k-svc">Steam (update checks)</span></td></tr>
+          <tr><td>Control plane</td><td><span class="chip k-fixed">Python (G19)</span></td><td class="chips"><span class="chip k-open">TUI toolkit: open</span><span class="chip k-fixed">JSON Schema (G18)</span><span class="chip k-fixed">Docker CLI and Compose (vhd apply)</span></td><td class="chips"><span class="chip k-fixed">tini</span></td><td class="chips"><span class="chip k-svc">Steam (update checks)</span></td></tr>
           <tr><td>Game runtime</td><td class="chips"><span class="chip k-fixed">VHD’s own image (G16)</span><span class="chip k-fixed">Python supervisor (G19)</span></td><td class="chips"><span class="chip k-fixed">JSON Schema (G18)</span></td><td class="chips"><span class="chip k-fixed">Valheim dedicated server</span><span class="chip k-fixed">SteamCMD</span><span class="chip k-fixed">BepInEx</span><span class="chip k-fixed">HarmonyX</span><span class="chip k-fixed">tini</span></td><td class="chips"><span class="chip k-svc">Steam CDN</span></td></tr>
           <tr><td>Plugin</td><td><span class="chip k-fixed">C#, .NET Standard 2.1</span></td><td class="chips"><span class="chip k-fixed">BepInEx</span><span class="chip k-fixed">HarmonyX</span></td><td class="chips"><span class="chip k-fixed">game assemblies (build only)</span></td><td class="muted">none</td></tr>
           <tr><td>Data layer</td><td><span class="chip k-fixed">Python (G19)</span></td><td class="chips"><span class="chip k-lean">httpx</span><span class="chip k-lean">pydantic</span><span class="chip k-lean">psycopg 3</span><span class="chip k-lean">inotify_simple</span></td><td class="chips"><span class="chip k-lean">PostgreSQL (bundled default)</span></td><td class="chips"><span class="chip k-svc">chat service</span><span class="chip k-svc">LLM provider</span></td></tr>
@@ -117,7 +117,7 @@
       <table id="reg">
         <thead><tr><th>Dependency</th><th>Used by</th><th>Arrives</th><th>License</th><th>If it breaks or changes</th></tr></thead>
         <tbody>
-          <tr data-a="start"><td>Valheim dedicated server</td><td>Game runtime</td><td>Downloaded at first start and on update</td><td>Proprietary, Iron Gate</td><td>A patch can break plugin patches and load an empty world. World truth holds the update; the nightly check blocks the next release.</td></tr>
+          <tr data-a="start"><td>Valheim dedicated server</td><td>Game runtime</td><td>Downloaded at first start and on update</td><td>Proprietary, Iron Gate</td><td>A patch can break plugin patches and load an empty world. World truth holds the update; the nightly check blocks the next candidate.</td></tr>
           <tr data-a="build"><td>Game assemblies</td><td>Plugin build</td><td>Fetched in CI, discarded</td><td>Proprietary; never committed or shipped</td><td>A renamed game method fails the build or a patch. Caught by the nightly game check.</td></tr>
           <tr data-a="start"><td>SteamCMD</td><td>Game runtime</td><td>Downloaded at first start</td><td>Valve’s terms</td><td>If Steam is unreachable, new installs and game updates wait. Running worlds keep running.</td></tr>
           <tr data-a="image"><td>Debian 13 and its packages: Python 3, jsonschema, tini, the libraries the server loads</td><td>Every VHD image built on Debian</td><td>Pinned by base image digest, packages from that image’s own snapshot</td><td>Free software licenses (DFSG)</td><td>Moves only when the base image digest moves, in a pull request that passes every check.</td></tr>
@@ -177,7 +177,7 @@
     runtime: D('Game runtime', 'Game runtime', [['Runs', 'one world: the server, BepInEx and the plugin']]),
     plugin: D('Game runtime', 'Plugin', [['Binds', 'game methods by name through Harmony'], ['Failure mode', 'a patch can apply and then throw inside the game, leaving the world empty while every container looks healthy']]),
     truth: D('Game runtime', 'World truth', [['Checks', 'the world loaded, against the object count the supervisor last saw it hold'], ['On failure', 'stops the game before its first autosave and holds the runtime']]),
-    nightly: D('Pipeline', 'Nightly game check', [['Runs', 'build and acceptance against the newest dedicated-server build'], ['On failure', 'blocks the next candidate (candidate gate)']]),
+    nightly: D('Pipeline', 'Nightly game check', [['Runs', 'the plugin build against the newest game build'], ['On failure', 'blocks the next candidate (candidate gate)']]),
     players: D('People', 'Players', [['Never join', 'a held world: its game is stopped before it can save']])
   };
   VHD.details(document.getElementById('chainsvg'), chainData, document.getElementById('detail'), { first: 'plugin' });

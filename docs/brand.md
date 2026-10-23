@@ -49,7 +49,8 @@ player reads in game always does.
 | Runtime | green | Game runtimes: server, BepInEx, plugin |
 | Data | orange | Data layer: intake, broker, persistence, chat relay, web map, database |
 | People | pink | Server managers and players |
-| External | grey | Third-party services and dependencies |
+| External | grey | Outside services and third-party dependencies |
+| Neutral | the line colour | The pipeline's own steps and gates, and the host |
 
 - **Type:** Alegreya SC for display, Alegreya Sans for text,
   IBM Plex Mono for code and identifiers. The Alegreya family's book-and-saga

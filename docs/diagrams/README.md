@@ -2,7 +2,8 @@
 
 Interactive pages that draw [architecture.md](../architecture.md). Where a page
 and the doc disagree, the doc wins and the page is out of date. Like the doc,
-they show VHD as designed; the [board](https://github.com/orgs/valhallowed/projects/1) shows what is built. Open a page in
+they draw VHD as designed, and what they show of a built part matches its code;
+the [board](https://github.com/orgs/valhallowed/projects/1) shows what is built. Open a page in
 any current browser; it needs no build step.
 
 | Page | Shows |

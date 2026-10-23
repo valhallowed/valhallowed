@@ -45,7 +45,7 @@
           <g class="e" data-k="e-merge"><path d="M245 214 H310" marker-end="url(#pa-arr)"/><text class="lab" x="277" y="206" text-anchor="middle">on merge</text></g>
           <g class="e" data-k="e-pushc"><path d="M630 214 H800 V286" marker-end="url(#pa-arr)"/><text class="lab" x="715" y="206" text-anchor="middle">push, commit tag</text></g>
           <g class="e" data-k="e-pull"><path d="M800 362 V438 H630" marker-end="url(#pa-arr)"/><text class="lab" x="712" y="430" text-anchor="middle">pull, not local cache</text></g>
-          <g class="e dash" data-k="e-sched"><path d="M245 438 H310" marker-end="url(#pa-arr)"/><text class="lab" x="277" y="430" text-anchor="middle">trigger</text></g>
+          <g class="e dash" data-k="e-sched"><path d="M245 438 H280 V232 H310" marker-end="url(#pa-arr)"/><text class="lab" x="262" y="430" text-anchor="middle">nightly</text></g>
           <g class="e dash" data-k="e-cand"><path d="M470 466 V548 H685" marker-end="url(#pa-arr)"/><text class="lab" x="555" y="540" text-anchor="middle">acceptance passes</text></g>
           <g class="e" data-k="e-pullrc"><path d="M915 548 H965" marker-end="url(#pa-arr)"/><text class="lab" x="940" y="540" text-anchor="middle">pull</text></g>
           <g class="e dash" data-k="e-soak"><path d="M1065 576 V606 H140 V630" marker-end="url(#pa-arr)"/><text class="lab" x="470" y="600" text-anchor="middle">soak clean, no blockers</text></g>
@@ -62,9 +62,8 @@
             <g class="z-control"><rect class="chipr" x="699" y="337" width="46" height="16" rx="3"/><text class="chipt" x="722" y="349" text-anchor="middle">control</text></g>
             <g class="z-runtime"><rect class="chipr" x="751" y="337" width="46" height="16" rx="3"/><text class="chipt" x="774" y="349" text-anchor="middle">game</text></g>
             <g class="z-data"><rect class="chipr" x="803" y="337" width="46" height="16" rx="3"/><text class="chipt" x="826" y="349" text-anchor="middle">data</text></g>
-            <g class="z-runtime"><rect class="chipr" x="855" y="337" width="46" height="16" rx="3"/><text class="chipt" x="878" y="349" text-anchor="middle">plugin</text></g>
           </g>
-          <g class="n z-neutral" data-k="schedule"><rect x="35" y="410" width="210" height="56" rx="6"/><text class="t" x="49" y="433">Nightly game check</text><text class="s" x="49" y="452">newest dedicated server</text></g>
+          <g class="n z-neutral" data-k="schedule"><rect x="35" y="410" width="210" height="56" rx="6"/><text class="t" x="49" y="433">Nightly game check</text><text class="s" x="49" y="452">plugin vs newest game build</text></g>
           <g class="n z-neutral" data-k="accept"><rect x="310" y="410" width="320" height="56" rx="6"/><text class="t" x="324" y="433">Acceptance</text><text class="s" x="324" y="452">clean runner installs from the registry</text></g>
           <g class="n z-external" data-k="rc"><rect x="685" y="520" width="230" height="56" rx="6"/><text class="t" x="699" y="543">Candidate</text><text class="s" x="699" y="562">same images, retagged</text></g>
           <g class="n z-people" data-k="candch"><rect x="965" y="520" width="200" height="56" rx="6"/><text class="t" x="979" y="543">Candidate channel</text><text class="s" x="979" y="562">dev lane, opted-in installs</text></g>
@@ -99,6 +98,7 @@
         <tbody>
           <tr><td><span class="chip z-control">control plane image</span></td><td>The control plane</td><td>Registry</td><td>Every install</td></tr>
           <tr><td><span class="chip z-runtime">game runtime image</span></td><td>The game runtime (G16), with the plugin inside</td><td>Registry</td><td>Every install. It downloads SteamCMD and the dedicated server at first start; no Valve or game file ships in the image.</td></tr>
+          <tr><td><span class="chip z-neutral">skeleton image</span></td><td>The release pipeline’s stand-in for the web map, on the web map’s port</td><td>Registry</td><td>Every install</td></tr>
           <tr><td><span class="chip z-data">data layer images</span></td><td>Intake, broker, persistence, world render, web map, chat relay, assistant</td><td>Registry</td><td>Every install</td></tr>
           <tr><td><span class="chip z-runtime">plugin artifact</span></td><td>The plugin, compiled against game assemblies fetched in CI, taken out of the accepted game runtime image</td><td>GitHub Release</td><td>Anyone inspecting a release</td></tr>
           <tr><td><span class="chip z-ingress">manifest schema</span></td><td>The schema source; also produces the settings reference</td><td>GitHub Release</td><td>The control plane; server managers and their editors</td></tr>
@@ -151,14 +151,14 @@
     build: { kind: 'CI runner', title: 'Build', text: 'Asks Steam for the dedicated server’s current build, downloads that build, keeps its assemblies and discards the rest. CI keeps no cache of them. Nothing proprietary is committed or shipped.', rows: [['Produces', 'every image the install lists; the plugin, inside the game runtime image'], ['Inputs', 'the repo at one commit; the game build and its assemblies; the BepInEx pack'], ['Locally', 'the same steps run in the build lane']] },
     commitbuild: { kind: 'Registry', title: 'Commit build', text: 'Every merge publishes its images under the commit tag, the plugin inside the game runtime image. Nothing on this tag is meant for consumers.', rows: [['Tags', 'sha-<commit>, edge'], ['Followed by', 'CI acceptance, the dev lane']] },
     accept: { kind: 'CI runner', title: 'Acceptance', text: 'A clean runner installs VHD from the registry the way a server manager does, with vhd apply, and checks the install.', rows: [['Pulls', 'registry images, not the local build cache, so a missing push fails here'], ['Checks', 'every image is from the commit; the world gets its generation and its status reaches the control plane'], ['Gate', 'candidate gate']] },
-    schedule: { kind: 'Source control', title: 'Nightly game check', text: 'Game patches arrive without notice. Every night the plugin is built against the newest dedicated-server build, and the pinned downloads Dependabot cannot watch are checked for newer releases.', rows: [['Catches', 'a game patch that breaks the plugin’s build; a pinned download that fell behind'], ['On failure', 'an issue opens, and no candidate is promoted until a run passes']] },
+    schedule: { kind: 'Source control', title: 'Nightly game check', text: 'Game patches arrive without notice. Every night the plugin is built against the newest game build; a candidate needs a pass from the last 36 hours. Beside it, the pinned downloads Dependabot cannot watch are compared with their newest releases.', rows: [['Catches', 'a game patch that breaks the plugin’s build; a pinned download that fell behind'], ['On failure', 'an issue opens for each check, closed by the next pass; only the plugin build holds back candidates']] },
     rc: { kind: 'Registry', title: 'Candidate', text: 'The commit build that passed the candidate gate, promoted. Same image digests.', rows: [['Tag', 'X.Y.Z-rc.N'], ['Rebuilds', 'never']] },
     candch: { kind: 'Consumers', title: 'Candidate channel', text: 'Installs that opt in to candidates: the dev lane, and any consumer who wants early releases.', rows: [['Watches', 'world truth, errors, pending changes'], ['Feeds', 'the release gate']] },
     reltag: { kind: 'Source control', title: 'Release tag', text: 'A maintainer promotes a candidate that soaked clean.', rows: [['Requires', 'the release gate']] },
     release: { kind: 'Registry · GitHub Releases', title: 'Release', text: 'The candidate retagged with its version, plus a GitHub Release.', rows: [['Registry', 'images under the version tag'], ['GitHub Release', 'compose.yaml, both schemas, the plugin artifact and checksums; the notes name the game build the plugin was built against'], ['Site', 'valhallowed.com links to each release']] },
     relch: { kind: 'Consumers', title: 'Release channel', text: 'The default for every install. The maintainers’ own installs follow it like any other consumer.', rows: [['Updates', 'applied by the server manager with vhd apply; a game-server restart waits while players are online unless the server manager confirms it']] },
     g1: { kind: 'Gate', title: 'Merge gate', text: 'Every check is green.', rows: [['Blocks', 'merge to main']] },
-    g2: { kind: 'Gate', title: 'Candidate gate', text: 'Acceptance passed on the commit’s registry images, and the newest nightly game check passed.', rows: [['Blocks', 'the candidate tag']] },
+    g2: { kind: 'Gate', title: 'Candidate gate', text: 'Acceptance passed on the commit’s registry images, and the newest nightly game check passed within 36 hours.', rows: [['Blocks', 'the candidate tag']] },
     g3: { kind: 'Gate', title: 'Release gate', text: 'The candidate soaked on the candidate channel with no open blockers.', rows: [['Blocks', 'the release tag']] }
   };
 
@@ -185,7 +185,8 @@
       nightly: { label: 'Nightly game check', steps: [
         { t: 'Schedule fires', d: 'Once a night, against the newest dedicated-server build.', on: ['schedule', 'e-sched'] },
         { t: 'Build the plugin', d: 'Catches a game patch that breaks the plugin’s build before a consumer meets it.', on: ['schedule', 'e-sched', 'build'] },
-        { t: 'Result', d: 'Pass: the candidate gate may open. Fail: an issue opens, and no candidate is promoted until a run passes.', on: ['schedule'] }
+        { t: 'Result', d: 'Pass: the candidate gate may open, and an open issue closes. Fail: an issue opens, and no candidate is promoted until a run passes.', on: ['schedule'] },
+        { t: 'Pinned downloads', d: 'Beside it, the downloads Dependabot cannot watch are compared with their newest releases. A newer one opens an issue of its own and blocks nothing.', on: ['schedule'] }
       ] },
       candidate: { label: 'Candidate', steps: [
         { t: 'Candidate gate', d: 'Acceptance passed on the registry images, and so did the newest nightly game check.', on: ['accept', 'e-cand', 'g2'] },

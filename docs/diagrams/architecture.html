@@ -165,7 +165,7 @@
   <section class="limits" id="limits" aria-labelledby="limits-h">
     <h2 id="limits-h">What the boundaries never allow</h2>
     <ul>
-      <li>A child reading the manifest or the secrets file. Children read their generation and nothing else.</li>
+      <li>A child reading the manifest or the secrets file. Children read their generation and the secrets scoped to it, nothing else.</li>
       <li>Any service but the data layer changing the database schema.</li>
       <li>Anything but the broker creating a command, or anything but the plugin executing one. Markers and journal entries stay records.</li>
       <li>An outside service becoming required. Chat relay, assistant and sign-in each switch off cleanly.</li>

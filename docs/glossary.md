@@ -8,7 +8,8 @@ meaning for an old one, lands here first.
 
 **Acceptance** — Installing a channel's images from the registry, anonymously,
 on a clean runner, then checking that the install works. Commit builds are what
-it installs; a candidate or a release publishes only after it passes.
+it installs; a candidate or a release publishes only after it passes. The same
+check runs on a local build for a pull request and in `make accept`.
 
 **Acceptance material** — Recorded sessions, world saves, schema constraints
 and chat-command contracts that every capability must keep. Synthesized or
@@ -91,6 +92,9 @@ the manifest, secrets and defaults. Children read only this.
 the host: LAN, public direct, public with TLS, or game only. Every port in a
 profile is a default the manifest can change.
 
+**Game build** — The Steam build id of the Valheim dedicated server: what the
+plugin is built against, and what a game runtime installs.
+
 **Game runtime** — A child that runs one world: the Valheim dedicated server,
 BepInEx and the plugin, under its supervisor. It runs what the control plane
 hands it and holds no policy.
@@ -137,9 +141,9 @@ world render (B5).
 order, tracked as a GitHub milestone. It lands in one or more pull requests.
 
 **Nightly game check** — The pipeline run, every night, that builds the
-plugin against the newest dedicated-server build and checks the pinned
-downloads Dependabot cannot watch for newer releases. A failure blocks the
-next candidate.
+plugin against the newest game build. A failure blocks the next candidate.
+Beside it, the same run compares the pinned downloads Dependabot cannot watch
+with their newest releases, which blocks nothing.
 
 **Operator action** — A one-off request through the control API, such as
 importing a world, taking a backup or reading logs. Validated like the
@@ -190,6 +194,9 @@ secrets schemas are its source, so it cannot disagree with them.
 
 **Sign-in** — The capability that signs a player in to the web map through
 Steam (B9). Only people the game has seen can sign in.
+
+**Skeleton** — The release pipeline's stand-in image for the web map: it
+serves the commit it was built from on the web map's port. Not a child.
 
 **Slice** — One deliverable of a milestone that keeps `main` green on its own,
 tracked as one issue on the board.

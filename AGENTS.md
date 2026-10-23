@@ -30,19 +30,21 @@ the reasons.
 - **Every boundary** has one typed contract, validated by the receiver, one
   owner and a stated failure behaviour. Observations fail soft; actions fail
   closed.
-- **No hard-coded ports, addresses or resource sizes (G9).** Each is a default
-  the manifest can change.
+- **No hard-coded ports, addresses or resource sizes (G9).** Each one the host
+  sees is a default the manifest can change; wiring between VHD's own
+  containers stays a named constant.
 - **Only CI on `main` pushes images (G12).** Versions are promoted by tag, never
   rebuilt. Never push to the registry by hand.
 - **Pin every dependency:** actions by commit SHA, base images by digest,
-  packages by exact version.
+  packages by exact version. The one exception is G16's: SteamCMD and the
+  dedicated server download into the install, newest first.
 - **Everything here is public:** the repo, its history and its images. Never
   commit host names, private addresses, personal paths, credentials or real
   player data. Acceptance material is synthesized or anonymized.
 - **Colours and type come from design/tokens.css.** A surface never hard-codes
   a colour or a font.
-- **Every public page carries the trademark line** in docs/brand.md, except
-  the one page it exempts.
+- **Every public page carries the trademark line** in docs/brand.md, as it
+  defines a public page, except the one page it exempts.
 
 ## Verify
 
@@ -51,17 +53,19 @@ the reasons.
 | Anything | `scripts/check-public.sh` |
 | Workflows | `actionlint` |
 | Shell scripts | `shellcheck scripts/*.sh` |
-| The manifest schema, a contract, their examples or `.github/dependabot.yml` | `scripts/check-schema.sh` |
+| The manifest schema, a contract or their examples | `scripts/check-schema.sh` |
+| `.github/dependabot.yml` | `scripts/check-schema.sh`, then `scripts/check-images.sh` |
 | A Python component | `scripts/check-python.sh <dir>` |
 | The plugin | `make plugin` |
 | Images or the install | `scripts/check-images.sh`, then `make accept` |
 | A pinned download's version (an `ARG` in a Dockerfile) | `scripts/check-upstream.sh` |
 
-CI runs all of these on every pull request and every push to `main`, except
-`make accept`: on `main` it pushes the images, then accepts them from the
-registry rather than from a local build. `scripts/check-upstream.sh` runs in
-the nightly game check. CI runs actionlint, shellcheck and Python from the
-images pinned in `images/tools/Dockerfile`.
+CI runs all of these on every pull request and every push to `main`.
+Acceptance runs on the local build for a pull request, and on `main` from the
+registry, after CI pushes the images. `scripts/check-upstream.sh` runs in the
+nightly checks instead. CI runs actionlint, shellcheck and Python from the
+images pinned in `images/tools/Dockerfile`; locally, run the same images with
+`docker run --rm -v "$PWD:/repo:ro" -w /repo "$(scripts/tool-image.sh shellcheck)" scripts/*.sh`.
 
 ## Delivering
 
@@ -80,6 +84,7 @@ and lands through pull requests.
   task in that slice's issue.
 - **Progress lives on the board, nowhere else.** Issues exist for the current
   milestone, plus the next one while it is planned; later work stays in
-  docs/architecture.md § Delivery order. Docs say what VHD is and why, never
+  docs/architecture.md § Delivery order. The issues the nightly checks open
+  are alerts, not plans, and close themselves on the next pass. Docs say what VHD is and why, never
   where the work stands.
 - **Delete merged branches,** on GitHub and in every clone.

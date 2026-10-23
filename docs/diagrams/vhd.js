@@ -1,4 +1,4 @@
-// Shared interaction for the Valhallowed planning pages.
+// Shared interaction for the Valhallowed diagram pages.
 // details(): any element with data-k becomes a keyboard-reachable control that
 // fills a detail panel. stepper(): a scenario list that lights diagram parts in order.
 // Panel content is static text authored in each page, never user input.
@@ -51,7 +51,7 @@
     return select;
   }
 
-  // cfg: { svg, seg, list, prev, next, scenarios: {key: {label, intro, steps: [{t, d, on: [keys]}]}}, onScenario }
+  // cfg: { svg, seg, list, prev, next, start, scenarios: {key: {label, steps: [{t, d, on: [keys]}]}}, onScenario, onStep }
   function stepper(cfg) {
     let current = null;
     let index = -1;
