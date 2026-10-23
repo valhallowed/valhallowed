@@ -132,7 +132,8 @@ def ensure_server(steamcmd: Path, install_dir: Path, run: Run = run, stopping: S
         run(_app_update(steamcmd, install_dir, validate), INSTALL_TIMEOUT_S if validate else UPDATE_TIMEOUT_S, stopping)
         build = server_build(install_dir)
         if build is not None:
-            _log.info("dedicated server build %s%s", build, "" if build == installed else f", was {installed}")
+            was = "" if installed in (None, build) else f", was {installed}"
+            _log.info("dedicated server build %s%s", build, was)
             return build
         validate = True
     raise RuntimeError(f"SteamCMD did not install the dedicated server after {INSTALL_ATTEMPTS} attempts")

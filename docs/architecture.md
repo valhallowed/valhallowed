@@ -167,8 +167,9 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
 - **Restart gating is shared.** The control plane holds a change while status
   shows players, and the runtime makes the final check when it would restart
   the game, since only it sees the count at that moment: it restarts only for
-  a fresh count of no players, or for a generation that carries the server
-  manager's confirmation (B1). It never cuts a load short.
+  a current count of no players, or for a generation that carries the server
+  manager's confirmation (B1). Only that confirmation, or a stop, ends a
+  load, and then by a kill, which saves nothing.
 - **Children read only the effective configuration.** Generated files, such as
   the plugin's BepInEx config, are never edited by hand.
 - **World truth gates saving.** A world that fails world truth is stopped

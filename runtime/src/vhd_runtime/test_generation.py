@@ -73,12 +73,16 @@ def test_a_changed_file_is_read_again(tmp_path: Path) -> None:
     assert (second.number, second.password) == (5, "hearth-and-horn")
 
 
-def test_refused_secrets_never_carry_the_password(tmp_path: Path) -> None:
+def test_a_short_password_is_refused_without_being_quoted(tmp_path: Path) -> None:
     write(tmp_path, "generation.json", MINIMAL)
     write(tmp_path, "secrets.json", {"contract": 1, "generation": 4, "password": "horn"})
-    with pytest.raises(InvalidGeneration, match="password: breaks minLength 5") as refused:
+    with pytest.raises(InvalidGeneration, match=r"secrets\.json at password: breaks minLength 5") as refused:
         Reader(tmp_path, CONTRACTS).read()
     assert "horn" not in str(refused.value)
+
+
+def test_a_generation_never_shows_its_password_in_a_repr() -> None:
+    assert "hearth-and-horn" not in repr(Generation(4, "Meadowfold", 2456, 5, None, "hearth-and-horn"))
 
 
 def test_reads_a_confirmed_restart(tmp_path: Path) -> None:
@@ -109,22 +113,15 @@ def test_refuses_a_save_name_the_manifest_schema_refuses(tmp_path: Path) -> None
         Reader(tmp_path, CONTRACTS).read()
 
 
-def test_refuses_short_password(tmp_path: Path) -> None:
-    write(tmp_path, "generation.json", MINIMAL)
-    write(tmp_path, "secrets.json", {"contract": 1, "generation": 4, "password": "horn"})
-    with pytest.raises(InvalidGeneration, match=r"secrets\.json at password"):
-        Reader(tmp_path, CONTRACTS).read()
-
-
 def test_refuses_malformed_json(tmp_path: Path) -> None:
     (tmp_path / "generation.json").write_text("{")
     with pytest.raises(InvalidGeneration, match=r"generation\.json"):
         Reader(tmp_path, CONTRACTS).read()
 
 
-def test_refuses_a_mount_that_shows_other_worlds(tmp_path: Path) -> None:
-    write(tmp_path, "generation.json", MINIMAL)
-    write(tmp_path, "secrets.json", {"contract": 1, "generation": 4})
+def test_refuses_a_mount_of_the_whole_generations_volume(tmp_path: Path) -> None:
+    """The volume's root holds state.json and each world's directory, and no generation.json."""
+    (tmp_path / "state.json").write_text("{}")
     (tmp_path / "world-ashwake-1a2b3c").mkdir()
     with pytest.raises(InvalidGeneration, match="other worlds"):
         Reader(tmp_path, CONTRACTS).read()

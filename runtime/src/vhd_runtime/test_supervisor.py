@@ -80,9 +80,7 @@ class World:
             directory.mkdir(parents=True)
         (self.paths.steamcmd / "steamcmd.sh").write_text("#!/bin/sh\n")
         (self.paths.server / "steamapps").mkdir(parents=True)
-        (self.paths.server / "steamapps" / "appmanifest_896660.acf").write_text(
-            '"StateFlags"\t\t"4"\n"buildid"\t\t"25909431"\n'
-        )
+        self.install_server()
         (self.paths.pack / "BepInEx" / "core").mkdir(parents=True)
         (self.paths.pack / "doorstop_libs").mkdir()
         (self.paths.pack / "doorstop_libs" / "libdoorstop_x64.so").write_bytes(b"\x7fELF")
@@ -163,6 +161,15 @@ class World:
 
     def run_steamcmd(self, command: list[str], timeout: float, stopping: steam.Stopping) -> None:
         self.steamcmd_runs.append(command)
+
+    def install_server(self) -> None:
+        """An installed dedicated server, as SteamCMD leaves its app manifest."""
+        (self.paths.server / "steamapps" / "appmanifest_896660.acf").write_text(
+            '"StateFlags"\t\t"4"\n"buildid"\t\t"25909431"\n'
+        )
+
+    def uninstall_server(self) -> None:
+        (self.paths.server / "steamapps" / "appmanifest_896660.acf").unlink()
 
     def stop_at(self, when: float, sup: Supervisor) -> None:
         """Send the supervisor SIGTERM's stop request at a time, as Docker does on a stop."""
@@ -377,16 +384,75 @@ def test_a_plugin_that_stopped_writing_vouches_for_no_one(world: World) -> None:
     assert world.reports[-1]["state"] == "running"
 
 
+def test_a_report_older_than_the_check_allows_holds_a_restart(world: World) -> None:
+    """Fresh enough to report, too old to vouch that no one joined since."""
+    world.generation(1)
+    sup = world.supervisor()
+    world.time.at(30, lambda: world.plugin_reports(10, players=0))
+    world.time.at(40, lambda: world.generation(2, password="hearth-and-horn"))
+    world.stop_at(44, sup)
+
+    assert sup.run() == 0
+    assert world.process.signals == [signal.SIGINT]
+    assert world.time.now >= 44
+    assert world.reports[-1]["generation"] == 1
+
+
+def test_a_newer_generation_never_cuts_a_load_short_unconfirmed(world: World) -> None:
+    world.generation(1)
+    world.save()
+    sup = world.supervisor()
+    world.time.at(10, lambda: world.generation(2, password="hearth-and-horn"))
+    world.plugin_running(48113, start=60)
+
+    assert sup.run() == 0
+    assert world.states() == ["installing", "loading", "running"]
+    assert world.process.signals == [signal.SIGINT]
+    assert not world.process.killed
+
+
+def test_a_confirmed_generation_ends_a_load_by_a_kill(world: World) -> None:
+    world.generation(1)
+    world.save()
+    sup = world.supervisor()
+    world.time.at(10, lambda: world.generation(2, password="hearth-and-horn", disconnect=True))
+
+    assert sup.run() == 0
+    assert world.process.killed
+    assert world.process.signals == []
+
+
+def test_a_held_world_takes_a_newer_generation_at_once(world: World) -> None:
+    world.generation(1)
+    world.save()
+    sup = world.supervisor()
+    world.time.at(30, lambda: world.plugin_reports(0))
+    world.time.at(60, lambda: world.generation(2, password="hearth-and-horn"))
+
+    assert sup.run() == 0
+    assert world.held_reasons()[:1] == [supervisor.HELD_OVER_SAVE]
+    assert world.time.now < 70
+
+
+def test_an_unverified_world_waits_for_a_count_it_never_gets(world: World) -> None:
+    world.generation(1)
+    sup = world.supervisor()
+    world.time.at(supervisor.LOAD_TIMEOUT_S + 10, lambda: world.generation(2, password="hearth-and-horn"))
+    world.stop_at(supervisor.LOAD_TIMEOUT_S + 120, sup)
+
+    assert sup.run() == 0
+    assert "unverified" in world.states()
+    assert world.time.now >= supervisor.LOAD_TIMEOUT_S + 120
+
+
 def test_a_generation_handed_during_the_install_is_the_one_launched(world: World) -> None:
     world.generation(1)
-    (world.paths.server / "steamapps" / "appmanifest_896660.acf").unlink()
+    world.uninstall_server()
     sup: Supervisor
 
     def run_steamcmd(command: list[str], timeout: float, stopping: steam.Stopping) -> None:
         world.generation(2, password="hearth-and-horn")
-        (world.paths.server / "steamapps" / "appmanifest_896660.acf").write_text(
-            '"StateFlags"\t\t"4"\n"buildid"\t\t"25909431"\n'
-        )
+        world.install_server()
 
     sup = world.supervisor(run_steamcmd)
     world.stop_at(60, sup)
@@ -494,7 +560,7 @@ def test_a_server_that_will_not_stop_is_killed(world: World) -> None:
 
 def test_a_stop_during_the_install_launches_nothing(world: World) -> None:
     world.generation()
-    (world.paths.server / "steamapps" / "appmanifest_896660.acf").unlink()
+    world.uninstall_server()
     sup: Supervisor
 
     def run_steamcmd(command: list[str], timeout: float, stopping: steam.Stopping) -> None:

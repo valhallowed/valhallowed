@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
@@ -56,7 +56,8 @@ class Generation:
     port: int
     status_interval_s: int
     status_url: str | None
-    password: str | None
+    # Never in a repr, so no log line or test diff can carry it.
+    password: str | None = field(repr=False)
     # The server manager confirmed restarting this world with players online, for this
     # generation alone. It is no setting: it never makes two generations differ.
     disconnect_players: bool = False
@@ -79,20 +80,20 @@ class Reader:
         """The current generation with its secrets, or None while the control plane has written none.
         Raises IncompleteGeneration until secrets.json carries the same generation."""
         generation_path = self._directory / GENERATION_FILE
-        if not generation_path.exists():
-            return None
+        secrets_path = self._directory / SECRETS_FILE
         # The supervisor asks every second; the files change only when the control plane
         # replaces them, which gives each a new inode.
-        stamp = _stamp(generation_path, self._directory / SECRETS_FILE)
+        stamp = _stamp(generation_path, secrets_path)
         if self._read is not None and self._read[0] == stamp:
             return self._read[1]
         # Each world's directory holds two files. A directory here means the whole generations
-        # volume is mounted, every world's secrets with it.
-        if any(entry.is_dir() for entry in self._directory.iterdir()):
+        # volume is mounted, every world's secrets with it; its root holds no generation.json.
+        if self._directory.is_dir() and any(entry.is_dir() for entry in self._directory.iterdir()):
             raise InvalidGeneration(f"{self._directory} shows other worlds' directories, not this world's own files")
+        if not generation_path.exists():
+            return None
         generation = cast(_GenerationDocument, _load(generation_path, self._generation))
         number = generation["generation"]
-        secrets_path = self._directory / SECRETS_FILE
         if not secrets_path.exists():
             raise IncompleteGeneration(f"generation {number} has no {SECRETS_FILE} yet")
         secrets = cast(_SecretsDocument, _load(secrets_path, self._secrets, secret=True))

@@ -19,12 +19,16 @@ from vhd_runtime.generation import Generation, IncompleteGeneration, InvalidGene
 # Well below the game's autosave interval (30 minutes unless changed), so a
 # world held at this point has not saved.
 LOAD_TIMEOUT_S = 900
+# vhd apply's stop grace for a world (render.STOP_GRACE) must exceed this.
 STOP_TIMEOUT_S = 120
 POLL_S = 1.0
 GENERATION_POLL_S = 2.0
 # A world status file the plugin has not rewritten for this many of its intervals says nothing:
 # a plugin that throws after a game patch leaves its last count behind.
 WORLD_STALE_AFTER = 3
+# The final players check trusts a count only this many intervals old, as the control plane
+# does: an older one may predate a player who joined since.
+EMPTY_WITHIN = 1.5
 HELD_AFTER_OBJECTS = "the world loaded with no objects where it last held {last}; stopped before its first autosave"
 HELD_OVER_SAVE = "the world loaded with no objects although a save existed; stopped before its first autosave"
 HELD_UNREPORTED = (
@@ -66,7 +70,7 @@ class Paths:
 
     @property
     def last_objects(self) -> Path:
-        """The object count the runtime last saw its world hold, kept beside the world's save."""
+        """The object count the runtime last saw its world hold, kept in the data volume."""
         return self.data / "vhd" / "last-objects.json"
 
 
@@ -188,9 +192,10 @@ class Supervisor:
                     _log.error("the dedicated server exited with code %d", code)
                     return code
                 world = self._read_world(generation.world) or world
-            fresh = world if self._fresh(world, generation) else None
+            fresh = world if self._seen_within(WORLD_STALE_AFTER, generation) else None
+            current = world if self._seen_within(EMPTY_WITHIN, generation) else None
             generation, newer = self._follow(generation)
-            if newer is not None and self._may_restart(state, newer, fresh):
+            if newer is not None and self._may_restart(state, newer, current):
                 return self._shut_down(process, state, "a newer generation changes this world's settings")
             previous = state
             if state in (State.LOADING, State.UNVERIFIED) and fresh is not None:
@@ -211,15 +216,17 @@ class Supervisor:
             self._world_stamp, self._world_seen = read.stamp, self.clock.now()
         return read
 
-    def _fresh(self, world: status.WorldStatus | None, generation: Generation) -> bool:
-        if world is None or self._world_stamp is None:
+    def _seen_within(self, intervals: float, generation: Generation) -> bool:
+        """Whether the plugin rewrote its report within this many of its intervals."""
+        if self._world_stamp is None:
             return False
-        return self.clock.now() - self._world_seen <= WORLD_STALE_AFTER * generation.status_interval_s
+        return self.clock.now() - self._world_seen <= intervals * generation.status_interval_s
 
     def _may_restart(self, state: State, newer: Generation, world: status.WorldStatus | None) -> bool:
         """The final players check, made here because only the runtime sees the count at the
-        moment it would stop the game. A held world has no game; a confirmed generation goes
-        now; anything else waits for a fresh report of no players. A load is never cut short."""
+        moment it would stop the game. A held world has no game. A generation the server manager
+        confirmed goes now, cutting a load short by a kill, which saves nothing. Anything else
+        waits for a current report of no players, so no load ends without that confirmation."""
         if state is State.HELD or newer.disconnect_players:
             return True
         if state in (State.RUNNING, State.UNVERIFIED) and world is not None and world.players == 0:
@@ -241,30 +248,29 @@ class Supervisor:
     def _on_load_timeout(self, process: Process, world: str, save_existed: bool) -> tuple[State, str | None]:
         """World truth when the plugin never reported: what loaded is unknown, so a world with
         something to lose is held, and one with nothing to lose runs unverified."""
-        if self._expects_objects(world, save_existed):
+        if self._expects_objects(self._last_objects(world), save_existed):
             return self._hold(process, HELD_UNREPORTED)
         _log.warning("unverified: %s", UNVERIFIED_REASON)
         return State.UNVERIFIED, UNVERIFIED_REASON
 
     def _hold(self, process: Process, reason: str) -> tuple[State, str]:
         # Killed, not interrupted: SIGINT would save whatever loaded over the real world.
-        process.kill()
-        process.wait()
+        _kill(process)
         _log.error("held: %s", reason)
         return State.HELD, reason
 
-    def _expects_objects(self, world: str, save_existed: bool) -> bool:
+    @staticmethod
+    def _expects_objects(last: int | None, save_existed: bool) -> bool:
         """Whether the world held objects when last seen, or, with nothing remembered, had a save."""
-        last = self._last_objects(world)
         return save_existed if last is None else last > 0
 
     def _loaded_empty(self, world: str, objects: int, save_existed: bool) -> str | None:
         """Why the world must be held, or None. An empty load fails world truth when the
         world held objects when last seen, or, with nothing remembered, when a save existed.
         A world last seen empty, such as one stopped moments after its creation, may load empty."""
-        if objects > 0 or not self._expects_objects(world, save_existed):
-            return None
         last = self._last_objects(world)
+        if objects > 0 or not self._expects_objects(last, save_existed):
+            return None
         return HELD_OVER_SAVE if last is None else HELD_AFTER_OBJECTS.format(last=last)
 
     def _last_objects(self, world: str) -> int | None:
@@ -291,8 +297,7 @@ class Supervisor:
             return 0
         if state is State.LOADING:
             # World truth has not passed, and SIGINT would save whatever has loaded.
-            process.kill()
-            process.wait()
+            _kill(process)
             return 0
         # The dedicated server saves the world on SIGINT.
         process.send_signal(signal.SIGINT)
@@ -300,8 +305,7 @@ class Supervisor:
             process.wait(timeout=STOP_TIMEOUT_S)
         except subprocess.TimeoutExpired:
             _log.error("the dedicated server did not stop within %d s; killing it", STOP_TIMEOUT_S)
-            process.kill()
-            process.wait()
+            _kill(process)
         return 0
 
     def _wait_for_generation(self) -> Generation | None:
@@ -338,6 +342,11 @@ class Supervisor:
             return None
         self._problem = None
         return generation
+
+
+def _kill(process: Process) -> None:
+    process.kill()
+    process.wait()
 
 
 def _status(
