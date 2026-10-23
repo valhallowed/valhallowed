@@ -18,6 +18,7 @@ from vhd_control.test_daemon import SCHEMAS, TWO_WORLDS
 IMAGES = {
     "control-plane": "ghcr.io/valhallowed/control-plane:0.1.0@sha256:" + "a" * 64,
     "game-runtime": "ghcr.io/valhallowed/game-runtime:0.1.0@sha256:" + "b" * 64,
+    "skeleton": "ghcr.io/valhallowed/skeleton:0.1.0@sha256:" + "e" * 64,
 }
 MEADOWFOLD = child_id("Meadowfold")
 ASHWAKE = child_id("Ashwake")
@@ -190,7 +191,15 @@ def test_the_rendered_install_mounts_each_world_only_its_own_generation(setup: S
     for service in (world, control_plane):
         assert service["cap_drop"] == ["ALL"]
         assert service["security_opt"] == ["no-new-privileges:true"]
-    assert services["vhd"]["profiles"] == ["tools"]
+    assert services["vhd"] == {"image": IMAGES["control-plane"], "profiles": ["tools"]}
+    assert services["skeleton"]["ports"] == ["8456:8456"]
+    assert services["skeleton"]["cap_drop"] == ["ALL"]
+
+
+def test_the_skeleton_takes_the_web_maps_port_from_the_manifest(setup: Setup) -> None:
+    (setup.install / "manifest.toml").write_text(TWO_WORLDS + "\n[web_map]\nport = 9100\n")
+    setup.apply()
+    assert setup.rendered()["services"]["skeleton"]["ports"] == ["9100:8456"]
 
 
 def test_an_unchanged_apply_restarts_nothing_and_asks_nothing(setup: Setup) -> None:

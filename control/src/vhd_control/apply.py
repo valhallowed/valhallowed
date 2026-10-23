@@ -24,7 +24,7 @@ from typing import Any, NoReturn, TextIO
 from vhd_control import client, layout, manifest
 from vhd_control.docker import Docker, DockerError
 from vhd_control.reconcile import Generation, reconcile
-from vhd_control.render import Host, render
+from vhd_control.render import IMAGES, Host, render
 from vhd_control.schemas import Schemas
 from vhd_control.status import WorldView
 from vhd_control.store import Handed, State, Store
@@ -33,7 +33,6 @@ from vhd_control.store import Handed, State, Store
 MIN_ENGINE_API = (1, 45)
 PROJECT_LABEL = "com.docker.compose.project"
 SERVICE_LABEL = "com.docker.compose.service"
-IMAGES = ("control-plane", "game-runtime")
 # How long Compose waits for the containers it starts to run.
 WAIT_TIMEOUT_S = 300
 
@@ -78,7 +77,7 @@ class Apply:
         with self.store.locked():
             state = self.store.load()
             generation = reconcile(settings, state.generation)
-            rendered = render(generation, host)
+            rendered = render(generation, host, settings.web_map_port)
             restarts = _restarts(generation, state, rendered, previous, running)
             override = self._confirm(restarts, disconnect_players) if restarts else None
             self._stop_recreated(host, state, generation, restarts)
@@ -160,7 +159,6 @@ class Apply:
         return Host(
             project=project,
             install=mounts[str(layout.INSTALL)],
-            docker_socket=mounts[layout.DOCKER_SOCKET],
             owner=(owner.st_uid, owner.st_gid),
             images=images,
         )
