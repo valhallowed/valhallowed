@@ -7,8 +7,9 @@ for short. Its home is [valhallowed.com](https://valhallowed.com).
 **Status: pre-release.** This repository holds the design, the manifest
 schema, the release pipeline, the plugin, the game runtime image and the
 control plane with its CLI, `vhd`, which together run worlds from one
-manifest. The data layer and the web map are next. Nothing here is useful to
-install yet.
+manifest. Nothing here is useful to install yet; the
+[board](https://github.com/orgs/valhallowed/projects/1) shows what is being
+built.
 
 ## Docs
 
