@@ -2,7 +2,8 @@
 # Promote images already in the registry to a version tag. Nothing is rebuilt:
 #   vX.Y.Z-rc.N  candidate  promotes the commit channel's sha-<commit> images,
 #                           and is refused unless ci's accept job passed on
-#                           that commit
+#                           that commit and the newest nightly game check
+#                           passed
 #   vX.Y.Z       release    promotes the newest candidate on the same commit,
 #                           and moves latest
 # The images are the install's x-vhd block, which check-images.sh holds equal to
@@ -11,7 +12,7 @@
 # tags exactly the digests COMPOSE_FILE pins: the file acceptance just passed,
 # every version tag first and latest after, each retried, so a registry failure
 # never leaves latest on a version some image lacks, and a re-run finishes the
-# job. Reading ci's result needs GITHUB_TOKEN and GITHUB_REPOSITORY.
+# job. Reading CI's results needs GITHUB_TOKEN and GITHUB_REPOSITORY.
 set -euo pipefail
 
 usage() { echo "usage: $0 --check TAG | $0 TAG COMPOSE_FILE" >&2; exit 2; }
@@ -51,7 +52,15 @@ scripts/check-images.sh >&2
 
 if [[ $prerelease == true ]]; then
   source=sha-${commit::7}
-  runs=$(github "actions/workflows/ci.yml/runs?head_sha=$commit&per_page=100" | jq -r '.workflow_runs[].id')
+  # A game patch arrives without notice; the newest check against it must pass.
+  nightly=$(github "actions/workflows/nightly.yml/runs?branch=main&status=completed&per_page=1" \
+    | jq -r '.workflow_runs[0].conclusion // "none"')
+  if [[ $nightly != success ]]; then
+    echo "promote: the newest nightly game check on main ended '$nightly'; a candidate needs it to pass" >&2
+    exit 1
+  fi
+  runs=$(github "actions/workflows/ci.yml/runs?head_sha=$commit&event=push&branch=main&per_page=100" \
+    | jq -r '.workflow_runs[].id')
   accepted=false
   for run in $runs; do
     jobs=$(github "actions/runs/$run/jobs?per_page=100")

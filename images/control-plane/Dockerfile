@@ -4,7 +4,8 @@
 # vhd apply runs this Compose, not the host's, so every install renders and
 # starts the same way.
 
-# Each version is named once here; its checksums change with it.
+# Each version is named once here; its checksums change with it, and
+# scripts/check-upstream.sh reports a newer release.
 ARG DOCKER_VERSION=29.9.2
 ARG COMPOSE_VERSION=5.6.1
 

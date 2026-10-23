@@ -44,8 +44,10 @@ RUN if [[ ! $GAME_BUILD =~ ^[0-9]+$ ]]; then \
  && rm -rf /server /steamcmd /root/Steam /root/.steam /root/.local/share/Steam
 
 FROM busybox:1.38.0@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e AS bepinex
+# scripts/check-upstream.sh reports a newer pack.
+ARG BEPINEX_PACK_VERSION=5.4.2351
 ADD --checksum=sha256:bce631497976a93977ceb08e166712e6c31d15244956f89f17df092a9b62e29f \
-    https://thunderstore.io/package/download/denikson/BepInExPack_Valheim/5.4.2351/ /tmp/bepinex.zip
+    https://thunderstore.io/package/download/denikson/BepInExPack_Valheim/${BEPINEX_PACK_VERSION}/ /tmp/bepinex.zip
 RUN mkdir /bepinex && unzip -q /tmp/bepinex.zip -d /bepinex
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:747cbade5bfd918a175ac32f8f1d931edec2c7d0d5397a3de72eaef1ac1f66d2 AS build

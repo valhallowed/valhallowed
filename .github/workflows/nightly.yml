@@ -1,0 +1,61 @@
+# The nightly game check. A game patch arrives without notice, so every night
+# the plugin is built against the dedicated server's newest build, and the
+# pinned downloads Dependabot cannot watch are compared with their newest
+# releases. A failure opens an issue, and promote.sh refuses a candidate until a
+# run passes again. It pushes nothing (G12).
+name: nightly
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  game:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - id: game
+        name: The dedicated server's newest build
+        run: echo "build=$(scripts/game-build.sh)" >> "$GITHUB_OUTPUT"
+      - name: Plugin, against it
+        env:
+          VHD_BUILD: ${{ github.sha }}
+          GAME_BUILD: ${{ steps.game.outputs.build }}
+        run: |
+          docker buildx bake plugin
+          scripts/check-plugin.sh dist/plugin
+      - name: Pinned downloads are current
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/check-upstream.sh
+
+  report:
+    needs: game
+    if: failure()
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    steps:
+      - name: Open an issue, or add to the open one
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Nightly game check failed"
+          open=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [[ -n $open ]]; then
+            gh issue comment "$open" --body "It failed again: $RUN"
+          else
+            gh issue create --title "$title" \
+              --body "The nightly game check failed: $RUN. No candidate can be promoted until a run passes."
+          fi
