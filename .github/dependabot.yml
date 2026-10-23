@@ -10,14 +10,15 @@ updates:
     directory: /
     patterns: ["*"]
     multi-ecosystem-group: weekly
-  # A new Debian base digest moves the package snapshot with it; its pins are
-  # updated in the same pull request.
+  # A new Debian base digest moves the package snapshot with it, so its apt pins
+  # must move by hand in the same pull request; Dependabot cannot.
   - package-ecosystem: docker
     directories:
       - /images/control-plane
       - /images/debian
       - /images/game-runtime
       - /images/skeleton
+      - /images/tools
     patterns: ["*"]
     multi-ecosystem-group: weekly
   - package-ecosystem: pip

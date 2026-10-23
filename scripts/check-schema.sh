@@ -12,7 +12,7 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-image=python:3.13.17-slim@sha256:fe14fd57a4c0361110eaa0c284112b189750bcb43fb04bb5d1ee7b7744027ccf
+image=$(scripts/tool-image.sh python)
 
 failed=0
 for s in schema/*.schema.json; do
