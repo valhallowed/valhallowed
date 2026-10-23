@@ -8,8 +8,10 @@
 # The images are the install's x-vhd block, which check-images.sh holds equal to
 # what CI builds. With --check, only checks that TAG can be promoted and prints
 # version=, prerelease=, commit= and source= lines for the workflow. Without it,
-# tags exactly the digests COMPOSE_FILE pins: the file acceptance just passed.
-# Reading ci's result needs GITHUB_TOKEN and GITHUB_REPOSITORY.
+# tags exactly the digests COMPOSE_FILE pins: the file acceptance just passed,
+# every version tag first and latest after, each retried, so a registry failure
+# never leaves latest on a version some image lacks, and a re-run finishes the
+# job. Reading ci's result needs GITHUB_TOKEN and GITHUB_REPOSITORY.
 set -euo pipefail
 
 usage() { echo "usage: $0 --check TAG | $0 TAG COMPOSE_FILE" >&2; exit 2; }
@@ -102,12 +104,29 @@ for value in "${pinned[@]}"; do
   fi
 done
 
+# Tag a digest in the registry. Tagging the same digest again changes nothing,
+# so a failure is retried with backoff before giving up.
+tag() {
+  local name=$1 from=$2 attempt
+  for attempt in 1 2 3 4; do
+    if timeout 120 docker buildx imagetools create --tag "$name" "$from" >&2; then
+      return 0
+    fi
+    if (( attempt < 4 )); then
+      sleep $(( attempt * attempt * 5 + RANDOM % 5 ))
+    fi
+  done
+  echo "promote: could not tag $name; run the release workflow for $tag again to finish" >&2
+  return 1
+}
+
 for value in "${pinned[@]}"; do
   ref=${value%@*} digest=${value##*@}
-  repo=${ref%:*}
-  tags=(--tag "$ref")
-  if [[ $prerelease == false ]]; then
-    tags+=(--tag "$repo:latest")
-  fi
-  docker buildx imagetools create "${tags[@]}" "$repo@$digest" >&2
+  tag "$ref" "${ref%:*}@$digest"
 done
+if [[ $prerelease == false ]]; then
+  for value in "${pinned[@]}"; do
+    ref=${value%@*} digest=${value##*@}
+    tag "${ref%:*}:latest" "${ref%:*}@$digest"
+  done
+fi
