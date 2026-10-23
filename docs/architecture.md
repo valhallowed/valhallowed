@@ -106,7 +106,10 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   current generation and the release's `compose.yaml`, and has Compose
   recreate only the containers whose definition changed. `vhd apply
   --disconnect-players` is that confirmation. A world whose runtime has
-  stopped reporting counts as occupied, since status cannot vouch for it. The
+  stopped reporting counts as occupied, since status cannot vouch for it. A
+  player who joins in the seconds between that check and Compose recreating
+  a container is disconnected; a change a runtime applies in place has no
+  such window. The
   Compose it runs is the one in the control plane's image, so the host needs
   Docker Engine 26 or newer and any Compose that can start the one-shot.
 - **Delivering a generation.** The control plane writes each child's
@@ -154,10 +157,14 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   the Valheim dedicated server, BepInEx and the plugin on what the control
   plane hands it; its supervisor reads the generation, installs and updates
   the server, starts and stops it, and reports status. Updates, backups,
-  schedules, world import and export, and restart gating belong to the control
-  plane. Until the control plane sets an update policy, the supervisor updates
-  the server at every start, and world truth holds a world the update stops
-  from loading.
+  schedules, and world import and export belong to the control plane. Until
+  the control plane sets an update policy, the supervisor updates the server
+  at every start, and world truth holds a world the update stops from loading.
+- **Restart gating is shared.** The control plane holds a change while status
+  shows players, and the runtime makes the final check when it would restart
+  the game, since only it sees the count at that moment: it restarts only for
+  a fresh count of no players, or for a generation that carries the server
+  manager's confirmation (B1). It never cuts a load short.
 - **Children read only the effective configuration.** Generated files, such as
   the plugin's BepInEx config, are never edited by hand.
 - **World truth gates saving.** A world that fails world truth is stopped

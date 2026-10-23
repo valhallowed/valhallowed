@@ -28,9 +28,14 @@ class Child:
     generation: Mapping[str, object]
     secrets: Mapping[str, object]
 
-    def numbered(self, number: int) -> tuple[dict[str, object], dict[str, object]]:
-        """The generation and secrets documents as the runtime reads them."""
-        return {**self.generation, "generation": number}, {**self.secrets, "generation": number}
+    def numbered(self, number: int, disconnect_players: bool = False) -> tuple[dict[str, object], dict[str, object]]:
+        """The generation and secrets documents as the runtime reads them. disconnect_players
+        carries the server manager's confirmation for this generation alone, so it is no part of
+        the child: it never makes documents differ, and never restarts a world by itself."""
+        generation = {**self.generation, "generation": number}
+        if disconnect_players:
+            generation["disconnect_players"] = True
+        return generation, {**self.secrets, "generation": number}
 
 
 @dataclass(frozen=True)
@@ -56,7 +61,7 @@ def _child(world: World) -> Child:
         world=world.name,
         port=world.port,
         generation={
-            "contract": 1,
+            "contract": 2,
             "world": {"name": world.name, "port": world.port},
             "plugin": {"status_interval_s": STATUS_INTERVAL_S},
             "status_url": STATUS_URL,

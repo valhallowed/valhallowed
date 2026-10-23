@@ -194,7 +194,9 @@ reports world truth, not container health.
 
 **Supervisor** — The game runtime's own process. It reads the generation,
 downloads SteamCMD and the dedicated server, starts the server with BepInEx
-and the plugin, stops it with a save, holds, and reports status.
+and the plugin, stops it with a save, holds, and reports status. It restarts
+the game for a new generation only once it counts no players, unless the
+server manager confirmed the restart.
 
 **Telemetry** — What the plugin observes in a world and sends to intake (B2):
 chat, presence, positions and world events. Observations, so a failure drops

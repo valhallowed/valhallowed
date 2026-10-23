@@ -12,7 +12,10 @@ REPORT: status.RuntimeStatus = {"contract": 1, "generation": 1, "world": "Meadow
 def test_reads_the_plugins_report_for_this_world(tmp_path: Path) -> None:
     path = tmp_path / "world.json"
     path.write_text(json.dumps({"world": "Meadowfold", "objects": 48113, "players": 2}))
-    assert status.read_world(path, "Meadowfold") == status.WorldStatus(objects=48113, players=2)
+    info = path.stat()
+    assert status.read_world(path, "Meadowfold") == status.WorldStatus(
+        objects=48113, players=2, stamp=(info.st_ino, info.st_mtime_ns)
+    )
     assert status.read_world(path, "Ashwake") is None
 
 

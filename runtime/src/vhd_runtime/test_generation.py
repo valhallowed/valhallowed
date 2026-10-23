@@ -7,7 +7,7 @@ from vhd_runtime.generation import Generation, IncompleteGeneration, InvalidGene
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "contracts"
 MINIMAL = {
-    "contract": 1,
+    "contract": 2,
     "generation": 4,
     "world": {"name": "Meadowfold", "port": 2456},
     "plugin": {"status_interval_s": 5},
@@ -65,15 +65,24 @@ def test_refused_secrets_never_carry_the_password(tmp_path: Path) -> None:
     assert "horn" not in str(refused.value)
 
 
-def test_same_settings_ignores_only_the_number() -> None:
+def test_reads_a_confirmed_restart(tmp_path: Path) -> None:
+    write(tmp_path, "generation.json", {**MINIMAL, "disconnect_players": True})
+    write(tmp_path, "secrets.json", {"contract": 1, "generation": 4})
+    generation = Reader(tmp_path, CONTRACTS).read()
+    assert generation is not None
+    assert generation.disconnect_players
+
+
+def test_same_settings_ignores_only_the_number_and_the_confirmation() -> None:
     first = Generation(4, "Meadowfold", 2456, 5, None, None)
     assert first.same_settings(Generation(5, "Meadowfold", 2456, 5, None, None))
+    assert first.same_settings(Generation(5, "Meadowfold", 2456, 5, None, None, disconnect_players=True))
     assert not first.same_settings(Generation(5, "Meadowfold", 2456, 5, None, "hearth-and-horn"))
     assert not first.same_settings(Generation(5, "Meadowfold", 2459, 5, None, None))
 
 
 def test_refuses_an_unknown_contract_version(tmp_path: Path) -> None:
-    write(tmp_path, "generation.json", {**MINIMAL, "contract": 2})
+    write(tmp_path, "generation.json", {**MINIMAL, "contract": 1})
     with pytest.raises(InvalidGeneration, match="contract"):
         Reader(tmp_path, CONTRACTS).read()
 

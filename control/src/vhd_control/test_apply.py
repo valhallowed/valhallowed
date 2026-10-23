@@ -107,6 +107,13 @@ class Setup:
         document: dict[str, Any] = json.loads((self.install / layout.RENDERED).read_text())
         return document
 
+    def document(self, cid: str) -> dict[str, Any]:
+        applied = Store(self.volume).load().applied
+        assert applied is not None
+        directory = Store(self.volume).directory(cid, applied[cid])
+        document: dict[str, Any] = json.loads((directory / "generation.json").read_text())
+        return document
+
     def handed(self, cid: str, port: int | None = None) -> tuple[int, str | None]:
         """What a world's container reads: by default, the documents for the port it was applied on."""
         if port is None:
@@ -215,6 +222,7 @@ def test_disconnect_players_restarts_it_and_says_so(setup: Setup) -> None:
     setup.apply(disconnect_players=True)
     assert setup.handed(MEADOWFOLD) == (2, "hearth-and-horn")
     assert "restarting Meadowfold (2 player(s)), as asked" in setup.out.getvalue()
+    assert setup.document(MEADOWFOLD)["disconnect_players"] is True
     assert Store(setup.volume).load().override == {"generation": 2, "worlds": {"Meadowfold": 2}}
 
 
@@ -225,6 +233,7 @@ def test_a_restart_of_an_empty_world_needs_no_confirmation(setup: Setup) -> None
     (setup.install / "secrets.toml").write_text(PASSWORD)
     setup.apply()
     assert setup.handed(MEADOWFOLD) == (2, "hearth-and-horn")
+    assert "disconnect_players" not in setup.document(MEADOWFOLD)
 
 
 def test_a_world_whose_container_and_documents_change_is_stopped_before_its_documents(setup: Setup) -> None:

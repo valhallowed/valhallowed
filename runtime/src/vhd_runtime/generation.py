@@ -40,6 +40,7 @@ class _GenerationDocument(TypedDict):
     world: _World
     plugin: _Plugin
     status_url: NotRequired[str]
+    disconnect_players: NotRequired[bool]
 
 
 class _SecretsDocument(TypedDict):
@@ -56,10 +57,13 @@ class Generation:
     status_interval_s: int
     status_url: str | None
     password: str | None
+    # The server manager confirmed restarting this world with players online, for this
+    # generation alone. It is no setting: it never makes two generations differ.
+    disconnect_players: bool = False
 
     def same_settings(self, other: "Generation") -> bool:
-        """Whether other differs from this generation in nothing but its number."""
-        return replace(other, number=self.number) == self
+        """Whether other differs from this generation in nothing but its number and confirmation."""
+        return replace(other, number=self.number, disconnect_players=self.disconnect_players) == self
 
 
 class Reader:
@@ -95,6 +99,7 @@ class Reader:
             status_interval_s=generation["plugin"]["status_interval_s"],
             status_url=generation.get("status_url"),
             password=secrets.get("password"),
+            disconnect_players=generation.get("disconnect_players", False),
         )
 
 

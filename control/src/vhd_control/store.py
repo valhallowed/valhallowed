@@ -89,21 +89,24 @@ class Store:
         # It holds every world's secrets, so only its owner reads it.
         self._write(self.root / STATE_FILE, document, 0o600)
 
-    def hand(self, state: State, child_id: str, child: Child, number: int, record: bool = True) -> None:
-        """Publish a child's documents under number, into the directory for its port: secrets
-        first, the generation second (B1). Unless record is false, state notes that the child
-        holds them; vhd apply records a world moving to a new port only once Compose has moved it."""
+    def hand(self, state: State, child_id: str, child: Child, number: int) -> None:
+        """Publish a child's documents under number, and note in state that the child holds them."""
+        self.publish(child_id, child, number)
+        state.handed[child_id] = Handed(number, child)
+
+    def publish(self, child_id: str, child: Child, number: int, disconnect_players: bool = False) -> None:
+        """Write a child's documents under number into the directory for its port: secrets first,
+        the generation second (B1). vhd apply notes a world moving to a new port as holding them
+        only once Compose has moved it."""
         directory = self.directory(child_id, child.port)
         for level in (directory.parent, directory):
             level.mkdir(exist_ok=True)
             level.chmod(0o755)
             if self.owner is not None:
                 os.chown(level, *self.owner)
-        generation, secrets = child.numbered(number)
+        generation, secrets = child.numbered(number, disconnect_players)
         self._write(directory / SECRETS_FILE, secrets, 0o644)
         self._write(directory / GENERATION_FILE, generation, 0o644)
-        if record:
-            state.handed[child_id] = Handed(number, child)
 
     def holds(self, child_id: str, port: int) -> bool:
         """Whether the directory for port has both of the child's files."""

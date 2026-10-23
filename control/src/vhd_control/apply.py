@@ -82,7 +82,8 @@ class Apply:
             restarts = _restarts(generation, state, rendered, previous, running)
             override = self._confirm(restarts, disconnect_players) if restarts else None
             self._stop_recreated(host, state, generation, restarts)
-            moving = self._stage(state, generation)
+            confirmed = {cid for cid, restart in restarts.items() if override and restart.world in override}
+            moving = self._stage(state, generation, confirmed)
             self._own(host.owner)
         candidate = self.install / layout.CANDIDATE
         self._write(candidate, rendered, host.owner)
@@ -218,10 +219,12 @@ class Apply:
                 ["compose", "-p", host.project, "-f", str(self.install / layout.RENDERED), "stop", *stopping]
             )
 
-    def _stage(self, state: State, generation: Generation) -> set[str]:
+    def _stage(self, state: State, generation: Generation, confirmed: set[str]) -> set[str]:
         """Hand each runtime what it may read now, and return the worlds moving to a new port.
         Those get their documents in the directory for the new port, which only the container
-        Compose creates for it mounts, so the running one never reads a port it does not publish."""
+        Compose creates for it mounts, so the running one never reads a port it does not publish.
+        A world whose restart the server manager confirmed with players online is told so; any
+        other runtime still waits for an empty world before restarting the game."""
         for directory in (self.store.root, self.control_dir):
             directory.chmod(0o755)
         applied = state.applied or {}
@@ -229,7 +232,7 @@ class Apply:
         for cid, child in generation.children.items():
             handed = state.handed.get(cid)
             if cid in applied and applied[cid] != child.port:
-                self.store.hand(state, cid, child, generation.number, record=False)
+                self.store.publish(cid, child, generation.number, cid in confirmed)
                 moving.add(cid)
             elif (
                 handed is None
@@ -238,7 +241,8 @@ class Apply:
                 or not self.store.holds(cid, child.port)
             ):
                 # Rewritten when missing too: Compose cannot mount a subpath that is not there.
-                self.store.hand(state, cid, child, generation.number)
+                self.store.publish(cid, child, generation.number, cid in confirmed)
+                state.handed[cid] = Handed(generation.number, child)
         state.generation = generation
         self.store.save(state)
         return moving
