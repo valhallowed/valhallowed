@@ -33,11 +33,16 @@ target "debian" {
   context   = "images/debian"
 }
 
+function "tags" {
+  params = [name]
+  result = [for t in split(",", TAGS) : "${REGISTRY}/${name}:${t}"]
+}
+
+# What every published image records.
 target "_common" {
   platforms = ["linux/amd64"]
   args = {
-    VHD_BUILD  = VHD_BUILD
-    GAME_BUILD = GAME_BUILD
+    VHD_BUILD = VHD_BUILD
   }
   labels = {
     "org.opencontainers.image.source"   = "https://github.com/valhallowed/valhallowed"
@@ -46,48 +51,54 @@ target "_common" {
   }
 }
 
-# The plugin, built against the dedicated server's assemblies. Not in the
-# default group: its output is files, not an image. The game runtime image
-# carries the same build.
-target "plugin" {
-  inherits   = ["_common"]
-  context    = "."
+# An image built from the repo root on the snapshot Debian.
+target "_on_debian" {
+  platforms = ["linux/amd64"]
+  context   = "."
+  contexts  = { vhd-debian = "target:debian" }
+}
+
+# The game runtime's Dockerfile, built against the dedicated server's assemblies.
+target "_game" {
+  inherits   = ["_common", "_on_debian"]
   dockerfile = "images/game-runtime/Dockerfile"
-  target     = "plugin"
-  output     = ["type=local,dest=dist/plugin"]
-  contexts   = { vhd-debian = "target:debian" }
+  args = {
+    VHD_BUILD  = VHD_BUILD
+    GAME_BUILD = GAME_BUILD
+  }
+}
+
+# The plugin. Not in the default group: its output is files, not an image. The
+# game runtime image carries the same build.
+target "plugin" {
+  inherits = ["_game"]
+  target   = "plugin"
+  output   = ["type=local,dest=dist/plugin"]
 }
 
 target "game-runtime" {
-  inherits   = ["_common"]
-  context    = "."
-  dockerfile = "images/game-runtime/Dockerfile"
-  target     = "runtime"
-  tags       = [for t in split(",", TAGS) : "${REGISTRY}/game-runtime:${t}"]
-  contexts   = { vhd-debian = "target:debian" }
+  inherits = ["_game"]
+  target   = "runtime"
+  tags     = tags("game-runtime")
 }
 
 target "skeleton" {
   inherits = ["_common"]
   context  = "images/skeleton"
-  tags     = [for t in split(",", TAGS) : "${REGISTRY}/skeleton:${t}"]
+  tags     = tags("skeleton")
 }
 
 # SteamCMD alone, loaded locally for scripts/game-build.sh. Never published.
 target "steamcmd" {
-  platforms  = ["linux/amd64"]
-  context    = "."
+  inherits   = ["_on_debian"]
   dockerfile = "images/game-runtime/Dockerfile"
   target     = "steamcmd"
   tags       = ["vhd-steamcmd:local"]
   output     = ["type=docker"]
-  contexts   = { vhd-debian = "target:debian" }
 }
 
 target "control-plane" {
-  inherits   = ["_common"]
-  context    = "."
+  inherits   = ["_common", "_on_debian"]
   dockerfile = "images/control-plane/Dockerfile"
-  contexts   = { vhd-debian = "target:debian" }
-  tags       = [for t in split(",", TAGS) : "${REGISTRY}/control-plane:${t}"]
+  tags       = tags("control-plane")
 }
