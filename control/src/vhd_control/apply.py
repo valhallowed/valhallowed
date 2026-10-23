@@ -252,11 +252,12 @@ class Apply:
             state.override = {"generation": generation.number, "worlds": override}
         for cid in moving:
             state.handed[cid] = Handed(generation.number, generation.children[cid])
-        for cid in set(state.handed) - set(generation.children):
+        removed = set(state.handed) - set(generation.children)
+        for cid in removed:
             del state.handed[cid]
         state.applied = {cid: child.port for cid, child in generation.children.items()}
         self.store.save(state)
-        self.store.prune(state.applied)
+        self.store.prune(state.applied, removed)
 
     def _own(self, owner: tuple[int, int]) -> None:
         """Give the volumes' roots to the install folder's owner, whom the control plane runs as.

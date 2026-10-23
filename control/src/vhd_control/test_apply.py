@@ -320,6 +320,23 @@ def test_a_removed_world_loses_its_directory_once_compose_removes_it(setup: Setu
     assert ASHWAKE not in Store(setup.volume).load().handed
 
 
+def test_a_directory_vhd_never_handed_is_left_alone(setup: Setup) -> None:
+    (setup.volume / "intake").mkdir()
+    setup.apply()
+    setup.apply()
+    assert (setup.volume / "intake").is_dir()
+
+
+def test_every_service_on_the_install_network_runs_without_capabilities(setup: Setup) -> None:
+    """The status listener's sender check needs it: no child may forge a source address."""
+    setup.apply()
+    services = setup.rendered()["services"]
+    on_network = [name for name, service in services.items() if layout.INSTALL_NETWORK in service.get("networks", [])]
+    assert len(on_network) == 3
+    for name in on_network:
+        assert services[name]["cap_drop"] == ["ALL"], name
+
+
 def test_a_world_whose_directory_went_missing_gets_it_back(setup: Setup) -> None:
     setup.apply()
     shutil.rmtree(setup.volume / MEADOWFOLD)

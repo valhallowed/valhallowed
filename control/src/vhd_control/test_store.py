@@ -73,7 +73,7 @@ def test_prune_keeps_only_the_directories_containers_mount(tmp_path: Path) -> No
     (tmp_path / MEADOWFOLD / "2462").mkdir()
     store.save(state)
 
-    store.prune({MEADOWFOLD: 2456})
+    store.prune({MEADOWFOLD: 2456}, removed={child_id("Ashwake")})
 
     assert {p.name for p in tmp_path.iterdir()} == {MEADOWFOLD, "state.json"}
     assert [p.name for p in (tmp_path / MEADOWFOLD).iterdir()] == ["2456"]

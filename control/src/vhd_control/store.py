@@ -14,7 +14,7 @@ import fcntl
 import json
 import os
 import shutil
-from collections.abc import Iterator, Mapping
+from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -114,17 +114,17 @@ class Store:
         """Where a child's documents live while its container runs on port: its subpath."""
         return self.root / child_id / str(port)
 
-    def prune(self, ports: Mapping[str, int]) -> None:
-        """Remove every directory no container mounts any more: a removed world's, and a world's
-        old ports once Compose has moved it."""
-        for entry in self.root.iterdir():
-            if not entry.is_dir():
+    def prune(self, ports: Mapping[str, int], removed: Collection[str]) -> None:
+        """Remove what no container mounts any more: a removed child's directory, and a world's
+        old ports once Compose has moved it. A directory the store never handed is left alone."""
+        for child_id in removed:
+            shutil.rmtree(self.root / child_id, ignore_errors=True)
+        for child_id, port in ports.items():
+            directory = self.root / child_id
+            if not directory.is_dir():
                 continue
-            if entry.name not in ports:
-                shutil.rmtree(entry)
-                continue
-            for stale in entry.iterdir():
-                if stale.name == str(ports[entry.name]):
+            for stale in directory.iterdir():
+                if stale.name == str(port):
                     continue
                 if stale.is_dir():
                     shutil.rmtree(stale)
