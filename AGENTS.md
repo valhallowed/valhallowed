@@ -51,7 +51,7 @@ restate the docs.
 | Anything | `scripts/check-public.sh` |
 | Workflows | `actionlint` |
 | Shell scripts | `shellcheck scripts/*.sh` |
-| The manifest schema, a contract or their examples | `scripts/check-schema.sh` |
+| The manifest schema, a contract, their examples or `.github/dependabot.yml` | `scripts/check-schema.sh` |
 | A Python component | `scripts/check-python.sh <dir>` |
 | The plugin | `make plugin` |
 | Images or the install | `make accept` |

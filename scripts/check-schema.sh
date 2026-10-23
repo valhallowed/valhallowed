@@ -4,6 +4,8 @@
 # what it costs and what applies it, every valid example passes, and every
 # invalid example fails with the error it names: a TOML example on its first
 # line ("# expect: <error>"), a JSON example in a sibling <example>.expect.
+# .github/dependabot.yml is checked against Dependabot's schema too, since
+# GitHub reads it only after a merge.
 # Validation runs in a pinned Python image with the packages pinned in
 # scripts/requirements-check-schema.txt, so Docker and jq are the only
 # dependencies.
@@ -70,6 +72,7 @@ pip install --quiet --disable-pip-version-check --root-user-action=ignore --no-d
 pip check --quiet 2>/dev/null || pip check
 failed=0
 check-jsonschema --check-metaschema schema/*.schema.json contracts/*.schema.json >/dev/null || failed=1
+check-jsonschema --builtin-schema vendor.dependabot .github/dependabot.yml >/dev/null || failed=1
 while [ $# -ge 3 ]; do
   schema=$1 example=$2 expect=$3
   shift 3
@@ -86,6 +89,6 @@ exit $failed
 EOF
 
 if (( failed == 0 )); then
-  echo "check-schema: schemas, contracts and examples agree"
+  echo "check-schema: schemas, contracts, examples and dependabot.yml agree"
 fi
 exit "$failed"
