@@ -3,7 +3,9 @@
 # does, with vhd from the control plane's image, and check that the install
 # runs the expected commit. Pulls from the registry by default, so an image that
 # was never pushed, or is not public, cannot pass. VHD_PULL=never accepts a
-# local build. The world's game download that follows is not waited for.
+# local build. The world's game download that follows is not waited for. The
+# install uses ports away from the defaults, so it never meets a real install on
+# the same host.
 set -euo pipefail
 
 [[ $# -eq 2 ]] || { echo "usage: $0 COMPOSE_FILE COMMIT" >&2; exit 2; }
@@ -11,36 +13,38 @@ compose_file=$1 expected=$2
 root=$(cd "$(dirname "$0")/.." && pwd)
 pull=${VHD_PULL:-always}
 project=vhd-accept
+world_port=32456 web_map_port=38456
 install=$(mktemp -d)
 cli=(docker compose -p "$project" -f "$install/compose.yaml")
 
-trap 'if [[ -f $install/.vhd/compose.json ]]; then
-    docker compose -p "$project" -f "$install/.vhd/compose.json" down --volumes --remove-orphans >/dev/null 2>&1 || true
-  fi
-  "${cli[@]}" --profile tools down --volumes >/dev/null 2>&1 || true
+# Whatever a run left, a failed first apply included: everything the project labels.
+label="label=com.docker.compose.project=$project"
+trap '"${cli[@]}" --profile tools down --volumes --remove-orphans >/dev/null 2>&1 || true
+  docker ps -aq --filter "$label" | xargs -r docker rm --force >/dev/null 2>&1 || true
+  docker volume ls -q --filter "$label" | xargs -r docker volume rm --force >/dev/null 2>&1 || true
+  docker network ls -q --filter "$label" | xargs -r docker network rm >/dev/null 2>&1 || true
   rm -rf "$install"' EXIT
 
 cp "$compose_file" "$install/compose.yaml"
-cp "$root/schema/examples/valid/manifest-one-world.toml" "$install/manifest.toml"
+printf 'schema = 1\n\n[world.Meadowfold]\nport = %d\n\n[web_map]\nport = %d\n' \
+  "$world_port" "$web_map_port" > "$install/manifest.toml"
 chmod 755 "$install"
 chmod 644 "$install"/*
-images=$("${cli[@]}" config --format json | jq -r '."x-vhd".images')
-web_map_port=$(jq -r '.properties.web_map.properties.port.default' "$root/schema/manifest.schema.json")
 
 # Compose reports its own progress on stderr; vhd's answer is stdout.
-expected_validate=$(printf '%s\n' 'world Meadowfold: udp 2456-2458, password unset' "web map: tcp $web_map_port")
+expected_validate=$(printf '%s\n' "world Meadowfold: udp $world_port-$((world_port + 2)), password unset" \
+  "web map: tcp $web_map_port")
 if ! got=$("${cli[@]}" run --rm --pull "$pull" vhd validate) || [[ $got != "$expected_validate" ]]; then
-  echo "accept: vhd validate did not reconcile the example manifest:" >&2
+  echo "accept: vhd validate did not reconcile the manifest:" >&2
   echo "$got" >&2
   exit 1
 fi
-echo "accept: vhd validate reconciled the example manifest"
+echo "accept: vhd validate reconciled the manifest"
 
 "${cli[@]}" run --rm vhd apply
 echo "accept: vhd apply started the install"
 
-for name in $(jq -r 'keys[]' <<< "$images"); do
-  image=$(jq -r --arg name "$name" '.[$name]' <<< "$images")
+for image in $("$root/scripts/install-images.sh" "$install/compose.yaml"); do
   revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")
   if [[ $revision != "$expected" ]]; then
     echo "accept: $image is from build '$revision', not $expected" >&2
