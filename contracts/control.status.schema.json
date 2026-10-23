@@ -63,7 +63,7 @@
           "enum": ["installing", "loading", "running", "unverified", "held", "unknown"]
         },
         "report": {
-          "description": "The runtime's last report, as contracts/game-runtime.status.schema.json defines it. The control plane validated it on arrival.",
+          "description": "The runtime's last report, as contracts/game-runtime.status.schema.json defines it, which the control plane validated on arrival. Its required keys are repeated here, not referenced: check-jsonschema cannot follow a reference that leads on to a third file.",
           "type": "object",
           "required": ["contract", "generation", "world", "state"]
         },

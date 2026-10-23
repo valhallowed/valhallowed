@@ -18,7 +18,7 @@ failed=0
 for s in schema/*.schema.json; do
   bad=$(jq -r '
     [.. | objects | select(has("properties")) | .properties | to_entries[]
-      | select(.key != "schema" and (.value | has("type")) and .value.type != "object")
+      | select(.key != "schema" and ((.value | has("$ref")) or ((.value | has("type")) and .value.type != "object")))
       | select((.value | has("description") | not)
           or (.value["x-change-cost"] | IN("live", "service restart", "game-server restart") | not)
           or (.value["x-applied-by"] | IN("control plane", "vhd apply") | not))
