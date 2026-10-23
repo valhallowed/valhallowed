@@ -18,7 +18,8 @@ RUN mkdir /steamcmd && tar -xzf /tmp/steamcmd.tar.gz -C /steamcmd && rm /tmp/ste
 
 # The dedicated server build GAME_BUILD names, downloaded to take its assemblies
 # and discarded in the same step: the layer holds only the assemblies and the
-# build id, and is reused exactly while the build is unchanged. SteamCMD's exit
+# build id, and a local builder reuses it exactly while the build is unchanged
+# (CI keeps no cache of it: see ci.yml). SteamCMD's exit
 # code is unreliable on a first run, so success is the app manifest it writes,
 # marked fully installed, and a failed attempt is retried.
 FROM steamcmd AS game

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Print the build id of the dedicated server's public branch, as Steam reports it
 # now. The plugin and the game runtime image are built against it (GAME_BUILD),
-# so a build reuses the downloaded assemblies exactly while the game is unchanged.
+# so a local builder reuses the downloaded assemblies exactly while the game is
+# unchanged.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 

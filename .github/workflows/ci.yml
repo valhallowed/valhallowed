@@ -34,6 +34,9 @@ jobs:
           scripts/check-python.sh runtime
           scripts/check-python.sh control
 
+  # No build cache is kept between runs: the game stage holds Valve's and Iron
+  # Gate's assemblies, and a cache main writes, a pull request from a fork could
+  # restore.
   build:
     needs: checks
     runs-on: ubuntu-24.04
@@ -70,9 +73,10 @@ jobs:
           GAME_BUILD: ${{ steps.game.outputs.build }}
           TAGS: ${{ steps.tag.outputs.tag }},edge
         run: |
-          args=(--provenance=mode=max --sbom=true)
+          args=()
           if [[ $GITHUB_REF == refs/heads/main ]]; then
-            args+=(--push)
+            # Attestations travel with pushed images only.
+            args+=(--push --provenance=mode=max --sbom=true)
           fi
           docker buildx bake "${args[@]}"
 
