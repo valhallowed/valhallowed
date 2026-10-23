@@ -4,11 +4,9 @@ from pathlib import Path
 import pytest
 
 from vhd_control.manifest import InvalidSettings, Settings, World, load
-from vhd_control.schemas import Schemas
+from vhd_control.test_daemon import REPO, SCHEMAS
 
-REPO = Path(__file__).resolve().parents[3]
 EXAMPLES = REPO / "schema" / "examples"
-SCHEMAS = Schemas(REPO)
 
 
 def install(tmp_path: Path, manifest: str, secrets: str | None = None) -> Path:

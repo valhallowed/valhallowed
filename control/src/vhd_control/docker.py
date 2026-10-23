@@ -23,7 +23,6 @@ class Cli:
     """The docker CLI in the control plane's image, its Compose plugin included."""
 
     def output(self, args: list[str]) -> str:
-        """Run docker with args and return what it printed."""
         try:
             result = subprocess.run(  # noqa: S603 - docker, with arguments vhd built
                 [DOCKER, *args], capture_output=True, text=True, timeout=TIMEOUT_S, check=False
@@ -35,7 +34,7 @@ class Cli:
         return result.stdout
 
     def stream(self, args: list[str]) -> None:
-        """Run docker with args, its output going straight to the server manager."""
+        # Its output goes straight to the server manager.
         try:
             result = subprocess.run([DOCKER, *args], timeout=STREAM_TIMEOUT_S, check=False)  # noqa: S603
         except subprocess.TimeoutExpired as error:

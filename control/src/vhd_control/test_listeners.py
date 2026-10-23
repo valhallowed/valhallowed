@@ -13,7 +13,7 @@ from vhd_control import client, listeners
 from vhd_control.listeners import MAX_BODY, control_server, status_server
 from vhd_control.naming import child_id
 from vhd_control.status import StatusBook
-from vhd_control.test_daemon import SCHEMAS, Install
+from vhd_control.test_daemon import PASSWORD, SCHEMAS, Install
 
 REPORT = {"contract": 1, "generation": 1, "world": "Meadowfold", "state": "running", "objects": 10, "players": 2}
 
@@ -145,7 +145,7 @@ def test_the_control_api_serves_status_over_its_socket(tmp_path: Path) -> None:
     install = Install(tmp_path)
     install.players("Meadowfold", 2)
     manifest = (install.folder / "manifest.toml").read_text()
-    install.write(manifest, 'schema = 1\n\n[world.Meadowfold]\npassword = "hearth-and-horn"\n')
+    install.write(manifest, PASSWORD)
     install.daemon.step()
     socket_path = tmp_path / "control.sock"
     server = control_server(install.daemon, socket_path)

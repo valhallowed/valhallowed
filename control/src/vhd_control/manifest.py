@@ -11,8 +11,8 @@ from typing import Any, cast
 
 from vhd_control.schemas import Schemas
 
-MANIFEST_FILE = "manifest.toml"
-SECRETS_FILE = "secrets.toml"
+MANIFEST_TOML = "manifest.toml"
+SECRETS_TOML = "secrets.toml"
 MANIFEST_SCHEMA = "schema/manifest.schema.json"
 SECRETS_SCHEMA = "schema/secrets.schema.json"
 
@@ -38,8 +38,8 @@ class Settings:
 
 def load(install: Path, schemas: Schemas) -> Settings:
     """The install's settings. The secrets file is optional; the manifest is not."""
-    manifest = _read(install / MANIFEST_FILE, MANIFEST_SCHEMA, schemas)
-    secrets_path = install / SECRETS_FILE
+    manifest = _read(install / MANIFEST_TOML, MANIFEST_SCHEMA, schemas)
+    secrets_path = install / SECRETS_TOML
     secrets = _read(secrets_path, SECRETS_SCHEMA, schemas, secret=True) if secrets_path.exists() else {}
     schema = schemas.document(MANIFEST_SCHEMA)
     default_port = cast(int, schema["$defs"]["world"]["properties"]["port"]["default"])
@@ -49,7 +49,7 @@ def load(install: Path, schemas: Schemas) -> Settings:
     world_secrets = cast(dict[str, dict[str, Any]], secrets.get("world", {}))
     unknown = sorted(set(world_secrets) - set(world_tables))
     if unknown:
-        raise InvalidSettings(f"{SECRETS_FILE} names world {unknown[0]!r}, which {MANIFEST_FILE} does not")
+        raise InvalidSettings(f"{SECRETS_TOML} names world {unknown[0]!r}, which {MANIFEST_TOML} does not")
     worlds = tuple(
         World(
             name=name,

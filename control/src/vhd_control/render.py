@@ -69,7 +69,8 @@ def render(generation: Generation, host: Host, web_map_port: int) -> dict[str, o
         services[cid] = {
             "image": host.images[GAME_RUNTIME_IMAGE],
             "restart": "unless-stopped",
-            # The supervisor gives the game this long to save on a stop.
+            # Longer than the supervisor's own stop timeout, so it can kill the game and exit
+            # before Docker kills the container.
             "stop_grace_period": STOP_GRACE,
             **LOCKED_DOWN,
             **LOGGING,

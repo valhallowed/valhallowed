@@ -1,23 +1,16 @@
 """vhd apply: bring the install's containers in line with its manifest (G13).
 
-The one place that holds Docker's socket, for its run alone. In order, it:
-1. reads and validates the manifest and secrets;
-2. refuses a Docker Engine older than 26, which lacks the volume subpaths runtimes mount;
-3. learns the install's host path, Docker's socket and the Compose project from its own container;
-4. takes the release's images from the install's compose.yaml (x-vhd);
-5. refuses to restart a world that may have players online, unless told to disconnect them;
-6. hands every runtime its documents, owned by the install folder's owner, a world moving to a
-   new port in the directory only its new container mounts;
-7. renders .vhd/compose.json, and has Compose recreate only the containers whose definition changed;
-8. once Compose succeeds, records the ports the containers now publish. If Compose fails, it
-   brings the install back on the compose file it ran before.
+The one place that holds Docker's socket, for its run alone. Two rules shape it: restarting a
+world that may have players online takes the server manager's confirmation, and
+.vhd/compose.json names what Compose last ran successfully, so a failed or interrupted run
+leaves both the install and the next run's players check as they were.
 """
 
 import json
 import logging
 import os
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, NoReturn, TextIO
 
@@ -55,25 +48,25 @@ class _Restart:
 @dataclass
 class Apply:
     install: Path
-    store: Store
+    generations: Path
     control_dir: Path
     schemas: Schemas
     docker: Docker
     status: Callable[[], dict[str, Any]]
     hostname: str
     out: TextIO
+    store: Store = field(init=False)
 
     def run(self, disconnect_players: bool) -> None:
         settings = manifest.load(self.install, self.schemas)
         self._check_engine()
         host = self._host()
         # vhd runs as root; everything it writes belongs to whom the control plane runs as.
-        self.store = Store(self.store.root, host.owner)
+        self.store = Store(self.generations, host.owner)
         # Before the players check, not after it: a pull can take minutes.
         self._pull(host)
         running = self._running(host.project)
-        applied_path = self.install / layout.RENDERED
-        previous = json.loads(applied_path.read_text()) if applied_path.exists() else None
+        previous = json.loads(self._applied.read_text()) if self._applied.exists() else None
         with self.store.locked():
             state = self.store.load()
             generation = reconcile(settings, state.generation)
@@ -97,9 +90,14 @@ class Apply:
         except DockerError as error:
             candidate.unlink()
             self._roll_back(host, previous is not None, error, generation.number)
-        candidate.replace(applied_path)
+        candidate.replace(self._applied)
         with self.store.locked():
             self._commit(self.store.load(), generation, moving, override)
+
+    @property
+    def _applied(self) -> Path:
+        """The compose file Compose last ran successfully."""
+        return self.install / layout.RENDERED
 
     def _pull(self, host: Host) -> None:
         """Every image the install runs, pulled when the host lacks it."""
@@ -125,7 +123,7 @@ class Apply:
             "vhd apply: Compose failed; bringing back the containers the install ran before", file=self.out, flush=True
         )
         try:
-            self.docker.stream(self._up(host, self.install / layout.RENDERED))
+            self.docker.stream(self._up(host, self._applied))
         except DockerError as again:
             raise DockerError(f"{error}; bringing back the previous containers failed too: {again}") from again
         raise Refused(
@@ -213,9 +211,7 @@ class Apply:
             if restart.container and restart.documents and applied.get(cid) == generation.children[cid].port
         )
         if stopping:
-            self.docker.stream(
-                ["compose", "-p", host.project, "-f", str(self.install / layout.RENDERED), "stop", *stopping]
-            )
+            self.docker.stream(["compose", "-p", host.project, "-f", str(self._applied), "stop", *stopping])
 
     def _stage(self, state: State, generation: Generation, confirmed: set[str]) -> set[str]:
         """Hand each runtime what it may read now, and return the worlds moving to a new port.

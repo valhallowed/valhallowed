@@ -14,7 +14,7 @@ from vhd_control.daemon import Daemon
 from vhd_control.docker import Cli, DockerError
 from vhd_control.listeners import control_server, status_server
 from vhd_control.manifest import InvalidSettings
-from vhd_control.reconcile import reconcile
+from vhd_control.reconcile import WORLD_PORTS, reconcile
 from vhd_control.schemas import Schemas
 from vhd_control.status import StatusBook
 from vhd_control.store import Store
@@ -35,13 +35,13 @@ def main(argv: list[str] | None = None, out: TextIO = sys.stdout) -> int:
     schemas = Schemas(layout.SCHEMAS)
     try:
         if args.command == "validate":
-            return validate(schemas, out)
-        if args.command == "status":
-            return show_status(client.status(layout.CONTROL_SOCKET), out)
-        if args.command == "apply":
+            validate(schemas, out)
+        elif args.command == "status":
+            show_status(client.status(layout.CONTROL_SOCKET), out)
+        elif args.command == "apply":
             Apply(
                 install=layout.INSTALL,
-                store=Store(layout.GENERATIONS),
+                generations=layout.GENERATIONS,
                 control_dir=layout.CONTROL_DIR,
                 schemas=schemas,
                 docker=Cli(),
@@ -49,24 +49,24 @@ def main(argv: list[str] | None = None, out: TextIO = sys.stdout) -> int:
                 hostname=os.environ.get("HOSTNAME", ""),
                 out=out,
             ).run(args.disconnect_players)
-            return 0
-        return daemon(schemas)
+        else:
+            daemon(schemas)
     except (InvalidSettings, Refused, DockerError, client.Unreachable) as error:
         print(f"vhd {args.command}: {error}", file=sys.stderr)
         return 1
+    return 0
 
 
-def validate(schemas: Schemas, out: TextIO) -> int:
+def validate(schemas: Schemas, out: TextIO) -> None:
     settings = manifest.load(layout.INSTALL, schemas)
     reconcile(settings, None)
     for world in settings.worlds:
         password = "set" if world.password is not None else "unset"
-        print(f"world {world.name}: udp {world.port}-{world.port + 2}, password {password}", file=out)
+        print(f"world {world.name}: udp {world.port}-{world.port + WORLD_PORTS - 1}, password {password}", file=out)
     print(f"web map: tcp {settings.web_map_port}", file=out)
-    return 0
 
 
-def show_status(status: dict[str, Any], out: TextIO) -> int:
+def show_status(status: dict[str, Any], out: TextIO) -> None:
     print(f"generation {status['generation']}", file=out)
     if "refused" in status:
         print(f"refused: {status['refused']}; generation {status['generation']} keeps running", file=out)
@@ -82,10 +82,9 @@ def show_status(status: dict[str, Any], out: TextIO) -> int:
         elif "pending" in world:
             line += f"; generation {world['pending']['generation']} waits for {world['pending']['waits_for']}"
         print(line, file=out)
-    return 0
 
 
-def daemon(schemas: Schemas) -> int:
+def daemon(schemas: Schemas) -> None:
     book = StatusBook()
     control = Daemon(install=layout.INSTALL, store=Store(layout.GENERATIONS), schemas=schemas, book=book)
     stop = threading.Event()
@@ -101,4 +100,3 @@ def daemon(schemas: Schemas) -> int:
     for server in servers:
         server.shutdown()
         server.server_close()
-    return 0

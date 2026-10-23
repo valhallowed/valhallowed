@@ -30,13 +30,14 @@ class Install:
         self.volume.mkdir()
         self.store = Store(self.volume)
         self.book = StatusBook()
+        self.edits = 0
         self.write(TWO_WORLDS)
         self.apply()
         self.daemon = Daemon(self.folder, self.store, SCHEMAS, self.book)
 
     def write(self, manifest: str, secrets: str | None = None) -> None:
         """Edit the files, moving their modification times as an edit a second later would."""
-        self.edits = getattr(self, "edits", 0) + 1
+        self.edits += 1
         files = {"manifest.toml": manifest} if secrets is None else {"manifest.toml": manifest, "secrets.toml": secrets}
         for name, text in files.items():
             path = self.folder / name
@@ -53,6 +54,13 @@ class Install:
             state.generation = generation
             state.applied = {cid: child.port for cid, child in generation.children.items()}
             self.store.save(state)
+
+    def pending(self, world: str) -> dict[str, object] | None:
+        """What status says the world's newer generation waits for."""
+        status = self.daemon.status()
+        assert status is not None
+        pending: dict[str, object] | None = status["worlds"][world].get("pending")
+        return pending
 
     def players(self, world: str, players: int) -> None:
         self.book.record({"contract": 1, "generation": 1, "world": world, "state": "running", "players": players})
@@ -79,7 +87,7 @@ def test_nothing_changed_hands_nothing(install: Install) -> None:
     before = install.handed(MEADOWFOLD)
     install.daemon.step()
     assert install.handed(MEADOWFOLD) == before
-    assert install.daemon.pending(MEADOWFOLD) is None
+    assert install.pending("Meadowfold") is None
 
 
 def test_a_restart_reaches_an_empty_world(install: Install) -> None:
@@ -96,19 +104,19 @@ def test_a_restart_waits_while_players_are_online(install: Install) -> None:
     install.write(TWO_WORLDS, PASSWORD)
     install.daemon.step()
     assert install.handed(MEADOWFOLD) == (1, None)
-    assert install.daemon.pending(MEADOWFOLD) == (2, WAITS_FOR_EMPTY)
+    assert install.pending("Meadowfold") == {"generation": 2, "waits_for": WAITS_FOR_EMPTY}
 
     install.players("Meadowfold", 0)
     install.daemon.step()
     assert install.handed(MEADOWFOLD) == (2, "hearth-and-horn")
-    assert install.daemon.pending(MEADOWFOLD) is None
+    assert install.pending("Meadowfold") is None
 
 
 def test_a_restart_waits_while_status_cannot_vouch_for_the_world(install: Install) -> None:
     install.daemon.step()
     install.write(TWO_WORLDS, PASSWORD)
     install.daemon.step()
-    assert install.daemon.pending(MEADOWFOLD) == (2, WAITS_FOR_EMPTY)
+    assert install.pending("Meadowfold") == {"generation": 2, "waits_for": WAITS_FOR_EMPTY}
 
 
 def test_another_world_takes_the_new_number_without_a_restart(install: Install) -> None:
@@ -124,7 +132,7 @@ def test_a_new_port_waits_for_vhd_apply(install: Install) -> None:
     install.write(TWO_WORLDS.replace("2456", "2462"))
     install.daemon.step()
     assert install.handed(MEADOWFOLD) == (1, None)
-    assert install.daemon.pending(MEADOWFOLD) == (2, WAITS_FOR_APPLY)
+    assert install.pending("Meadowfold") == {"generation": 2, "waits_for": WAITS_FOR_APPLY}
 
 
 def test_a_refused_manifest_keeps_the_last_good_generation(install: Install) -> None:
@@ -142,8 +150,9 @@ def test_overlapping_ports_are_refused_and_change_nothing(install: Install) -> N
     install.daemon.step()
     assert install.daemon.refused is not None
     assert "share ports" in install.daemon.refused
-    assert install.store.load().generation is not None
-    assert install.store.load().generation.number == 1  # type: ignore[union-attr]
+    generation = install.store.load().generation
+    assert generation is not None
+    assert generation.number == 1
 
 
 def test_a_world_the_manifest_dropped_shows_as_removed_until_vhd_apply(install: Install) -> None:
@@ -153,7 +162,7 @@ def test_a_world_the_manifest_dropped_shows_as_removed_until_vhd_apply(install: 
     status = install.daemon.status()
     assert status is not None
     assert SCHEMAS.problem("contracts/control.status.schema.json", status) is None
-    assert status["worlds"]["Ashwake"] == {  # type: ignore[index]
+    assert status["worlds"]["Ashwake"] == {
         "state": "unknown",
         "published": 1,
         "removed": True,

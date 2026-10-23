@@ -1,4 +1,4 @@
-"""Names and paths an install's containers share. None of them reaches the host."""
+"""Names and paths an install's containers share."""
 
 from pathlib import Path
 

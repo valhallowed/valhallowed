@@ -14,7 +14,7 @@ def test_validate_shows_what_the_manifest_reconciles_to(tmp_path: Path, monkeypa
     monkeypatch.setattr(layout, "INSTALL", tmp_path)
     out = io.StringIO()
 
-    assert cli.validate(SCHEMAS, out) == 0
+    cli.validate(SCHEMAS, out)
     assert out.getvalue().splitlines() == [
         "world Ashwake: udp 2459-2461, password unset",
         "world Meadowfold: udp 2456-2458, password set",
@@ -38,7 +38,7 @@ def test_status_names_each_world_its_players_and_what_waits() -> None:
         },
     }
     out = io.StringIO()
-    assert cli.show_status(status, out) == 0
+    cli.show_status(status, out)
     assert out.getvalue().splitlines() == [
         "generation 5",
         "Ashwake: unknown",

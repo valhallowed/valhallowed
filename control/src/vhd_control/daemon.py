@@ -12,6 +12,7 @@ import logging
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from vhd_control import manifest
 from vhd_control.manifest import InvalidSettings, Settings
@@ -95,7 +96,7 @@ class Daemon:
                 _log.info("generation %d for %s waits for %s", number, generation.children[cid].world, waits)
         self._pending = pending
 
-    def status(self) -> dict[str, object] | None:
+    def status(self) -> dict[str, Any] | None:
         """What GET /status returns (contracts/control.status.schema.json), or None before the
         first generation."""
         state = self.store.load()
@@ -125,13 +126,10 @@ class Daemon:
                 "removed": True,
                 "pending": {"generation": state.generation.number, "waits_for": WAITS_FOR_APPLY},
             }
-        document: dict[str, object] = {"contract": 1, "generation": state.generation.number, "worlds": worlds}
+        document: dict[str, Any] = {"contract": 1, "generation": state.generation.number, "worlds": worlds}
         if self.refused is not None:
             document["refused"] = self.refused
         return document
-
-    def pending(self, child_id: str) -> tuple[int, str] | None:
-        return self._pending.get(child_id)
 
     @property
     def refused(self) -> str | None:
@@ -147,7 +145,7 @@ class Daemon:
         return WAITS_FOR_EMPTY
 
     def _reload(self) -> None:
-        stamp = tuple(_mtime(self.install / name) for name in (manifest.MANIFEST_FILE, manifest.SECRETS_FILE))
+        stamp = tuple(_mtime(self.install / name) for name in (manifest.MANIFEST_TOML, manifest.SECRETS_TOML))
         if stamp == self._stamp:
             return
         self._stamp = stamp

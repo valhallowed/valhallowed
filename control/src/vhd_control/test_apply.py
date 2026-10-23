@@ -10,19 +10,15 @@ import pytest
 from vhd_control import client, layout
 from vhd_control.apply import WAIT_TIMEOUT_S, Apply, Refused
 from vhd_control.docker import DockerError
-from vhd_control.naming import child_id
 from vhd_control.render import STOP_GRACE
 from vhd_control.store import Store
-from vhd_control.test_daemon import SCHEMAS, TWO_WORLDS
+from vhd_control.test_daemon import ASHWAKE, MEADOWFOLD, PASSWORD, SCHEMAS, TWO_WORLDS
 
 IMAGES = {
     "control-plane": "ghcr.io/valhallowed/control-plane:0.1.0@sha256:" + "a" * 64,
     "game-runtime": "ghcr.io/valhallowed/game-runtime:0.1.0@sha256:" + "b" * 64,
     "skeleton": "ghcr.io/valhallowed/skeleton:0.1.0@sha256:" + "e" * 64,
 }
-MEADOWFOLD = child_id("Meadowfold")
-ASHWAKE = child_id("Ashwake")
-PASSWORD = 'schema = 1\n\n[world.Meadowfold]\npassword = "hearth-and-horn"\n'
 
 
 class FakeDocker:
@@ -95,7 +91,7 @@ class Setup:
     def apply(self, disconnect_players: bool = False) -> None:
         Apply(
             install=self.install,
-            store=Store(self.volume),
+            generations=self.volume,
             control_dir=self.control,
             schemas=SCHEMAS,
             docker=self.docker,
