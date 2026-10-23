@@ -22,6 +22,11 @@ unless the manifest opens it. Not the web map.
 by an LLM provider from facts the data layer computed (B7). Off without its
 secret.
 
+**Board** — The `valhallowed` GitHub project, where delivery progress lives:
+one issue per slice or other piece of planned work, each in a column from
+Backlog to Done. Docs say what VHD is and why; the board says where the work
+stands.
+
 **Boundary** — A point inside VHD where data or control crosses between two
 parts. Each boundary has one typed contract, one validator on the receiving
 side and a stated failure behaviour. Not the ingress, which is where things
@@ -124,6 +129,9 @@ defaults, each child's configuration and the settings reference.
 **Map export** — The file the plugin writes with a world's map, the input to
 world render (B5).
 
+**Milestone** — A set of slices that together reach a point in the delivery
+order, tracked as a GitHub milestone. It lands in one or more pull requests.
+
 **Nightly game check** — The pipeline run that builds and accepts the newest
 commit against the newest dedicated-server build. A failure blocks the next
 candidate.
@@ -158,6 +166,12 @@ boundary between building VHD and running it.
 **Release** — A versioned set of VHD artifacts that share one version: the
 images, `compose.yaml`, the plugin artifact and the manifest schema.
 
+**Retro** — The review a pull request passes before it is marked ready: its
+whole diff for defects, simplification, performance and hygiene, and every doc
+and comment it touches against the code, this glossary and the architecture.
+Every finding is fixed in that pull request, except a gap whose fix is a later
+slice's deliverable.
+
 **Secrets** — Sensitive values a server manager supplies, such as a world's
 password or a chat service token, kept in a TOML file apart from the manifest.
 Key names come from a closed list in the manifest schema.
@@ -171,6 +185,9 @@ manifest schema.
 
 **Sign-in** — The capability that signs a player in to the web map through
 Steam (B9). Only people the game has seen can sign in.
+
+**Slice** — One deliverable of a milestone that keeps `main` green on its own,
+tracked as one issue on the board.
 
 **Status** — The control plane's report on an install and its children. It
 reports world truth, not container health.
