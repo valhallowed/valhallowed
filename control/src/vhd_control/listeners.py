@@ -13,8 +13,10 @@ import json
 import logging
 import socket
 import socketserver
+import sys
 import threading
 import time
+from collections import Counter
 from collections.abc import Callable, Collection
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -28,10 +30,14 @@ from vhd_control.status import StatusBook
 
 STATUS_SCHEMA = "contracts/game-runtime.status.schema.json"
 MAX_BODY = 16 * 1024
+# A whole request, from connect to reply, gets this long.
 TIMEOUT_S = 5
-# Reports handled at once. A runtime sends one every few seconds; more than this at once is
-# turned away rather than given a thread each.
+# Requests handled at once, and from one sender. A runtime sends one report every few seconds;
+# more than this at once is turned away rather than given a thread each.
 MAX_HANDLERS = 32
+PER_SENDER = 4
+# How often turned-away connections are logged, with their count since.
+DROPS_LOGGED_EVERY_S = 60
 
 Resolve = Callable[[str], set[str]]
 
@@ -55,6 +61,23 @@ def _sent_from(world: str, address: str, resolve: Resolve) -> bool:
 class _Handler(BaseHTTPRequestHandler):
     timeout = TIMEOUT_S
 
+    def setup(self) -> None:
+        super().setup()
+        # The socket's timeout bounds each read; this bounds the whole request, so a sender
+        # trickling its request line, headers or body holds a thread no longer.
+        self._deadline = threading.Timer(TIMEOUT_S, self._expire)
+        self._deadline.start()
+
+    def finish(self) -> None:
+        self._deadline.cancel()
+        super().finish()
+
+    def _expire(self) -> None:
+        try:
+            self.connection.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+
     def reply(self, code: HTTPStatus, document: object | None = None) -> None:
         body = b"" if document is None else json.dumps(document).encode()
         self.send_response(code)
@@ -77,9 +100,9 @@ class _Handler(BaseHTTPRequestHandler):
         if not 0 < length <= MAX_BODY:
             self.reply(HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
             return None
-        body = self.read_body(length)
-        if body is None:
-            self.reply(HTTPStatus.REQUEST_TIMEOUT)
+        body = self.rfile.read(length)
+        if len(body) < length:
+            # The sender hung up, or the request ran out of time.
             return None
         try:
             document: object = json.loads(body)
@@ -88,47 +111,63 @@ class _Handler(BaseHTTPRequestHandler):
             return None
         return document
 
-    def read_body(self, length: int) -> bytes | None:
-        """The body, or None if it does not arrive whole within TIMEOUT_S: the socket's timeout
-        bounds each read, and a sender trickling bytes must not hold a thread for longer."""
-        deadline = time.monotonic() + TIMEOUT_S
-        body = b""
-        while len(body) < length:
-            left = deadline - time.monotonic()
-            if left <= 0:
-                return None
-            self.connection.settimeout(left)
-            try:
-                chunk = self.rfile.read1(length - len(body))
-            except TimeoutError:
-                return None
-            if not chunk:
-                return None
-            body += chunk
-        return body
-
 
 class _StatusServer(ThreadingHTTPServer):
     def __init__(self, address: tuple[str, int], handler: type[_Handler]) -> None:
         super().__init__(address, handler)
-        self._slots = threading.BoundedSemaphore(MAX_HANDLERS)
+        self._lock = threading.Lock()
+        self._slots = MAX_HANDLERS
+        self._by_sender: Counter[str] = Counter()
+        self._turned_away = 0
+        self._logged_at = 0.0
 
     # Any: typeshed's request type is private to socketserver.
     def process_request(self, request: Any, client_address: Any) -> None:
-        if not self._slots.acquire(blocking=False):
+        sender = str(client_address[0])
+        with self._lock:
+            admitted = self._slots > 0 and self._by_sender[sender] < PER_SENDER
+            if admitted:
+                self._slots -= 1
+                self._by_sender[sender] += 1
+            else:
+                self._turn_away()
+        if not admitted:
             self.shutdown_request(request)
             return
-        super().process_request(request, client_address)
-
-    def handle_error(self, request: Any, client_address: Any) -> None:
-        # A sender that hangs up mid-request is routine; socketserver would print a traceback.
-        _log.debug("status request from %s ended in error", client_address, exc_info=True)
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._release(sender)
+            raise
 
     def process_request_thread(self, request: Any, client_address: Any) -> None:
         try:
             super().process_request_thread(request, client_address)
         finally:
-            self._slots.release()
+            self._release(str(client_address[0]))
+
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        error = sys.exc_info()[1]
+        # A sender that hangs up or runs out of time is routine; anything else is a fault here.
+        if isinstance(error, OSError):
+            _log.debug("status request from %s ended: %s", client_address, error)
+        else:
+            _log.warning("status request from %s failed", client_address, exc_info=True)
+
+    def _release(self, sender: str) -> None:
+        with self._lock:
+            self._slots += 1
+            self._by_sender[sender] -= 1
+            if self._by_sender[sender] <= 0:
+                del self._by_sender[sender]
+
+    def _turn_away(self) -> None:
+        """Count a connection turned away, logging the count at most once a minute."""
+        self._turned_away += 1
+        now = time.monotonic()
+        if now - self._logged_at >= DROPS_LOGGED_EVERY_S:
+            _log.warning("turned away %d status connection(s): too many at once", self._turned_away)
+            self._turned_away, self._logged_at = 0, now
 
 
 def status_server(
@@ -139,6 +178,18 @@ def status_server(
     *,
     resolve: Resolve = _resolve,
 ) -> ThreadingHTTPServer:
+    # Why each sender's reports were last dropped, so a runtime sending the same bad report every
+    # few seconds is logged once, and again only when the reason changes or after a good report.
+    dropping: dict[str, str] = {}
+    lock = threading.Lock()
+
+    def drop(sender: str, why: str) -> None:
+        with lock:
+            if dropping.get(sender) == why:
+                return
+            dropping[sender] = why
+        _log.warning("dropped status reports from %s: %s", sender, why)
+
     class Handler(_Handler):
         def do_POST(self) -> None:
             if self.path != "/status":
@@ -147,19 +198,26 @@ def status_server(
             document = self.read_json()
             if document is None:
                 return
+            sender = self.client_address[0]
             problem = schemas.problem(STATUS_SCHEMA, document)
             if problem is not None:
                 # Observations fail soft: the report is dropped, and the runtime runs on.
-                _log.warning("dropped a status report %s", problem)
+                drop(sender, f"a report {problem}")
                 self.reply(HTTPStatus.BAD_REQUEST, {"error": problem})
                 return
             report = cast(dict[str, Any], document)
             # The world first: a name the install does not run never reaches Docker's DNS.
             world = report["world"]
-            if world not in worlds() or not _sent_from(world, self.client_address[0], resolve):
-                _log.warning("dropped a status report for %s from %s, not its container", world, self.client_address[0])
+            if world not in worlds():
+                drop(sender, f"reports for {world}, which the install does not run")
+                self.reply(HTTPStatus.FORBIDDEN, {"error": "the install runs no such world"})
+                return
+            if not _sent_from(world, sender, resolve):
+                drop(sender, f"reports for {world}, from outside its container")
                 self.reply(HTTPStatus.FORBIDDEN, {"error": "a world reports only from its own container"})
                 return
+            with lock:
+                dropping.pop(sender, None)
             book.record(report)
             self.reply(HTTPStatus.NO_CONTENT)
 

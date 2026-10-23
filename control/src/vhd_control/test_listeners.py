@@ -1,4 +1,5 @@
 import json
+import logging
 import socket
 import threading
 import time
@@ -36,7 +37,6 @@ WORLDS = frozenset({"Meadowfold", "Ashwake"})
 class Listener:
     def __init__(self, resolver: Resolver) -> None:
         self.book = StatusBook()
-        self.resolver = resolver
         self.server = status_server(self.book, SCHEMAS, lambda: WORLDS, ("127.0.0.1", 0), resolve=resolver)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.url = f"http://127.0.0.1:{self.server.server_address[1]}/status"
@@ -103,7 +103,13 @@ def test_a_report_follows_a_container_docker_recreated() -> None:
 def test_a_world_the_install_does_not_run_never_reaches_dns() -> None:
     resolver = Resolver()
     asked: list[str] = []
-    listener = Listener(lambda name: asked.append(name) or resolver(name))  # type: ignore[arg-type,func-returns-value]
+
+    class Asking(Resolver):
+        def __call__(self, name: str) -> set[str]:
+            asked.append(name)
+            return resolver(name)
+
+    listener = Listener(Asking())
     try:
         assert post(listener.url, json.dumps({**REPORT, "world": "Elsewhere"}).encode()) == 403
     finally:
@@ -167,3 +173,53 @@ def test_the_control_api_serves_status_over_its_socket(tmp_path: Path) -> None:
 def test_the_client_says_when_the_control_plane_is_not_running(tmp_path: Path) -> None:
     with pytest.raises(client.Unreachable, match="does not answer"):
         client.status(tmp_path / "control.sock")
+
+
+def test_a_sender_that_trickles_its_request_is_cut_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(listeners, "TIMEOUT_S", 0.5)
+    listener = Listener(Resolver())
+    try:
+        with socket.create_connection(("127.0.0.1", listener.server.server_address[1])) as slow:
+            slow.settimeout(5)
+            started = time.monotonic()
+            try:
+                for byte in b"POST /status HTTP/1.1\r\nHost: x\r\n":
+                    slow.sendall(bytes([byte]))
+                    time.sleep(0.1)
+                closed = slow.recv(1024) == b""
+            except (BrokenPipeError, ConnectionResetError):
+                closed = True
+            assert closed
+            assert time.monotonic() - started < 3
+    finally:
+        listener.close()
+
+
+def test_one_sender_cannot_take_every_handler(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(listeners, "PER_SENDER", 1)
+    listener = Listener(Resolver())
+    try:
+        with socket.create_connection(("127.0.0.1", listener.server.server_address[1])) as idle:
+            idle.sendall(b"POST /status HTTP/1.1\r\n")
+            assert post(listener.url, json.dumps(REPORT).encode()) == 0
+    finally:
+        listener.close()
+
+
+def test_a_fault_in_handling_a_report_is_logged_as_one(caplog: pytest.LogCaptureFixture) -> None:
+    listener = Listener(Resolver())
+
+    def broken(report: dict[str, object]) -> None:
+        raise KeyError("world")
+
+    listener.book.record = broken  # type: ignore[method-assign]
+    try:
+        with caplog.at_level(logging.WARNING):
+            post(listener.url, json.dumps(REPORT).encode())
+            for _ in range(50):
+                if any("failed" in r.message for r in caplog.records):
+                    break
+                time.sleep(0.02)
+    finally:
+        listener.close()
+    assert any(r.levelno == logging.WARNING and "failed" in r.message for r in caplog.records)

@@ -24,9 +24,11 @@
       "enum": ["installing", "loading", "running", "unverified", "held"]
     },
     "reason": {
-      "description": "Why the runtime is held or unverified.",
+      "description": "Why the runtime is held or unverified, in one line of printable text: vhd status shows it to the server manager.",
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
     },
     "game_build": {
       "description": "The dedicated server's build id.",

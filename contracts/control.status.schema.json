@@ -20,6 +20,20 @@
       "type": "string",
       "minLength": 1
     },
+    "override": {
+      "description": "The last time vhd apply restarted worlds that may have had players online, as the server manager confirmed: the generation it applied, and each such world's player count, or null where status could not say.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generation", "worlds"],
+      "properties": {
+        "generation": { "type": "integer", "minimum": 1 },
+        "worlds": {
+          "type": "object",
+          "propertyNames": { "$ref": "../schema/manifest.schema.json#/$defs/save_name" },
+          "additionalProperties": { "type": ["integer", "null"], "minimum": 0 }
+        }
+      }
+    },
     "worlds": {
       "description": "Each world of the install, keyed by its save name.",
       "type": "object",

@@ -185,3 +185,33 @@ def test_a_failed_pass_does_not_end_the_control_plane(install: Install, monkeypa
     monkeypatch.setattr("vhd_control.daemon.POLL_S", 0.01)
     install.daemon.run(stop)
     assert len(passes) == 2
+
+
+def test_a_manifest_refused_at_start_leaves_every_running_world_reporting(install: Install) -> None:
+    install.write("schema = 1\n\n[world.Meadowfold]\nprot = 2456\n")
+    daemon = Daemon(install.folder, install.store, SCHEMAS, install.book)
+    daemon.step()
+    assert daemon.refused is not None
+    assert daemon.worlds() == {"Meadowfold", "Ashwake"}
+
+
+def test_a_removed_world_keeps_its_report_so_an_empty_one_needs_no_override(install: Install) -> None:
+    install.players("Ashwake", 0)
+    install.write("schema = 1\n\n[world.Meadowfold]\nport = 2456\n")
+    install.daemon.step()
+    status = install.daemon.status()
+    assert status is not None
+    assert SCHEMAS.problem("contracts/control.status.schema.json", status) is None
+    assert status["worlds"]["Ashwake"]["report"]["players"] == 0
+    assert status["worlds"]["Ashwake"]["removed"] is True
+
+
+def test_status_shows_the_last_override(install: Install) -> None:
+    with install.store.locked():
+        state = install.store.load()
+        state.override = {"generation": 1, "worlds": {"Meadowfold": 2}}
+        install.store.save(state)
+    status = install.daemon.status()
+    assert status is not None
+    assert status["override"] == {"generation": 1, "worlds": {"Meadowfold": 2}}
+    assert SCHEMAS.problem("contracts/control.status.schema.json", status) is None

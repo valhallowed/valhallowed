@@ -51,3 +51,20 @@ def test_a_refused_manifest_is_reported_with_a_failing_exit(tmp_path: Path, monk
     monkeypatch.setattr(layout, "INSTALL", tmp_path)
     monkeypatch.setattr(layout, "SCHEMAS", REPO)
     assert cli.main(["validate"], io.StringIO()) == 1
+
+
+def test_status_shows_an_override_and_only_printable_reasons() -> None:
+    held = {"contract": 1, "generation": 3, "world": "Ashwake", "state": "held", "reason": "loaded empty\x1b[2J"}
+    status = {
+        "contract": 1,
+        "generation": 3,
+        "override": {"generation": 3, "worlds": {"Meadowfold": 2, "Ashwake": None}},
+        "worlds": {"Ashwake": {"state": "held", "report": held, "report_age_s": 1}},
+    }
+    out = io.StringIO()
+    cli.show_status(status, out)
+    assert out.getvalue().splitlines() == [
+        "generation 3",
+        "generation 3 restarted Ashwake (players unknown), Meadowfold (2 player(s)), as the server manager confirmed",
+        "Ashwake: held (loaded empty?[2J)",
+    ]

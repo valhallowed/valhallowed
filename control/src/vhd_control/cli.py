@@ -14,7 +14,7 @@ from vhd_control.daemon import Daemon
 from vhd_control.docker import Cli, DockerError
 from vhd_control.listeners import control_server, status_server
 from vhd_control.manifest import InvalidSettings
-from vhd_control.reconcile import WORLD_PORTS, reconcile
+from vhd_control.reconcile import last_port, reconcile
 from vhd_control.schemas import Schemas
 from vhd_control.status import StatusBook
 from vhd_control.store import Store
@@ -62,7 +62,7 @@ def validate(schemas: Schemas, out: TextIO) -> None:
     reconcile(settings, None)
     for world in settings.worlds:
         password = "set" if world.password is not None else "unset"
-        print(f"world {world.name}: udp {world.port}-{world.port + WORLD_PORTS - 1}, password {password}", file=out)
+        print(f"world {world.name}: udp {world.port}-{last_port(world.port)}, password {password}", file=out)
     print(f"web map: tcp {settings.web_map_port}", file=out)
 
 
@@ -70,18 +70,30 @@ def show_status(status: dict[str, Any], out: TextIO) -> None:
     print(f"generation {status['generation']}", file=out)
     if "refused" in status:
         print(f"refused: {status['refused']}; generation {status['generation']} keeps running", file=out)
+    if "override" in status:
+        override = status["override"]
+        named = ", ".join(
+            f"{world} ({'players unknown' if players is None else f'{players} player(s)'})"
+            for world, players in sorted(override["worlds"].items())
+        )
+        print(f"generation {override['generation']} restarted {named}, as the server manager confirmed", file=out)
     for name, world in sorted(status["worlds"].items()):
         line = f"{name}: {world['state']}"
         report = world.get("report", {})
         if "players" in report:
             line += f", {report['players']} player(s)"
         if "reason" in report:
-            line += f" ({report['reason']})"
+            # A runtime faces players; its words reach a terminal only as printable text.
+            line += f" ({_printable(report['reason'])})"
         if world.get("removed"):
             line += "; removed from the manifest, waits for vhd apply"
         elif "pending" in world:
             line += f"; generation {world['pending']['generation']} waits for {world['pending']['waits_for']}"
         print(line, file=out)
+
+
+def _printable(text: str) -> str:
+    return "".join(c if c.isprintable() else "?" for c in text)
 
 
 def daemon(schemas: Schemas) -> None:
