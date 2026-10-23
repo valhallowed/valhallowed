@@ -16,12 +16,12 @@ if [[ $compose_file != "$out/compose.yaml" ]]; then
 fi
 cp "$root/schema/manifest.schema.json" "$root/schema/secrets.schema.json" "$out/"
 
-image=$(docker compose -f "$out/compose.yaml" config --format json | jq -r '."x-vhd".images["game-runtime"] // empty')
+image=$("$root/scripts/install-images.sh" "$out/compose.yaml" game-runtime)
 if [[ ! $image =~ @sha256:[0-9a-f]{64}$ ]]; then
   echo "release-assets: $compose_file pins no game runtime image by digest" >&2
   exit 1
 fi
-docker pull --quiet "$image" >/dev/null
+timeout 600 docker pull --quiet "$image" >/dev/null
 build=$(docker image inspect --format '{{index .Config.Labels "com.valhallowed.game-build"}}' "$image")
 if [[ ! $build =~ ^[0-9]+$ ]]; then
   echo "release-assets: $image names no game build" >&2

@@ -19,6 +19,7 @@ concurrency:
 jobs:
   promote:
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     permissions:
       actions: read
       contents: read
@@ -31,6 +32,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - id: check
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -45,6 +47,9 @@ jobs:
           scripts/render-install.sh "$VERSION" dist/compose.yaml --pin "$SOURCE"
           scripts/accept.sh dist/compose.yaml "$COMMIT"
           echo "compose_sha256=$(sha256sum dist/compose.yaml | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      # Before any tag moves, so a release that cannot be assembled promotes nothing.
+      - name: The release's assets can be gathered
+        run: scripts/release-assets.sh dist/compose.yaml dist/assets >/dev/null
       - name: Log in to GHCR
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -57,12 +62,15 @@ jobs:
   release:
     needs: promote
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: write
     env:
       VERSION: ${{ needs.promote.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Render the install and check it is the one accepted
         env:
           ACCEPTED: ${{ needs.promote.outputs.compose_sha256 }}
@@ -74,7 +82,9 @@ jobs:
           fi
       - id: assets
         name: Gather the assets, the plugin out of the accepted image
-        run: echo "game_build=$(scripts/release-assets.sh dist/compose.yaml dist)" >> "$GITHUB_OUTPUT"
+        run: |
+          build=$(scripts/release-assets.sh dist/compose.yaml dist)
+          echo "game_build=$build" >> "$GITHUB_OUTPUT"
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
