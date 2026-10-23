@@ -1,4 +1,3 @@
-import re
 from pathlib import Path
 
 import pytest
@@ -6,10 +5,7 @@ import pytest
 from vhd_control.manifest import InvalidSettings, Settings, World, load
 from vhd_control.naming import child_id
 from vhd_control.reconcile import STATUS_URL, reconcile
-from vhd_control.schemas import Schemas
-
-REPO = Path(__file__).resolve().parents[3]
-SCHEMAS = Schemas(REPO)
+from vhd_control.test_daemon import REPO, SCHEMAS
 
 
 def settings(*worlds: World) -> Settings:
@@ -59,9 +55,7 @@ def test_adjacent_world_ports_are_accepted() -> None:
     assert len(generation.children) == 2
 
 
-def test_child_ids_are_compose_names_that_never_collide() -> None:
-    names = ["Meadowfold", "meadowfold", "Meadow fold", "Meadow_fold", "9 Worlds"]
-    ids = [child_id(n) for n in names]
-    assert len(set(ids)) == len(ids)
-    assert all(re.fullmatch(r"[a-z0-9][a-z0-9-]*", i) for i in ids)
-    assert child_id("Meadowfold") == child_id("Meadowfold")
+def test_two_worlds_that_would_share_a_container_name_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("vhd_control.reconcile.child_id", lambda name: "world-same-000000")
+    with pytest.raises(InvalidSettings, match="would share the container name"):
+        reconcile(settings(World("Ashwake", 2456, None), World("Meadowfold", 2459, None)), None)

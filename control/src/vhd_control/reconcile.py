@@ -21,7 +21,8 @@ WORLD_PORTS = 3
 
 @dataclass(frozen=True)
 class Child:
-    """One game runtime's documents, without the generation number they are published under."""
+    """What reconcile hands one child, a game runtime: its documents, without the generation
+    number they are published under."""
 
     world: str
     port: int
@@ -47,7 +48,14 @@ class Generation:
 def reconcile(settings: Settings, previous: Generation | None) -> Generation:
     """The generation for settings: previous itself when no child's documents changed."""
     _check_ports(settings.worlds)
-    children = {child_id(world.name): _child(world) for world in settings.worlds}
+    children: dict[str, Child] = {}
+    for world in settings.worlds:
+        cid = child_id(world.name)
+        if cid in children:
+            raise InvalidSettings(
+                f"worlds {children[cid].world!r} and {world.name!r} would share the container name {cid}; rename one"
+            )
+        children[cid] = _child(world)
     if previous is not None and dict(previous.children) == children:
         return previous
     return Generation(number=1 if previous is None else previous.number + 1, children=children)
