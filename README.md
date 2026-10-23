@@ -4,12 +4,8 @@ A self-hosted Valheim dedicated server with a server-side plugin, telemetry,
 governed in-game commands and a web map, configured through one manifest. VHD
 for short. Its home is [valhallowed.com](https://valhallowed.com).
 
-**Status: pre-release.** This repository holds the design, the manifest
-schema, the release pipeline, the plugin, the game runtime image and the
-control plane with its CLI, `vhd`, which together run worlds from one
-manifest. Nothing here is useful to install yet; the
-[board](https://github.com/orgs/valhallowed/projects/1) shows what is being
-built.
+Pre-release; the [board](https://github.com/orgs/valhallowed/projects/1)
+shows what is built.
 
 ## Docs
 
@@ -43,6 +39,10 @@ of its own:
 4. Run `docker compose run --rm vhd apply`, and `docker compose run --rm vhd
    status` to see each world.
 
+`vhd apply` adds `COMPOSE_IGNORE_ORPHANS=true` to the folder's `.env`: the
+host's Compose would otherwise call the install's own containers orphans of
+`compose.yaml` and suggest `--remove-orphans`, which would delete them.
+
 Edit either file and the control plane applies the change, holding a game
 restart while players are online. A change to the containers themselves,
 such as a new world or port, waits for the next `vhd apply`.
@@ -57,7 +57,8 @@ make accept
 ```
 
 Builds the images with the definition CI uses, installs them through the
-release compose file and runs acceptance against the local build.
+release compose file and runs acceptance against the local build, on udp
+32456-32458 and tcp 38456 so it never meets an install on the defaults.
 
 ```bash
 make plugin

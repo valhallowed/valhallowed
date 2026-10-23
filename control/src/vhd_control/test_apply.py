@@ -459,3 +459,19 @@ def test_removing_an_empty_world_needs_no_confirmation(setup: Setup) -> None:
     (setup.install / "manifest.toml").write_text("schema = 1\n\n[world.Meadowfold]\n")
     setup.apply()
     assert ASHWAKE not in Store(setup.volume).load().handed
+
+
+def test_the_install_env_quiets_the_orphan_warning_and_keeps_what_was_there(setup: Setup) -> None:
+    (setup.install / ".env").write_text("VHD_DOCKER_SOCKET=/run/user/1000/docker.sock\n")
+    setup.apply()
+    setup.apply()
+    assert (setup.install / ".env").read_text().splitlines() == [
+        "VHD_DOCKER_SOCKET=/run/user/1000/docker.sock",
+        "COMPOSE_IGNORE_ORPHANS=true",
+    ]
+
+
+def test_a_server_managers_own_orphan_setting_stands(setup: Setup) -> None:
+    (setup.install / ".env").write_text("COMPOSE_IGNORE_ORPHANS=false\n")
+    setup.apply()
+    assert (setup.install / ".env").read_text() == "COMPOSE_IGNORE_ORPHANS=false\n"

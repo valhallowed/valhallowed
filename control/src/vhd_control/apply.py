@@ -31,6 +31,7 @@ SERVICE_LABEL = "com.docker.compose.service"
 # How long Compose waits for the containers it starts to run.
 WAIT_TIMEOUT_S = 300
 APPLY_LOCK = ".apply.lock"
+IGNORE_ORPHANS = "COMPOSE_IGNORE_ORPHANS"
 
 
 class Refused(Exception):
@@ -91,6 +92,7 @@ class Apply:
                 fcntl.flock(lock, fcntl.LOCK_UN)
 
     def _apply(self, settings: Settings, host: Host, disconnect_players: bool) -> None:
+        self._quiet_orphans(host.owner)
         # Before the players check, not after it: a pull can take minutes.
         self._pull(host)
         running = self._running(host.project)
@@ -132,6 +134,20 @@ class Apply:
         next_file.replace(self._applied)
         with self.store.locked():
             self._commit(self.store.load(), generation, moving, override)
+
+    def _quiet_orphans(self, owner: tuple[int, int]) -> None:
+        """The host's Compose sees the containers vhd apply renders as orphans of compose.yaml,
+        and every docker compose run warns, suggesting --remove-orphans, which would delete them.
+        The install's .env tells it not to, unless the server manager already set the key."""
+        env = self.install / ".env"
+        lines = env.read_text().splitlines() if env.exists() else []
+        if any(line.split("=", 1)[0].strip() == IGNORE_ORPHANS for line in lines):
+            return
+        lines.append(f"{IGNORE_ORPHANS}=true")
+        temporary = env.with_name(".env.tmp")
+        temporary.write_text("\n".join(lines) + "\n")
+        os.chown(temporary, *owner)
+        temporary.replace(env)
 
     @property
     def _applied(self) -> Path:
