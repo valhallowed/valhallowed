@@ -51,8 +51,8 @@ depends on, and its failure degrades only itself.
 restart or game-server restart. Every setting carries one in the manifest
 schema, beside what applies it: the control plane or `vhd apply`.
 
-**Channel** — A release stream a consumer follows: commit builds, release
-candidates or releases.
+**Channel** — A release stream a consumer follows: commit builds, candidates
+or releases.
 
 **Chat relay** — The capability that mirrors world events to an outside chat
 service, such as Discord, and accepts commands from it.
@@ -95,11 +95,14 @@ profile is a default the manifest can change.
 BepInEx and the plugin, under its supervisor. It runs what the control plane
 hands it and holds no policy.
 
-**Generation** — One numbered effective configuration. Applied whole or not at
-all; when a new one is rejected, the last good generation keeps running.
+**Generation** — One numbered effective configuration of the whole install.
+Reconcile produces it whole or not at all: when a new manifest is rejected,
+the last good generation keeps running. Each child receives its own part, its
+generation document (B1), and adopts all of it or none.
 
-**Hold** — A game runtime with its game stopped and its container up, so a
-world's files can be replaced without a Docker socket (G13).
+**Hold** — A game runtime with its game stopped and its container up: after
+the world failed world truth, or so its files can be replaced without a
+Docker socket (G13).
 
 **Host check** — The control plane's comparison of what the manifest asks for
 (ports, memory and CPU per world, disk) with what the host has. A shortfall is
@@ -121,10 +124,11 @@ released artifacts only.
 **Manifest** — The one TOML file a server manager writes to configure an
 install. Checked against the manifest schema; never holds secrets.
 
-**Manifest schema** — The versioned JSON Schema in `schema/` for the manifest
-and the secrets file: every setting with its type, default, change cost and
-what applies it, and the closed list of secret keys. It produces validation,
-defaults, each child's configuration and the settings reference.
+**Manifest schema** — The versioned JSON Schema for the manifest,
+`schema/manifest.schema.json`: every setting with its type, default, change
+cost and what applies it. The secrets file has its own beside it, with the
+closed list of secret keys. Together they produce validation, defaults, each
+child's configuration and the settings reference.
 
 **Map export** — The file the plugin writes with a world's map, the input to
 world render (B5).
@@ -132,9 +136,10 @@ world render (B5).
 **Milestone** — A set of slices that together reach a point in the delivery
 order, tracked as a GitHub milestone. It lands in one or more pull requests.
 
-**Nightly game check** — The pipeline run that builds and accepts the newest
-commit against the newest dedicated-server build. A failure blocks the next
-candidate.
+**Nightly game check** — The pipeline run, every night, that builds the
+plugin against the newest dedicated-server build and checks the pinned
+downloads Dependabot cannot watch for newer releases. A failure blocks the
+next candidate.
 
 **Operator action** — A one-off request through the control API, such as
 importing a world, taking a backup or reading logs. Validated like the
@@ -154,17 +159,17 @@ telemetry and executes commands.
 Candidates and releases are promoted, never rebuilt (G12).
 
 **Reconcile** — The control-plane step that merges the manifest, secrets and
-defaults into a new generation, then reports what was set, what defaulted and
-what that implies.
+defaults into a new generation.
 
 **Record** — Player-authored data such as a map marker or a journal entry.
 Stored by the data layer; never becomes a command.
 
-**Registry** — The public image store VHD publishes to: GHCR (G10). The
-boundary between building VHD and running it.
+**Registry** — The public image store VHD publishes to: GHCR (G10). The line
+between building VHD and running it.
 
 **Release** — A versioned set of VHD artifacts that share one version: the
-images, `compose.yaml`, the plugin artifact and the manifest schema.
+images, `compose.yaml`, the plugin artifact and the manifest and secrets
+schemas.
 
 **Retro** — The review a pull request passes before it is marked ready: its
 whole diff for defects, simplification, performance and hygiene, and every doc
@@ -180,8 +185,8 @@ Key names come from a closed list in the manifest schema.
 plane. Not a player.
 
 **Settings reference** — The user-facing list of every setting with its
-default, change cost, what applies it and its effect. Generated from the
-manifest schema.
+default, change cost, what applies it and its effect. The manifest and
+secrets schemas are its source, so it cannot disagree with them.
 
 **Sign-in** — The capability that signs a player in to the web map through
 Steam (B9). Only people the game has seen can sign in.

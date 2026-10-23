@@ -3,7 +3,8 @@
 Valhallowed (VHD): what it is, the rules it is built under, and the decisions
 still open. Terms mean exactly what [glossary.md](glossary.md) says; the name
 and its rules live in [brand.md](brand.md). The [diagrams](diagrams/README.md)
-draw this document; where they disagree, this document wins.
+draw this document; where they disagree, this document wins. It describes VHD
+as designed; the [board](https://github.com/orgs/valhallowed/projects/1) shows what is built.
 
 ## Target
 
@@ -123,8 +124,8 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   (B1). A world's directory is also keyed by its port, so when `vhd apply`
   moves a world to a new port only the new container reads that change. If
   Compose fails partway, `vhd apply` brings the install back on the compose
-  file it ran before, whose directories it leaves untouched until a run
-  succeeds.
+  file Compose last ran successfully, which it replaces only once a run
+  succeeds; a moving world's old directory stays as it was until then.
 - **Running as.** The control plane runs as the user who owns the install
   folder, which `vhd apply` reads from the folder, so the secrets file can stay
   readable by its owner alone. Every other child runs as VHD's own
@@ -160,6 +161,9 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   schedules, and world import and export belong to the control plane. Until
   the control plane sets an update policy, the supervisor updates the server
   at every start, and world truth holds a world the update stops from loading.
+  Each world downloads and updates a server of its own, so a crash, an update
+  or a full disk stays inside it; worlds on one host pay that disk space and
+  download once each.
 - **Restart gating is shared.** The control plane holds a change while status
   shows players, and the runtime makes the final check when it would restart
   the game, since only it sees the count at that moment: it restarts only for
@@ -268,7 +272,8 @@ Follows from G4 and G12.
   newest dedicated-server build, because game patches arrive without notice.
   A failure blocks the next candidate.
 - **Candidates and releases attach** `compose.yaml`, with every image pinned by
-  digest, the manifest schema, the plugin artifact and `SHA256SUMS`. Release
+  digest, the manifest and secrets schemas, the plugin artifact and
+  `SHA256SUMS`. Release
   notes name the game build the release was accepted on.
 - **Three gates.** The merge gate: every check passes before a merge to
   `main`. The candidate gate: acceptance passes on the registry images,
@@ -298,7 +303,10 @@ What any design here must respect about the game.
   directory. Save numbers wrap; the game picks the newest by modification time.
 - The server loads the save its world setting names. When no save has that
   name, or the save fails to load, the server creates a new, empty world under
-  the name.
+  the name, and writes that world's small `_main.0.fwl2` into the save's
+  directory before any plugin loads; recovering a held world removes it.
+- A new world counts no objects when it first loads, and its real count about
+  30 seconds later. A world loaded from a save counts its objects at once.
 - A world's server uses its port and the next one, over UDP; the server's own
   start script asks for its port through port+2 to be forwarded. Worlds that
   share a host need ranges that do not overlap.

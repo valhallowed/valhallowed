@@ -26,8 +26,8 @@ built.
 
 Images live at `ghcr.io/valhallowed/<component>`. They are built once, on
 `main`, and a version tag promotes them without a rebuild; candidates and
-releases attach `compose.yaml`, pinned by digest, the manifest schema and
-`SHA256SUMS`. The channels and gates are in
+releases attach `compose.yaml`, pinned by digest, the manifest and secrets
+schemas, the plugin and `SHA256SUMS`. The channels and gates are in
 [Architecture § Releases](docs/architecture.md#releases).
 
 ## Installing
@@ -49,8 +49,8 @@ such as a new world or port, waits for the next `vhd apply`.
 
 ## Building locally
 
-Needs a Unix-like shell (Linux, macOS, or WSL on Windows), Docker with Buildx
-and Compose, `make`, `jq` and `curl`.
+Needs Linux, or WSL on Windows (the scripts use GNU coreutils and sed), and
+Docker with Buildx and Compose, `make`, `git`, `jq` and `curl`.
 
 ```bash
 make accept

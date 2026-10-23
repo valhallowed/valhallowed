@@ -85,6 +85,8 @@ jobs:
             echo "The plugin in this release was built against dedicated server build $GAME_BUILD."
             echo
             gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$GITHUB_REF_NAME" --jq .body
+            echo
+            echo "Valhallowed is not affiliated with or endorsed by Iron Gate. Valheim is a trademark of Iron Gate AB."
           } > dist/notes.md
           flags=(--verify-tag --title "Valhallowed $VERSION" --notes-file dist/notes.md)
           if [[ $PRERELEASE == true ]]; then

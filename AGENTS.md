@@ -1,8 +1,8 @@
 # Valhallowed: agent entry point
 
 For anyone changing this repo, agents and people alike. It says where things
-are, which rules hold everywhere, and how to verify a change. It does not
-restate the docs.
+are, which rules hold everywhere, and how to verify a change; the docs hold
+the reasons.
 
 ## Read first
 
@@ -54,11 +54,14 @@ restate the docs.
 | The manifest schema, a contract, their examples or `.github/dependabot.yml` | `scripts/check-schema.sh` |
 | A Python component | `scripts/check-python.sh <dir>` |
 | The plugin | `make plugin` |
-| Images or the install | `make accept` |
+| Images or the install | `scripts/check-images.sh`, then `make accept` |
+| A pinned download's version (an `ARG` in a Dockerfile) | `scripts/check-upstream.sh` |
 
 CI runs all of these on every pull request and every push to `main`, except
 `make accept`: on `main` it pushes the images, then accepts them from the
-registry rather than from a local build.
+registry rather than from a local build. `scripts/check-upstream.sh` runs in
+the nightly game check. CI runs actionlint, shellcheck and Python from the
+images pinned in `images/tools/Dockerfile`.
 
 ## Delivering
 
