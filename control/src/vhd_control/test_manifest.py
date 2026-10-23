@@ -40,8 +40,17 @@ def test_a_manifest_that_breaks_its_schema_is_refused(tmp_path: Path) -> None:
 
 
 def test_secrets_that_break_their_schema_are_refused(tmp_path: Path) -> None:
-    with pytest.raises(InvalidSettings, match=r"secrets\.toml at world/Meadowfold/password"):
+    with pytest.raises(InvalidSettings, match=r"secrets\.toml at world/Meadowfold/password: breaks minLength 5"):
         load(install(tmp_path, "valid/manifest-one-world.toml", "invalid/secrets-short-password.toml"), SCHEMAS)
+
+
+@pytest.mark.parametrize("value", ['"horn"', "12345"])
+def test_a_refused_secret_never_appears_in_the_refusal(tmp_path: Path, value: str) -> None:
+    root = install(tmp_path, "valid/manifest-one-world.toml")
+    (root / "secrets.toml").write_text(f"schema = 1\n\n[world.Meadowfold]\npassword = {value}\n")
+    with pytest.raises(InvalidSettings) as refused:
+        load(root, SCHEMAS)
+    assert value.strip('"') not in str(refused.value)
 
 
 def test_secrets_for_a_world_the_manifest_lacks_are_refused(tmp_path: Path) -> None:

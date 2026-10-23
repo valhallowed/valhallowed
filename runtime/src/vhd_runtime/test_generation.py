@@ -57,6 +57,14 @@ def test_secrets_for_another_generation_are_incomplete(tmp_path: Path) -> None:
         Reader(tmp_path, CONTRACTS).read()
 
 
+def test_refused_secrets_never_carry_the_password(tmp_path: Path) -> None:
+    write(tmp_path, "generation.json", MINIMAL)
+    write(tmp_path, "secrets.json", {"contract": 1, "generation": 4, "password": "horn"})
+    with pytest.raises(InvalidGeneration, match="password: breaks minLength 5") as refused:
+        Reader(tmp_path, CONTRACTS).read()
+    assert "horn" not in str(refused.value)
+
+
 def test_same_settings_ignores_only_the_number() -> None:
     first = Generation(4, "Meadowfold", 2456, 5, None, None)
     assert first.same_settings(Generation(5, "Meadowfold", 2456, 5, None, None))

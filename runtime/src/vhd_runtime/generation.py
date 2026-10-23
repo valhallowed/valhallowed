@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, ValidationError
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
 
@@ -85,7 +85,7 @@ class Reader:
         secrets_path = self._directory / SECRETS_FILE
         if not secrets_path.exists():
             raise IncompleteGeneration(f"generation {number} has no {SECRETS_FILE} yet")
-        secrets = cast(_SecretsDocument, _load(secrets_path, self._secrets))
+        secrets = cast(_SecretsDocument, _load(secrets_path, self._secrets, secret=True))
         if secrets["generation"] != number:
             raise IncompleteGeneration(f"{SECRETS_FILE} belongs to generation {secrets['generation']}, not {number}")
         return Generation(
@@ -117,14 +117,26 @@ def _registry(contracts: Path) -> Registry[_Schema]:
     return registry
 
 
-def _load(path: Path, validator: Draft202012Validator) -> object:
-    """The document at path, once it meets its contract. Callers cast to its shape."""
+def _load(path: Path, validator: Draft202012Validator, *, secret: bool = False) -> object:
+    """The document at path, once it meets its contract. Callers cast to its shape. For a
+    secret document the error names where and which rule, never the value it logs."""
     try:
         document: object = json.loads(path.read_text())
     except (OSError, ValueError) as error:
         raise InvalidGeneration(f"{path.name}: {error}") from error
     errors = sorted(validator.iter_errors(document), key=lambda e: list(e.absolute_path))
     if errors:
-        where = "/".join(str(p) for p in errors[0].absolute_path) or "(root)"
-        raise InvalidGeneration(f"{path.name} at {where}: {errors[0].message}")
+        first = errors[0]
+        where = "/".join(str(p) for p in first.absolute_path) or "(root)"
+        raise InvalidGeneration(f"{path.name} at {where}: {_rule(first) if secret else first.message}")
     return document
+
+
+def _rule(error: ValidationError) -> str:
+    """What a value breaks, without the value; the control plane's schemas.rule, which ships in
+    another image. The messages kept name keys, never values."""
+    # jsonschema's stubs type the keyword as a validator; at run time it is the keyword's name.
+    keyword = str(error.validator)
+    if keyword in ("additionalProperties", "required"):
+        return error.message
+    return f"breaks {keyword} {json.dumps(error.validator_value)}"

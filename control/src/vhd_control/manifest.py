@@ -40,7 +40,7 @@ def load(install: Path, schemas: Schemas) -> Settings:
     """The install's settings. The secrets file is optional; the manifest is not."""
     manifest = _read(install / MANIFEST_FILE, MANIFEST_SCHEMA, schemas)
     secrets_path = install / SECRETS_FILE
-    secrets = _read(secrets_path, SECRETS_SCHEMA, schemas) if secrets_path.exists() else {}
+    secrets = _read(secrets_path, SECRETS_SCHEMA, schemas, secret=True) if secrets_path.exists() else {}
     schema = schemas.document(MANIFEST_SCHEMA)
     default_port = cast(int, schema["$defs"]["world"]["properties"]["port"]["default"])
     default_web_map_port = cast(int, schema["properties"]["web_map"]["properties"]["port"]["default"])
@@ -62,12 +62,12 @@ def load(install: Path, schemas: Schemas) -> Settings:
     return Settings(worlds=worlds, web_map_port=cast(int, web_map.get("port", default_web_map_port)))
 
 
-def _read(path: Path, schema: str, schemas: Schemas) -> dict[str, Any]:
+def _read(path: Path, schema: str, schemas: Schemas, *, secret: bool = False) -> dict[str, Any]:
     try:
         document = tomllib.loads(path.read_text())
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
         raise InvalidSettings(f"{path.name}: {error}") from error
-    problem = schemas.problem(schema, document)
+    problem = schemas.problem(schema, document, secret=secret)
     if problem is not None:
         raise InvalidSettings(f"{path.name} {problem}")
     return document
