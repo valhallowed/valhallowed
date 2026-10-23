@@ -72,18 +72,26 @@ jobs:
             echo "release: dist/compose.yaml differs from the one acceptance passed" >&2
             exit 1
           fi
+      - id: assets
+        name: Gather the assets, the plugin out of the accepted image
+        run: echo "game_build=$(scripts/release-assets.sh dist/compose.yaml dist)" >> "$GITHUB_OUTPUT"
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           PRERELEASE: ${{ needs.promote.outputs.prerelease }}
+          GAME_BUILD: ${{ steps.assets.outputs.game_build }}
         run: |
-          cp schema/manifest.schema.json schema/secrets.schema.json dist/
-          (cd dist && sha256sum compose.yaml manifest.schema.json secrets.schema.json > SHA256SUMS)
-          flags=(--verify-tag --title "Valhallowed $VERSION" --generate-notes)
+          {
+            echo "The plugin in this release was built against dedicated server build $GAME_BUILD."
+            echo
+            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$GITHUB_REF_NAME" --jq .body
+          } > dist/notes.md
+          flags=(--verify-tag --title "Valhallowed $VERSION" --notes-file dist/notes.md)
           if [[ $PRERELEASE == true ]]; then
             flags+=(--prerelease)
           else
             flags+=(--latest)
           fi
           gh release create "$GITHUB_REF_NAME" "${flags[@]}" \
-            dist/compose.yaml dist/manifest.schema.json dist/secrets.schema.json dist/SHA256SUMS
+            dist/compose.yaml dist/manifest.schema.json dist/secrets.schema.json \
+            dist/Valhallowed.Plugin.dll dist/SHA256SUMS

@@ -70,6 +70,10 @@ COPY --from=check /out/Valhallowed.Plugin.dll /
 COPY --from=game /refs/game-build /
 
 FROM vhd-debian AS runtime
+# The dedicated server build the plugin was compiled against, which the game
+# stage checked Steam served. A release names it.
+ARG GAME_BUILD
+LABEL com.valhallowed.game-build=$GAME_BUILD
 # lib32gcc-s1 for SteamCMD, which is 32-bit; libatomic1 and the PulseAudio
 # libraries for the server's PlayFab library, which it loads at start; tini reaps
 # the processes SteamCMD leaves behind; Python and jsonschema for the supervisor.
