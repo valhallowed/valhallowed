@@ -344,6 +344,7 @@ def test_every_service_on_the_install_network_runs_without_capabilities(setup: S
     assert len(on_network) == 3
     for name in on_network:
         assert services[name]["cap_drop"] == ["ALL"], name
+        assert services[name]["logging"] == {"driver": "local"}, name
 
 
 def test_a_world_whose_directory_went_missing_gets_it_back(setup: Setup) -> None:

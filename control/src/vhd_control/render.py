@@ -12,6 +12,8 @@ from vhd_control.reconcile import WORLD_PORTS, Generation
 STOP_GRACE = "150s"
 # Neither the control plane nor a runtime needs a Linux capability or a way to gain one.
 LOCKED_DOWN = {"cap_drop": ["ALL"], "security_opt": ["no-new-privileges:true"]}
+# Docker's local driver rotates by default, so no container's log can fill the host's disk.
+LOGGING = {"logging": {"driver": "local"}}
 NOTE = "Rendered by vhd apply from manifest.toml and the release's compose.yaml. vhd apply rewrites it."
 
 
@@ -39,6 +41,7 @@ def render(generation: Generation, host: Host) -> dict[str, object]:
             "user": f"{host.owner[0]}:{host.owner[1]}",
             "restart": "unless-stopped",
             **LOCKED_DOWN,
+            **LOGGING,
             "networks": [layout.INSTALL_NETWORK],
             "volumes": [{**install, "read_only": True}, generations, control],
         },
@@ -54,6 +57,7 @@ def render(generation: Generation, host: Host) -> dict[str, object]:
             # The supervisor gives the game this long to save on a stop.
             "stop_grace_period": STOP_GRACE,
             **LOCKED_DOWN,
+            **LOGGING,
             "networks": [layout.INSTALL_NETWORK],
             "ports": [f"{first}-{last}:{first}-{last}/udp"],
             "volumes": [

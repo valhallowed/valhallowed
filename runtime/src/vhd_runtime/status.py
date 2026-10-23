@@ -1,5 +1,6 @@
 """World truth as the plugin reports it, and the runtime's status sent up to the control plane (B1)."""
 
+import http.client
 import json
 import logging
 import os
@@ -69,14 +70,18 @@ class Reporter:
         self._url = url
         self._post = post
         self._failing = False
+        self._logged: RuntimeStatus | None = None
 
     def send(self, status: RuntimeStatus) -> None:
-        _log.info("status %s", json.dumps(status, sort_keys=True))
+        # Logged when it changes: a world sends the same report every few seconds for weeks.
+        if status != self._logged:
+            _log.info("status %s", json.dumps(status, sort_keys=True))
+            self._logged = status
         if self._url is None:
             return
         try:
             self._post(self._url, json.dumps(status).encode(), REPORT_TIMEOUT_S)
-        except OSError as error:
+        except (OSError, http.client.HTTPException) as error:
             if not self._failing:
                 _log.warning("cannot report status to %s: %s", self._url, error)
             self._failing = True
