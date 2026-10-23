@@ -15,6 +15,7 @@ restate the docs.
 | Names, voices, what the colours mean | [docs/brand.md](docs/brand.md) |
 | Design tokens and fonts | [design/README.md](design/README.md) |
 | The diagram pages and their standard | [docs/diagrams/README.md](docs/diagrams/README.md) |
+| Where the work stands | The [board](https://github.com/orgs/valhallowed/projects/1) |
 
 ## Rules that hold everywhere
 
@@ -58,3 +59,24 @@ restate the docs.
 CI runs all of these on every pull request and every push to `main`, except
 `make accept`: on `main` it pushes the images, then accepts them from the
 registry rather than from a local build.
+
+## Delivering
+
+Work is planned on the [board](https://github.com/orgs/valhallowed/projects/1)
+and lands through pull requests.
+
+- **One branch, one pull request.** It opens as a draft when the branch does,
+  holds single-purpose commits, and closes its issues (`Closes #n`). Like pull
+  requests are combined into one, dependency updates included.
+- **A retro before it is marked ready.** Review its whole diff for defects,
+  simplification, performance and hygiene, and check every doc and comment it
+  touches against the code, the glossary and docs/architecture.md. Its Retro
+  section lists each finding and the commit that fixed it.
+- **Fix, don't defer.** Every finding is fixed in the pull request. The one
+  exception is a gap whose fix is a later slice's deliverable: it becomes a
+  task in that slice's issue.
+- **Progress lives on the board, nowhere else.** Issues exist for the current
+  milestone, plus the next one while it is planned; later work stays in
+  docs/architecture.md § Delivery order. Docs say what VHD is and why, never
+  where the work stands.
+- **Delete merged branches,** on GitHub and in every clone.
