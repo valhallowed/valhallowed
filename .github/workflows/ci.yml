@@ -17,8 +17,11 @@ concurrency:
 jobs:
   checks:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Public content
         run: scripts/check-public.sh
       - name: Workflows
@@ -40,6 +43,10 @@ jobs:
   build:
     needs: checks
     runs-on: ubuntu-24.04
+    # The game stage downloads the dedicated server; SteamCMD's tries are bounded too.
+    timeout-minutes: 90
+    # packages: write is used only on main, where the push step runs; a fork's
+    # pull request gets a read-only token whatever this says.
     permissions:
       contents: read
       packages: write
@@ -47,6 +54,8 @@ jobs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - id: tag
         run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
@@ -57,11 +66,8 @@ jobs:
           echo "build=$build" >> "$GITHUB_OUTPUT"
       - name: Plugin, against the newest dedicated server
         env:
-          VHD_BUILD: ${{ github.sha }}
           GAME_BUILD: ${{ steps.game.outputs.build }}
-        run: |
-          docker buildx bake plugin
-          scripts/check-plugin.sh dist/plugin
+        run: make plugin BUILD="$GITHUB_SHA"
       - name: Log in to GHCR
         if: github.ref == 'refs/heads/main'
         env:
@@ -73,19 +79,32 @@ jobs:
           GAME_BUILD: ${{ steps.game.outputs.build }}
           TAGS: ${{ steps.tag.outputs.tag }},edge
         run: |
-          args=()
           if [[ $GITHUB_REF == refs/heads/main ]]; then
             # Attestations travel with pushed images only.
-            args+=(--push --provenance=mode=max --sbom=true)
+            docker buildx bake --push --provenance=mode=max --sbom=true
+          else
+            docker buildx bake --load
           fi
-          docker buildx bake "${args[@]}"
+      # On a pull request, the merge gate installs the local build the way a server
+      # manager does; on main, accept below installs the pushed images.
+      - name: Accept the local build
+        if: github.ref != 'refs/heads/main'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          scripts/render-install.sh "$TAG" dist/compose.yaml
+          VHD_PULL=never scripts/accept.sh dist/compose.yaml "$GITHUB_SHA"
 
+  # promote.sh finds this job by its name; renaming it here means renaming it there.
   accept:
     needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install from the registry, anonymously, and accept
         env:
           TAG: ${{ needs.build.outputs.tag }}
