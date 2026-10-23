@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Fail when a file in the repo carries something that must not be public:
 # private addresses, internal host names, personal paths, email addresses,
-# private links, or words the glossary retires. CI runs it on every push and
-# pull request; run it before committing.
+# private links, or words the glossary retires. CI runs it on every pull request
+# and push to main; run it before committing.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 

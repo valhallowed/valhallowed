@@ -16,7 +16,7 @@ mkdir -p "$(dirname "$out")"
 sed "s/@VHD_VERSION@/$version/g" "$root/install/compose.yaml" > "$out"
 
 if [[ $pin == --pin ]]; then
-  mapfile -t refs < <(docker compose -f "$out" config --format json | jq -r '."x-vhd".images // {} | .[]')
+  mapfile -t refs < <("$root/scripts/install-images.sh" "$out")
   if [[ ${#refs[@]} -eq 0 ]]; then
     echo "render-install: $out lists no images in x-vhd" >&2
     exit 1
@@ -27,7 +27,7 @@ if [[ $pin == --pin ]]; then
       echo "render-install: no digest for ${ref%:*}:$source" >&2
       exit 1
     fi
-    # The anchor line is the only place the ref is spelled out.
+    # Each ref is spelled once, as the last word of its x-vhd line.
     sed -i "s| $ref\$| $ref@$digest|" "$out"
   done
 fi
