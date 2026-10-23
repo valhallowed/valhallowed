@@ -15,7 +15,10 @@ MINIMAL = {
 
 
 def write(directory: Path, name: str, document: object) -> None:
-    (directory / name).write_text(json.dumps(document))
+    """Replace the file whole, as the control plane does."""
+    temporary = directory / f".{name}.tmp"
+    temporary.write_text(json.dumps(document))
+    temporary.replace(directory / name)
 
 
 def test_no_generation_yet(tmp_path: Path) -> None:
@@ -55,6 +58,19 @@ def test_secrets_for_another_generation_are_incomplete(tmp_path: Path) -> None:
     write(tmp_path, "secrets.json", {"contract": 1, "generation": 3, "password": "hearth-and-horn"})
     with pytest.raises(IncompleteGeneration, match="generation 3, not 4"):
         Reader(tmp_path, CONTRACTS).read()
+
+
+def test_a_changed_file_is_read_again(tmp_path: Path) -> None:
+    reader = Reader(tmp_path, CONTRACTS)
+    write(tmp_path, "generation.json", MINIMAL)
+    write(tmp_path, "secrets.json", {"contract": 1, "generation": 4})
+    first = reader.read()
+    assert reader.read() is first
+    write(tmp_path, "generation.json", {**MINIMAL, "generation": 5})
+    write(tmp_path, "secrets.json", {"contract": 1, "generation": 5, "password": "hearth-and-horn"})
+    second = reader.read()
+    assert second is not None
+    assert (second.number, second.password) == (5, "hearth-and-horn")
 
 
 def test_refused_secrets_never_carry_the_password(tmp_path: Path) -> None:

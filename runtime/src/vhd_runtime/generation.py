@@ -71,8 +71,9 @@ class Reader:
 
     def __init__(self, directory: Path, contracts: Path) -> None:
         self._directory = directory
-        self._generation = _validator(contracts / "game-runtime.generation.schema.json")
-        self._secrets = _validator(contracts / "game-runtime.secrets.schema.json")
+        self._generation = validator(contracts / "game-runtime.generation.schema.json")
+        self._secrets = validator(contracts / "game-runtime.secrets.schema.json")
+        self._read: tuple[tuple[int, ...], Generation] | None = None
 
     def read(self) -> Generation | None:
         """The current generation with its secrets, or None while the control plane has written none.
@@ -80,6 +81,11 @@ class Reader:
         generation_path = self._directory / GENERATION_FILE
         if not generation_path.exists():
             return None
+        # The supervisor asks every second; the files change only when the control plane
+        # replaces them, which gives each a new inode.
+        stamp = _stamp(generation_path, self._directory / SECRETS_FILE)
+        if self._read is not None and self._read[0] == stamp:
+            return self._read[1]
         # Each world's directory holds two files. A directory here means the whole generations
         # volume is mounted, every world's secrets with it.
         if any(entry.is_dir() for entry in self._directory.iterdir()):
@@ -92,7 +98,7 @@ class Reader:
         secrets = cast(_SecretsDocument, _load(secrets_path, self._secrets, secret=True))
         if secrets["generation"] != number:
             raise IncompleteGeneration(f"{SECRETS_FILE} belongs to generation {secrets['generation']}, not {number}")
-        return Generation(
+        read = Generation(
             number=number,
             world=generation["world"]["name"],
             port=generation["world"]["port"],
@@ -101,9 +107,23 @@ class Reader:
             password=secrets.get("password"),
             disconnect_players=generation.get("disconnect_players", False),
         )
+        self._read = stamp, read
+        return read
 
 
-def _validator(schema_path: Path) -> Draft202012Validator:
+def _stamp(*paths: Path) -> tuple[int, ...]:
+    """Which version of each file is on disk, or a stamp that matches nothing when one is missing."""
+    stamp: list[int] = []
+    for path in paths:
+        try:
+            info = path.stat()
+        except FileNotFoundError:
+            return (-1,)
+        stamp += [info.st_ino, info.st_mtime_ns, info.st_size]
+    return tuple(stamp)
+
+
+def validator(schema_path: Path) -> Draft202012Validator:
     schema = json.loads(schema_path.read_text())
     # A contract refers to the manifest schema by relative path: the schema gets
     # its own file URI as base, and the registry holds every schema it may name,

@@ -7,11 +7,12 @@ from pathlib import Path
 import pytest
 
 from vhd_runtime import steam, supervisor
-from vhd_runtime.generation import Reader
+from vhd_runtime.generation import Reader, validator
 from vhd_runtime.supervisor import Clock, Paths, Supervisor
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "contracts"
 STATUS_URL = "http://control-plane:9457/status"
+STATUS = validator(CONTRACTS / "game-runtime.status.schema.json")
 
 
 class FakeProcess:
@@ -107,13 +108,19 @@ class World:
         }
         if disconnect:
             document["disconnect_players"] = True
-        (self.paths.generation / "generation.json").write_text(json.dumps(document))
+        self.replace("generation.json", document)
 
     def secrets(self, number: int, password: str | None = None) -> None:
         document: dict[str, object] = {"contract": 1, "generation": number}
         if password is not None:
             document["password"] = password
-        (self.paths.generation / "secrets.json").write_text(json.dumps(document))
+        self.replace("secrets.json", document)
+
+    def replace(self, name: str, document: object) -> None:
+        """Replace a file whole, as the control plane does."""
+        temporary = self.paths.generation / f".{name}.tmp"
+        temporary.write_text(json.dumps(document))
+        temporary.replace(self.paths.generation / name)
 
     def save(self) -> None:
         (self.paths.saves / "worlds_local" / "Meadowfold").mkdir(parents=True)
@@ -139,7 +146,10 @@ class World:
             return self.process
 
         def post(url: str, body: bytes, timeout: float) -> None:
-            self.reports.append(json.loads(body))
+            report = json.loads(body)
+            # The control plane drops a report that breaks the contract, so none may.
+            STATUS.validate(report)
+            self.reports.append(report)
 
         return Supervisor(
             paths=self.paths,
