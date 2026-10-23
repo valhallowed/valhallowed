@@ -134,7 +134,7 @@ def test_gives_up_after_the_last_attempt(tmp_path: Path) -> None:
     assert len(calls) == steam.INSTALL_ATTEMPTS
 
 
-def test_a_stop_ends_steamcmd(tmp_path: Path) -> None:
+def test_a_stop_ends_steamcmd() -> None:
     started = time.monotonic()
     with pytest.raises(steam.Stopped):
         steam.run([sys.executable, "-c", "import time; time.sleep(60)"], 120, lambda: True)

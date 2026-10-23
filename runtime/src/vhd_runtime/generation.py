@@ -124,6 +124,8 @@ def _stamp(*paths: Path) -> tuple[int, ...]:
 
 
 def validator(schema_path: Path) -> Draft202012Validator:
+    """A validator for one contract. The control plane's schemas.Schemas does the same; the two
+    ship in separate images, so each carries its own."""
     schema = json.loads(schema_path.read_text())
     # A contract refers to the manifest schema by relative path: the schema gets
     # its own file URI as base, and the registry holds every schema it may name,

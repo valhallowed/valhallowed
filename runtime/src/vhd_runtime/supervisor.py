@@ -262,12 +262,10 @@ class Supervisor:
         """Why the world must be held, or None. An empty load fails world truth when the
         world held objects when last seen, or, with nothing remembered, when a save existed.
         A world last seen empty, such as one stopped moments after its creation, may load empty."""
-        if objects > 0:
+        if objects > 0 or not self._expects_objects(world, save_existed):
             return None
         last = self._last_objects(world)
-        if last is None:
-            return HELD_OVER_SAVE if save_existed else None
-        return HELD_AFTER_OBJECTS.format(last=last) if last > 0 else None
+        return HELD_OVER_SAVE if last is None else HELD_AFTER_OBJECTS.format(last=last)
 
     def _last_objects(self, world: str) -> int | None:
         try:

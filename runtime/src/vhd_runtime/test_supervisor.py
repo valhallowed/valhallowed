@@ -164,6 +164,13 @@ class World:
     def run_steamcmd(self, command: list[str], timeout: float, stopping: steam.Stopping) -> None:
         self.steamcmd_runs.append(command)
 
+    def stop_at(self, when: float, sup: Supervisor) -> None:
+        """Send the supervisor SIGTERM's stop request at a time, as Docker does on a stop."""
+        self.time.at(when, lambda: sup.request_stop(signal.SIGTERM, None))
+
+    def held_reasons(self) -> list[object]:
+        return [r["reason"] for r in self.reports if r["state"] == "held"]
+
     def states(self) -> list[object]:
         """The reported states, a repeated report of the same state counted once."""
         states: list[object] = []
@@ -183,7 +190,7 @@ def test_a_loaded_world_runs_and_saves_on_stop(world: World) -> None:
     world.save()
     sup = world.supervisor()
     world.plugin_running(48113)
-    world.time.at(60, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(60, sup)
 
     assert sup.run() == 0
     assert world.states() == ["installing", "loading", "running"]
@@ -197,13 +204,12 @@ def test_an_empty_world_over_a_save_is_held_without_saving(world: World) -> None
     world.save()
     sup = world.supervisor()
     world.time.at(30, lambda: world.plugin_reports(0))
-    world.time.at(600, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(600, sup)
 
     assert sup.run() == 0
     assert world.process.killed
     assert world.process.signals == []
-    held = [r for r in world.reports if r["state"] == "held"]
-    assert held and held[0]["reason"] == supervisor.HELD_OVER_SAVE
+    assert world.held_reasons()[:1] == [supervisor.HELD_OVER_SAVE]
 
 
 def test_an_empty_load_of_a_world_that_held_objects_is_held(world: World) -> None:
@@ -212,12 +218,11 @@ def test_an_empty_load_of_a_world_that_held_objects_is_held(world: World) -> Non
     world.remember("Meadowfold", 120)
     sup = world.supervisor()
     world.time.at(30, lambda: world.plugin_reports(0))
-    world.time.at(600, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(600, sup)
 
     assert sup.run() == 0
     assert world.process.killed
-    held = [r for r in world.reports if r["state"] == "held"]
-    assert held and held[0]["reason"] == supervisor.HELD_AFTER_OBJECTS.format(last=120)
+    assert world.held_reasons()[:1] == [supervisor.HELD_AFTER_OBJECTS.format(last=120)]
 
 
 def test_a_world_last_seen_empty_may_load_empty(world: World) -> None:
@@ -226,7 +231,7 @@ def test_a_world_last_seen_empty_may_load_empty(world: World) -> None:
     world.remember("Meadowfold", 0)
     sup = world.supervisor()
     world.time.at(30, lambda: world.plugin_reports(0))
-    world.time.at(60, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(60, sup)
 
     assert sup.run() == 0
     assert not world.process.killed
@@ -239,7 +244,7 @@ def test_a_count_remembered_for_another_world_does_not_count(world: World) -> No
     world.remember("Ashwake", 0)
     sup = world.supervisor()
     world.time.at(30, lambda: world.plugin_reports(0))
-    world.time.at(600, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(600, sup)
 
     assert sup.run() == 0
     assert world.process.killed
@@ -250,7 +255,7 @@ def test_remembers_the_count_while_running(world: World) -> None:
     sup = world.supervisor()
     world.time.at(30, lambda: world.plugin_reports(29))
     world.time.at(40, lambda: world.plugin_reports(54))
-    world.time.at(60, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(60, sup)
 
     assert sup.run() == 0
     assert json.loads(world.paths.last_objects.read_text()) == {"world": "Meadowfold", "objects": 54}
@@ -260,7 +265,7 @@ def test_a_new_world_may_start_empty(world: World) -> None:
     world.generation()
     sup = world.supervisor()
     world.time.at(30, lambda: world.plugin_reports(0))
-    world.time.at(60, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(60, sup)
 
     assert sup.run() == 0
     assert "running" in world.states()
@@ -273,7 +278,7 @@ def test_a_report_from_an_earlier_run_is_ignored(world: World) -> None:
     world.plugin_reports(0)
     sup = world.supervisor()
     world.time.at(30, lambda: world.plugin_reports(48113))
-    world.time.at(60, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(60, sup)
 
     assert sup.run() == 0
     assert not world.process.killed
@@ -283,7 +288,7 @@ def test_a_report_from_an_earlier_run_is_ignored(world: World) -> None:
 def test_no_report_for_a_new_world_leaves_it_unverified_but_running(world: World) -> None:
     world.generation()
     sup = world.supervisor()
-    world.time.at(supervisor.LOAD_TIMEOUT_S + 10, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(supervisor.LOAD_TIMEOUT_S + 10, sup)
 
     assert sup.run() == 0
     assert "unverified" in world.states()
@@ -294,20 +299,19 @@ def test_no_report_over_a_save_is_held_without_saving(world: World) -> None:
     world.generation()
     world.save()
     sup = world.supervisor()
-    world.time.at(supervisor.LOAD_TIMEOUT_S + 60, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(supervisor.LOAD_TIMEOUT_S + 60, sup)
 
     assert sup.run() == 0
     assert world.process.killed
     assert world.process.signals == []
-    held = [r for r in world.reports if r["state"] == "held"]
-    assert held and held[0]["reason"] == supervisor.HELD_UNREPORTED
+    assert world.held_reasons()[:1] == [supervisor.HELD_UNREPORTED]
 
 
 def test_no_report_for_a_world_that_held_objects_is_held(world: World) -> None:
     world.generation()
     world.remember("Meadowfold", 120)
     sup = world.supervisor()
-    world.time.at(supervisor.LOAD_TIMEOUT_S + 60, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(supervisor.LOAD_TIMEOUT_S + 60, sup)
 
     assert sup.run() == 0
     assert world.process.killed
@@ -319,7 +323,7 @@ def test_no_report_for_a_world_last_seen_empty_leaves_it_unverified(world: World
     world.save()
     world.remember("Meadowfold", 0)
     sup = world.supervisor()
-    world.time.at(supervisor.LOAD_TIMEOUT_S + 10, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(supervisor.LOAD_TIMEOUT_S + 10, sup)
 
     assert sup.run() == 0
     assert "unverified" in world.states()
@@ -365,7 +369,7 @@ def test_a_plugin_that_stopped_writing_vouches_for_no_one(world: World) -> None:
     sup = world.supervisor()
     world.time.at(30, lambda: world.plugin_reports(10, players=0))
     world.time.at(60, lambda: world.generation(2, password="hearth-and-horn"))
-    world.time.at(600, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(600, sup)
 
     assert sup.run() == 0
     assert world.time.now >= 600
@@ -385,7 +389,7 @@ def test_a_generation_handed_during_the_install_is_the_one_launched(world: World
         )
 
     sup = world.supervisor(run_steamcmd)
-    world.time.at(60, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(60, sup)
 
     assert sup.run() == 0
     assert len(world.launches) == 1
@@ -396,7 +400,7 @@ def test_a_stop_while_loading_kills_rather_than_saves(world: World) -> None:
     world.generation()
     world.save()
     sup = world.supervisor()
-    world.time.at(10, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(10, sup)
 
     assert sup.run() == 0
     assert world.process.killed
@@ -408,7 +412,7 @@ def test_a_newer_generation_with_the_same_settings_runs_on(world: World) -> None
     sup = world.supervisor()
     world.time.at(30, lambda: world.plugin_reports(10))
     world.time.at(60, lambda: world.generation(2))
-    world.time.at(120, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(120, sup)
 
     assert sup.run() == 0
     assert len(world.launches) == 1
@@ -419,7 +423,7 @@ def test_a_newer_generation_with_the_same_settings_runs_on(world: World) -> None
 def test_a_generation_without_its_secrets_launches_nothing(world: World) -> None:
     world.generation(secrets=False)
     sup = world.supervisor()
-    world.time.at(60, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(60, sup)
 
     assert sup.run() == 0
     assert world.launches == []
@@ -429,7 +433,7 @@ def test_secrets_for_another_generation_launch_nothing(world: World) -> None:
     world.secrets(1, password="hearth-and-horn")
     world.generation(2, secrets=False)
     sup = world.supervisor()
-    world.time.at(60, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(60, sup)
 
     assert sup.run() == 0
     assert world.launches == []
@@ -440,7 +444,7 @@ def test_a_newer_generation_waits_for_its_secrets(world: World) -> None:
     sup = world.supervisor()
     world.time.at(30, lambda: world.plugin_reports(10))
     world.time.at(60, lambda: world.generation(2, password="hearth-and-horn", secrets=False))
-    world.time.at(120, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(120, sup)
 
     assert sup.run() == 0
     assert len(world.launches) == 1
@@ -461,7 +465,7 @@ def test_the_servers_own_exit_ends_the_runtime(world: World) -> None:
 def test_waits_for_a_generation(world: World) -> None:
     sup = world.supervisor()
     world.time.at(20, world.generation)
-    world.time.at(60, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(60, sup)
 
     assert sup.run() == 0
     assert len(world.launches) == 1
@@ -470,7 +474,7 @@ def test_waits_for_a_generation(world: World) -> None:
 def test_an_invalid_generation_is_refused_and_nothing_launches(world: World) -> None:
     (world.paths.generation / "generation.json").write_text(json.dumps({"contract": 2}))
     sup = world.supervisor()
-    world.time.at(60, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(60, sup)
 
     assert sup.run() == 0
     assert world.launches == []
@@ -481,7 +485,7 @@ def test_a_server_that_will_not_stop_is_killed(world: World) -> None:
     world.process.wait_times_out = True
     sup = world.supervisor()
     world.plugin_running(10)
-    world.time.at(60, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(60, sup)
 
     assert sup.run() == 0
     assert world.process.signals == [signal.SIGINT]
@@ -513,7 +517,7 @@ def test_status_keeps_reporting_a_long_install(world: World) -> None:
             stopping()
 
     sup = world.supervisor(run_steamcmd)
-    world.time.at(60, lambda: sup.request_stop(signal.SIGTERM, None))
+    world.stop_at(60, sup)
 
     assert sup.run() == 0
     installing = [r for r in world.reports if r["state"] == "installing"]
