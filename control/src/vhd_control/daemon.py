@@ -39,11 +39,27 @@ class Daemon:
     _unreadable: str | None = field(default=None, init=False)
     _refused: str | None = field(default=None, init=False)
     _pending: dict[str, tuple[int, str]] = field(default_factory=dict, init=False)
+    _worlds: frozenset[str] = field(default=frozenset(), init=False)
+    _failing: str | None = field(default=None, init=False)
 
     def run(self, stop: threading.Event) -> None:
         while not stop.is_set():
-            self.step()
+            try:
+                self.step()
+            # A failed pass, such as a full disk, must not end the control plane: its listeners
+            # keep answering, and the next pass tries again.
+            except Exception as error:
+                if str(error) != self._failing:
+                    _log.exception("a reconcile pass failed; retrying every %s s", POLL_S)
+                self._failing = str(error)
+            else:
+                self._failing = None
             stop.wait(POLL_S)
+
+    def worlds(self) -> frozenset[str]:
+        """The worlds that may report status: the newest generation's, and any the manifest
+        dropped whose containers vhd apply has not removed yet."""
+        return self._worlds
 
     def step(self) -> None:
         """One pass: reload changed settings, reconcile, and hand on what may go now."""
@@ -70,6 +86,10 @@ class Daemon:
             state.generation = generation
             if changed:
                 self.store.save(state)
+            self._worlds = frozenset(
+                [child.world for child in generation.children.values()]
+                + [handed.child.world for handed in state.handed.values()]
+            )
         for cid, (number, waits) in pending.items():
             if self._pending.get(cid) != (number, waits):
                 _log.info("generation %d for %s waits for %s", number, generation.children[cid].world, waits)
@@ -95,6 +115,16 @@ class Daemon:
                 entry["report"] = view.report
                 entry["report_age_s"] = round(view.age_s, 1)
             worlds[child.world] = entry
+        for cid, handed in state.handed.items():
+            if cid in state.generation.children:
+                continue
+            view = self.book.view(handed.child.world)
+            worlds[handed.child.world] = {
+                "state": view.state,
+                "published": handed.number,
+                "removed": True,
+                "pending": {"generation": state.generation.number, "waits_for": WAITS_FOR_APPLY},
+            }
         document: dict[str, object] = {"contract": 1, "generation": state.generation.number, "worlds": worlds}
         if self.refused is not None:
             document["refused"] = self.refused

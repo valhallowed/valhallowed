@@ -34,7 +34,7 @@
       "required": ["state"],
       "properties": {
         "published": {
-          "description": "The generation this world's runtime has been handed. Absent until vhd apply has created the world.",
+          "description": "The generation this world's runtime has been handed. Absent until the world is first handed one, which vhd apply does.",
           "type": "integer",
           "minimum": 1
         },
@@ -49,10 +49,14 @@
               "minimum": 1
             },
             "waits_for": {
-              "description": "vhd apply: the change is to the world's container. an empty world: it restarts the game while players may be online, and vhd apply --disconnect-players applies it now.",
+              "description": "Why the newer generation waits. vhd apply: it changes the world's container, which only vhd apply recreates. an empty world: it restarts the game, so it waits while players may be online; vhd apply --disconnect-players applies it now.",
               "enum": ["vhd apply", "an empty world"]
             }
           }
+        },
+        "removed": {
+          "description": "The manifest no longer has this world. Its container runs until vhd apply removes it.",
+          "const": true
         },
         "state": {
           "description": "The runtime's state as it last reported it, or unknown when it has not reported recently.",

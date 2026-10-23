@@ -1,5 +1,7 @@
 import json
+import socket
 import threading
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
@@ -7,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from vhd_control import client
-from vhd_control.listeners import MAX_BODY, Senders, control_server, status_server
+from vhd_control import client, listeners
+from vhd_control.listeners import MAX_BODY, control_server, status_server
 from vhd_control.naming import child_id
 from vhd_control.status import StatusBook
 from vhd_control.test_daemon import SCHEMAS, Install
@@ -28,25 +30,41 @@ class Resolver:
         return self.addresses[name]
 
 
+WORLDS = frozenset({"Meadowfold", "Ashwake"})
+
+
+class Listener:
+    def __init__(self, resolver: Resolver) -> None:
+        self.book = StatusBook()
+        self.resolver = resolver
+        self.server = status_server(self.book, SCHEMAS, lambda: WORLDS, ("127.0.0.1", 0), resolve=resolver)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/status"
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
 @pytest.fixture
 def status_url() -> Iterator[tuple[str, StatusBook]]:
-    book = StatusBook()
-    server = status_server(book, SCHEMAS, Senders(Resolver()), ("127.0.0.1", 0))
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    listener = Listener(Resolver())
     try:
-        yield f"http://127.0.0.1:{server.server_address[1]}/status", book
+        yield listener.url, listener.book
     finally:
-        server.shutdown()
-        server.server_close()
+        listener.close()
 
 
 def post(url: str, body: bytes) -> int:
+    """The status code, or 0 when the server closed the connection unanswered."""
     request = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")  # noqa: S310 - a local test server
     try:
         with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310
             return int(response.status)
     except urllib.error.HTTPError as error:
         return error.code
+    except (urllib.error.URLError, ConnectionError):
+        return 0
 
 
 def test_a_valid_report_is_recorded(status_url: tuple[str, StatusBook]) -> None:
@@ -71,13 +89,46 @@ def test_a_runtime_cannot_report_for_another_world(status_url: tuple[str, Status
     assert book.view("Ashwake").report is None
 
 
-def test_senders_follow_a_container_docker_recreated() -> None:
+def test_a_report_follows_a_container_docker_recreated() -> None:
     resolver = Resolver()
-    senders = Senders(resolver)
-    assert senders.allows("Meadowfold", "127.0.0.1")
-    resolver.addresses[child_id("Meadowfold")] = {"192.0.2.20"}
-    assert senders.allows("Meadowfold", "192.0.2.20")
-    assert not senders.allows("Meadowfold", "127.0.0.1")
+    listener = Listener(resolver)
+    try:
+        assert post(listener.url, json.dumps(REPORT).encode()) == 204
+        resolver.addresses[child_id("Meadowfold")] = {"192.0.2.20"}
+        assert post(listener.url, json.dumps(REPORT).encode()) == 403
+    finally:
+        listener.close()
+
+
+def test_a_world_the_install_does_not_run_never_reaches_dns() -> None:
+    resolver = Resolver()
+    asked: list[str] = []
+    listener = Listener(lambda name: asked.append(name) or resolver(name))  # type: ignore[arg-type,func-returns-value]
+    try:
+        assert post(listener.url, json.dumps({**REPORT, "world": "Elsewhere"}).encode()) == 403
+    finally:
+        listener.close()
+    assert asked == []
+
+
+def test_reports_beyond_the_handler_limit_are_turned_away(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(listeners, "MAX_HANDLERS", 1)
+    listener = Listener(Resolver())
+    port = listener.server.server_address[1]
+    try:
+        with socket.create_connection(("127.0.0.1", port)) as idle:
+            idle.sendall(b"POST /status HTTP/1.1\r\n")
+            assert post(listener.url, json.dumps(REPORT).encode()) == 0
+        # The idle connection's thread frees its slot once it sees the close.
+        codes = []
+        for _ in range(50):
+            codes.append(post(listener.url, json.dumps(REPORT).encode()))
+            if codes[-1] == 204:
+                break
+            time.sleep(0.05)
+        assert codes[-1] == 204
+    finally:
+        listener.close()
 
 
 def test_an_oversized_report_is_refused_unread(status_url: tuple[str, StatusBook]) -> None:

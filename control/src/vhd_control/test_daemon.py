@@ -1,5 +1,6 @@
 import json
 import os
+import threading
 from pathlib import Path
 
 import pytest
@@ -143,3 +144,35 @@ def test_overlapping_ports_are_refused_and_change_nothing(install: Install) -> N
     assert "share ports" in install.daemon.refused
     assert install.store.load().generation is not None
     assert install.store.load().generation.number == 1  # type: ignore[union-attr]
+
+
+def test_a_world_the_manifest_dropped_shows_as_removed_until_vhd_apply(install: Install) -> None:
+    install.write("schema = 1\n\n[world.Meadowfold]\nport = 2456\n")
+    install.daemon.step()
+
+    status = install.daemon.status()
+    assert status is not None
+    assert SCHEMAS.problem("contracts/control.status.schema.json", status) is None
+    assert status["worlds"]["Ashwake"] == {  # type: ignore[index]
+        "state": "unknown",
+        "published": 1,
+        "removed": True,
+        "pending": {"generation": 2, "waits_for": WAITS_FOR_APPLY},
+    }
+    assert install.daemon.worlds() == {"Meadowfold", "Ashwake"}
+
+
+def test_a_failed_pass_does_not_end_the_control_plane(install: Install, monkeypatch: pytest.MonkeyPatch) -> None:
+    stop = threading.Event()
+    passes: list[int] = []
+
+    def step() -> None:
+        passes.append(1)
+        if len(passes) == 1:
+            raise OSError("No space left on device")
+        stop.set()
+
+    monkeypatch.setattr(install.daemon, "step", step)
+    monkeypatch.setattr("vhd_control.daemon.POLL_S", 0.01)
+    install.daemon.run(stop)
+    assert len(passes) == 2

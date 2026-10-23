@@ -12,7 +12,7 @@ from vhd_control import client, layout, manifest
 from vhd_control.apply import Apply, Refused
 from vhd_control.daemon import Daemon
 from vhd_control.docker import Cli, DockerError
-from vhd_control.listeners import Senders, control_server, status_server
+from vhd_control.listeners import control_server, status_server
 from vhd_control.manifest import InvalidSettings
 from vhd_control.reconcile import reconcile
 from vhd_control.schemas import Schemas
@@ -77,7 +77,9 @@ def show_status(status: dict[str, Any], out: TextIO) -> int:
             line += f", {report['players']} player(s)"
         if "reason" in report:
             line += f" ({report['reason']})"
-        if "pending" in world:
+        if world.get("removed"):
+            line += "; removed from the manifest, waits for vhd apply"
+        elif "pending" in world:
             line += f"; generation {world['pending']['generation']} waits for {world['pending']['waits_for']}"
         print(line, file=out)
     return 0
@@ -90,7 +92,7 @@ def daemon(schemas: Schemas) -> int:
     signal.signal(signal.SIGTERM, lambda signum, frame: stop.set())
     signal.signal(signal.SIGINT, lambda signum, frame: stop.set())
     servers = [
-        status_server(book, schemas, Senders(), ("", layout.STATUS_PORT)),
+        status_server(book, schemas, control.worlds, ("", layout.STATUS_PORT)),
         control_server(control, layout.CONTROL_SOCKET),
     ]
     for server in servers:
