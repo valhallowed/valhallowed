@@ -1,6 +1,7 @@
 import io
 import json
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,9 @@ class FakeDocker:
         # How many coming Compose runs fail, and whether the next is interrupted.
         self.fail_up = 0
         self.interrupt = False
+        self.images = dict(IMAGES)
+        # Called with each streamed command, before it runs.
+        self.hook: Callable[[list[str]], None] = lambda args: None
 
     def output(self, args: list[str]) -> str:
         if args[0] == "version":
@@ -42,7 +46,7 @@ class FakeDocker:
             mounts = [{"Destination": d, "Source": s} for d, s in self.mounts.items()]
             return json.dumps([{"Mounts": mounts, "Config": {"Labels": {"com.docker.compose.project": "valhallowed"}}}])
         if args[:2] == ["compose", "-f"]:
-            return json.dumps({"name": "valhallowed", "x-vhd": {"images": IMAGES}})
+            return json.dumps({"name": "valhallowed", "x-vhd": {"images": self.images}})
         if args[0] == "ps":
             return "".join(f"{service}\n" for service in self.running)
         if args[:2] == ["image", "inspect"]:
@@ -52,6 +56,7 @@ class FakeDocker:
         raise AssertionError(f"unexpected docker {args}")
 
     def stream(self, args: list[str]) -> None:
+        self.hook(args)
         self.streamed.append(args)
         if args[0] == "pull":
             self.missing.discard(args[1])
@@ -195,7 +200,7 @@ def test_a_restart_of_a_world_with_players_is_refused(setup: Setup) -> None:
     setup.players("Meadowfold", 2)
     (setup.install / "secrets.toml").write_text(PASSWORD)
 
-    with pytest.raises(Refused, match="restarts Meadowfold, which may have players online"):
+    with pytest.raises(Refused, match=r"restarts Meadowfold \(2 player\(s\)\), where players may be online"):
         setup.apply()
     assert setup.handed(MEADOWFOLD) == (1, None)
     assert len(setup.docker.streamed) == 1
@@ -209,7 +214,8 @@ def test_disconnect_players_restarts_it_and_says_so(setup: Setup) -> None:
 
     setup.apply(disconnect_players=True)
     assert setup.handed(MEADOWFOLD) == (2, "hearth-and-horn")
-    assert "restarting Meadowfold with players possibly online" in setup.out.getvalue()
+    assert "restarting Meadowfold (2 player(s)), as asked" in setup.out.getvalue()
+    assert Store(setup.volume).load().override == {"generation": 2, "worlds": {"Meadowfold": 2}}
 
 
 def test_a_restart_of_an_empty_world_needs_no_confirmation(setup: Setup) -> None:
@@ -218,6 +224,24 @@ def test_a_restart_of_an_empty_world_needs_no_confirmation(setup: Setup) -> None
     setup.players("Meadowfold", 0)
     (setup.install / "secrets.toml").write_text(PASSWORD)
     setup.apply()
+    assert setup.handed(MEADOWFOLD) == (2, "hearth-and-horn")
+
+
+def test_a_world_whose_container_and_documents_change_is_stopped_before_its_documents(setup: Setup) -> None:
+    setup.apply()
+    setup.docker.running = [MEADOWFOLD, ASHWAKE]
+    setup.players("Meadowfold", 0)
+    setup.players("Ashwake", 0)
+    setup.docker.images["game-runtime"] = "ghcr.io/valhallowed/game-runtime:0.2.0@sha256:" + "d" * 64
+    (setup.install / "secrets.toml").write_text(PASSWORD)
+    at_stop: list[tuple[int, str | None]] = []
+    setup.docker.hook = lambda args: at_stop.append(setup.handed(MEADOWFOLD)) if "stop" in args else None
+
+    setup.apply()
+
+    stops = [args for args in setup.docker.streamed if "stop" in args]
+    assert stops == [["compose", "-p", "valhallowed", "-f", str(setup.install / layout.RENDERED), "stop", MEADOWFOLD]]
+    assert at_stop == [(1, None)]
     assert setup.handed(MEADOWFOLD) == (2, "hearth-and-horn")
 
 

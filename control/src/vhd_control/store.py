@@ -41,6 +41,9 @@ class State:
     handed: dict[str, Handed] = field(default_factory=dict)
     # The port each world's container was created with, by child id. None until vhd apply has run.
     applied: dict[str, int] | None = None
+    # The last time vhd apply restarted worlds that may have had players online, as the server
+    # manager confirmed: the generation, and each such world's player count, or None if unknown.
+    override: dict[str, object] | None = None
 
 
 class Store:
@@ -73,6 +76,7 @@ class Store:
             generation=None if generation is None else _generation(generation),
             handed={cid: Handed(h["number"], _child(h["child"])) for cid, h in document["handed"].items()},
             applied=document.get("applied"),
+            override=document.get("override"),
         )
 
     def save(self, state: State) -> None:
@@ -80,6 +84,7 @@ class Store:
             "generation": None if state.generation is None else _generation_document(state.generation),
             "handed": {cid: {"number": h.number, "child": _child_document(h.child)} for cid, h in state.handed.items()},
             "applied": state.applied,
+            "override": state.override,
         }
         # It holds every world's secrets, so only its owner reads it.
         self._write(self.root / STATE_FILE, document, 0o600)

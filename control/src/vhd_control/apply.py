@@ -16,7 +16,7 @@ The one place that holds Docker's socket, for its run alone. In order, it:
 import json
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn, TextIO
@@ -42,6 +42,15 @@ _log = logging.getLogger(__name__)
 
 class Refused(Exception):
     """vhd apply will not go ahead. The message says why, and what to do instead."""
+
+
+@dataclass(frozen=True)
+class _Restart:
+    world: str
+    # Compose recreates or removes its container.
+    container: bool
+    # Its runtime gets documents it cannot adopt without restarting the game.
+    documents: bool
 
 
 @dataclass
@@ -71,8 +80,8 @@ class Apply:
             generation = reconcile(settings, state.generation)
             rendered = render(generation, host)
             restarts = _restarts(generation, state, rendered, previous, running)
-            if restarts:
-                self._confirm(restarts, disconnect_players)
+            override = self._confirm(restarts, disconnect_players) if restarts else None
+            self._stop_recreated(host, state, generation, restarts)
             moving = self._stage(state, generation)
             self._own(host.owner)
         candidate = self.install / layout.CANDIDATE
@@ -90,7 +99,7 @@ class Apply:
             self._roll_back(host, previous is not None, error, generation.number)
         candidate.replace(applied_path)
         with self.store.locked():
-            self._commit(self.store.load(), generation, moving)
+            self._commit(self.store.load(), generation, moving, override)
 
     def _pull(self, host: Host) -> None:
         """Every image the install runs, pulled when the host lacks it."""
@@ -162,34 +171,52 @@ class Apply:
         )
         return {line for line in listed.splitlines() if line}
 
-    def _confirm(self, restarts: dict[str, str], disconnect_players: bool) -> None:
-        """Refuse to restart a world that may have players online, unless told to."""
+    def _confirm(self, restarts: Mapping[str, _Restart], disconnect_players: bool) -> dict[str, object] | None:
+        """Refuse to restart a world that may have players online, unless told to. Told to, it
+        returns the override to record with the change: each such world's player count, or None
+        where status could not say."""
         try:
             worlds = self.status()["worlds"]
         except client.Unreachable:
             worlds = {}
-        occupied = sorted(
-            name
-            for name in restarts.values()
-            if not WorldView(
-                worlds.get(name, {}).get("state", "unknown"),
-                worlds.get(name, {}).get("report"),
-                worlds.get(name, {}).get("report_age_s"),
-            ).empty
-        )
+        occupied: dict[str, int | None] = {}
+        for restart in restarts.values():
+            entry = worlds.get(restart.world, {})
+            view = WorldView(entry.get("state", "unknown"), entry.get("report"), entry.get("report_age_s"))
+            if not view.empty:
+                players = (view.report or {}).get("players") if view.state != "unknown" else None
+                occupied[restart.world] = players
         if not occupied:
-            return
+            return None
+        named = ", ".join(
+            f"{world} ({'players unknown' if players is None else f'{players} player(s)'})"
+            for world, players in sorted(occupied.items())
+        )
         if not disconnect_players:
             raise Refused(
-                f"this apply restarts {', '.join(occupied)}, which may have players online. Wait until "
-                "status shows no players, or run: docker compose run --rm vhd apply --disconnect-players"
+                f"this apply restarts {named}, where players may be online. Wait until status shows "
+                "no players, or run: docker compose run --rm vhd apply --disconnect-players"
             )
-        _log.warning("restarting %s with players possibly online, as the server manager asked", ", ".join(occupied))
-        print(
-            f"vhd apply: restarting {', '.join(occupied)} with players possibly online, as asked",
-            file=self.out,
-            flush=True,
+        _log.warning("restarting %s, as the server manager asked", named)
+        print(f"vhd apply: restarting {named}, as asked", file=self.out, flush=True)
+        return dict(occupied)
+
+    def _stop_recreated(
+        self, host: Host, state: State, generation: Generation, restarts: Mapping[str, _Restart]
+    ) -> None:
+        """Stop each world whose container and documents both change in place. Handed the
+        documents while it ran, its runtime would restart the game on them, and Compose would
+        then restart it again. A world moving to a new port reads them only in its new container."""
+        applied = state.applied or {}
+        stopping = sorted(
+            cid
+            for cid, restart in restarts.items()
+            if restart.container and restart.documents and applied.get(cid) == generation.children[cid].port
         )
+        if stopping:
+            self.docker.stream(
+                ["compose", "-p", host.project, "-f", str(self.install / layout.RENDERED), "stop", *stopping]
+            )
 
     def _stage(self, state: State, generation: Generation) -> set[str]:
         """Hand each runtime what it may read now, and return the worlds moving to a new port.
@@ -216,8 +243,13 @@ class Apply:
         self.store.save(state)
         return moving
 
-    def _commit(self, state: State, generation: Generation, moving: set[str]) -> None:
-        """Once Compose has the containers in line, record what each world now runs."""
+    def _commit(
+        self, state: State, generation: Generation, moving: set[str], override: dict[str, object] | None
+    ) -> None:
+        """Once Compose has the containers in line, record what each world now runs, and any
+        override of the players check with the generation it applied."""
+        if override is not None:
+            state.override = {"generation": generation.number, "worlds": override}
         for cid in moving:
             state.handed[cid] = Handed(generation.number, generation.children[cid])
         for cid in set(state.handed) - set(generation.children):
@@ -247,11 +279,11 @@ def _restarts(
     rendered: dict[str, Any],
     previous: dict[str, Any] | None,
     running: set[str],
-) -> dict[str, str]:
+) -> dict[str, _Restart]:
     """The running worlds this apply restarts, by child id: those whose container changes, whose
     documents change in a way the runtime cannot adopt, or which the manifest no longer has."""
     before = (previous or {}).get("services", {})
-    restarts: dict[str, str] = {}
+    restarts: dict[str, _Restart] = {}
     for cid, child in generation.children.items():
         if cid not in running:
             continue
@@ -259,8 +291,8 @@ def _restarts(
         container = before.get(cid) != rendered["services"][cid]
         documents = handed is None or handed.child != child
         if container or documents:
-            restarts[cid] = child.world
+            restarts[cid] = _Restart(child.world, container, documents)
     for cid, handed in state.handed.items():
         if cid in running and cid not in generation.children:
-            restarts[cid] = handed.child.world
+            restarts[cid] = _Restart(handed.child.world, container=True, documents=False)
     return restarts
