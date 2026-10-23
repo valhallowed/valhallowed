@@ -23,6 +23,10 @@ SERVER_APP_ID = 896660
 INSTALL_ATTEMPTS = 3
 DOWNLOAD_TIMEOUT_S = 60
 INSTALL_TIMEOUT_S = 3600
+# An update of an installed server is a delta. Bounded more tightly, a Steam that hangs delays
+# the start by this much; an update it cuts short leaves the install to be repaired, which
+# gets the install's bound.
+UPDATE_TIMEOUT_S = 900
 TERMINATE_TIMEOUT_S = 10
 POLL_S = 1.0
 # Steam's mark for a complete install; any other value is treated as not installed.
@@ -125,7 +129,7 @@ def ensure_server(steamcmd: Path, install_dir: Path, run: Run = run, stopping: S
             attempt,
             INSTALL_ATTEMPTS,
         )
-        run(_app_update(steamcmd, install_dir, validate), INSTALL_TIMEOUT_S, stopping)
+        run(_app_update(steamcmd, install_dir, validate), INSTALL_TIMEOUT_S if validate else UPDATE_TIMEOUT_S, stopping)
         build = server_build(install_dir)
         if build is not None:
             _log.info("dedicated server build %s%s", build, "" if build == installed else f", was {installed}")

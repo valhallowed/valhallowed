@@ -85,12 +85,17 @@ def test_an_update_that_breaks_the_install_is_validated(tmp_path: Path) -> None:
     install_manifest(tmp_path)
     calls: list[list[str]] = []
 
+    timeouts: list[float] = []
+
     def run(command: list[str], timeout: float, stopping: steam.Stopping) -> None:
         calls.append(command)
+        timeouts.append(timeout)
         install_manifest(tmp_path, flags="1026" if len(calls) == 1 else "4")
 
     assert steam.ensure_server(Path("/s/steamcmd.sh"), tmp_path, run) == "25909431"
     assert ["validate" in c for c in calls] == [False, True]
+    # An update of an installed server is bounded more tightly than the repair it may need.
+    assert timeouts == [steam.UPDATE_TIMEOUT_S, steam.INSTALL_TIMEOUT_S]
 
 
 def test_a_server_not_fully_installed_is_installed_again(tmp_path: Path) -> None:
