@@ -1,36 +1,46 @@
 # Pinned dependencies move only through pull requests that pass the same checks
-# as any other change.
+# as any other change. Every ecosystem lands in one weekly pull request.
 version: 2
+multi-ecosystem-groups:
+  weekly:
+    schedule:
+      interval: weekly
 updates:
   - package-ecosystem: github-actions
     directory: /
-    schedule:
-      interval: weekly
-  # A new Debian base digest moves the package snapshot with it; its pins are
-  # updated in the same pull request.
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
   - package-ecosystem: docker
     directories:
       - /images/control-plane
-      - /images/debian
       - /images/game-runtime
       - /images/skeleton
+      - /images/tools
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
+  # Not with the others: a new Debian base digest moves the package snapshot with
+  # it, and its apt pins must move by hand in its own pull request, which
+  # Dependabot cannot do; the rest of the week's updates need not wait for it.
+  - package-ecosystem: docker
+    directory: /images/debian
     schedule:
       interval: weekly
   - package-ecosystem: pip
     directories:
       - /control
       - /runtime
-    schedule:
-      interval: weekly
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
     # These mirror the Debian packages the images install, and move with the
-    # base image instead.
+    # base image instead. types-jsonschema's stubs must match that jsonschema.
     ignore:
       - dependency-name: jsonschema
       - dependency-name: jsonschema-specifications
       - dependency-name: referencing
       - dependency-name: rpds-py
       - dependency-name: attrs
+      - dependency-name: types-jsonschema
   - package-ecosystem: pip
     directory: /scripts
-    schedule:
-      interval: weekly
+    patterns: ["*"]
+    multi-ecosystem-group: weekly

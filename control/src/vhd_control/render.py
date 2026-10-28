@@ -7,11 +7,20 @@ vhd and hands the paths to the host's Docker.
 from dataclasses import dataclass
 
 from vhd_control import layout
-from vhd_control.reconcile import WORLD_PORTS, Generation
+from vhd_control.reconcile import Generation, last_port
 
+# The release's images, by their keys in compose.yaml's x-vhd block.
+CONTROL_PLANE_IMAGE = "control-plane"
+GAME_RUNTIME_IMAGE = "game-runtime"
+SKELETON_IMAGE = "skeleton"
+IMAGES = (CONTROL_PLANE_IMAGE, GAME_RUNTIME_IMAGE, SKELETON_IMAGE)
+# Where the skeleton listens inside its container; the host port is the web map's.
+SKELETON_PORT = 8456
 STOP_GRACE = "150s"
 # Neither the control plane nor a runtime needs a Linux capability or a way to gain one.
 LOCKED_DOWN = {"cap_drop": ["ALL"], "security_opt": ["no-new-privileges:true"]}
+# Docker's local driver rotates by default, so no container's log can fill the host's disk.
+LOGGING = {"logging": {"driver": "local"}}
 NOTE = "Rendered by vhd apply from manifest.toml and the release's compose.yaml. vhd apply rewrites it."
 
 
@@ -21,13 +30,12 @@ class Host:
 
     project: str
     install: str
-    docker_socket: str
     owner: tuple[int, int]
     images: dict[str, str]
 
 
-def render(generation: Generation, host: Host) -> dict[str, object]:
-    control_plane = host.images["control-plane"]
+def render(generation: Generation, host: Host, web_map_port: int) -> dict[str, object]:
+    control_plane = host.images[CONTROL_PLANE_IMAGE]
     install = {"type": "bind", "source": host.install, "target": str(layout.INSTALL)}
     generations = {"type": "volume", "source": layout.GENERATIONS_VOLUME, "target": str(layout.GENERATIONS)}
     control = {"type": "volume", "source": layout.CONTROL_VOLUME, "target": str(layout.CONTROL_DIR)}
@@ -39,21 +47,33 @@ def render(generation: Generation, host: Host) -> dict[str, object]:
             "user": f"{host.owner[0]}:{host.owner[1]}",
             "restart": "unless-stopped",
             **LOCKED_DOWN,
+            **LOGGING,
             "networks": [layout.INSTALL_NETWORK],
             "volumes": [{**install, "read_only": True}, generations, control],
         },
-        # Kept, so --remove-orphans never removes the one-shot running this file.
-        "vhd": vhd_service(control_plane, host.install, host.docker_socket),
+        # Named, so --remove-orphans never removes the one-shot running this file. Only
+        # compose.yaml's definition, with Docker's socket, ever runs.
+        "vhd": {"image": control_plane, "profiles": ["tools"]},
+        # The release pipeline's stand-in for the web map, on the web map's port.
+        "skeleton": {
+            "image": host.images[SKELETON_IMAGE],
+            "restart": "unless-stopped",
+            **LOCKED_DOWN,
+            **LOGGING,
+            "ports": [f"{web_map_port}:{SKELETON_PORT}"],
+        },
     }
     volumes: dict[str, object] = {layout.GENERATIONS_VOLUME: {}, layout.CONTROL_VOLUME: {}}
     for cid, child in sorted(generation.children.items()):
-        first, last = child.port, child.port + WORLD_PORTS - 1
+        first, last = child.port, last_port(child.port)
         services[cid] = {
-            "image": host.images["game-runtime"],
+            "image": host.images[GAME_RUNTIME_IMAGE],
             "restart": "unless-stopped",
-            # The supervisor gives the game this long to save on a stop.
+            # Longer than the supervisor's own stop timeout, so it can kill the game and exit
+            # before Docker kills the container.
             "stop_grace_period": STOP_GRACE,
             **LOCKED_DOWN,
+            **LOGGING,
             "networks": [layout.INSTALL_NETWORK],
             "ports": [f"{first}-{last}:{first}-{last}/udp"],
             "volumes": [
@@ -73,20 +93,4 @@ def render(generation: Generation, host: Host) -> dict[str, object]:
         "services": services,
         "networks": {layout.INSTALL_NETWORK: {}},
         "volumes": volumes,
-    }
-
-
-def vhd_service(image: str, install: str, docker_socket: str) -> dict[str, object]:
-    """The one-shot that runs vhd: the only container with Docker's socket, and only for its run."""
-    return {
-        "image": image,
-        "profiles": ["tools"],
-        "user": "0",
-        "network_mode": "none",
-        "volumes": [
-            {"type": "bind", "source": docker_socket, "target": layout.DOCKER_SOCKET},
-            {"type": "bind", "source": install, "target": str(layout.INSTALL)},
-            {"type": "volume", "source": layout.GENERATIONS_VOLUME, "target": str(layout.GENERATIONS)},
-            {"type": "volume", "source": layout.CONTROL_VOLUME, "target": str(layout.CONTROL_DIR)},
-        ],
     }

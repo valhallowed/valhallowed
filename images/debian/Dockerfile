@@ -1,5 +1,5 @@
 # Debian as it was when the pinned base image was built, for every VHD image built
-# on Debian (docker-bake.hcl hands it to them as the "debian" context). The image
+# on Debian (docker-bake.hcl hands it to them as the "vhd-debian" context). The image
 # names that snapshot in its own sources, so every package an image pins stays
 # installable, and nothing an image installs moves until this base image does. A
 # snapshot's Release files expire; their signatures are still checked.

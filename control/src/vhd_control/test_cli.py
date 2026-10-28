@@ -14,7 +14,7 @@ def test_validate_shows_what_the_manifest_reconciles_to(tmp_path: Path, monkeypa
     monkeypatch.setattr(layout, "INSTALL", tmp_path)
     out = io.StringIO()
 
-    assert cli.validate(SCHEMAS, out) == 0
+    cli.validate(SCHEMAS, out)
     assert out.getvalue().splitlines() == [
         "world Ashwake: udp 2459-2461, password unset",
         "world Meadowfold: udp 2456-2458, password set",
@@ -38,7 +38,7 @@ def test_status_names_each_world_its_players_and_what_waits() -> None:
         },
     }
     out = io.StringIO()
-    assert cli.show_status(status, out) == 0
+    cli.show_status(status, out)
     assert out.getvalue().splitlines() == [
         "generation 5",
         "Ashwake: unknown",
@@ -51,3 +51,20 @@ def test_a_refused_manifest_is_reported_with_a_failing_exit(tmp_path: Path, monk
     monkeypatch.setattr(layout, "INSTALL", tmp_path)
     monkeypatch.setattr(layout, "SCHEMAS", REPO)
     assert cli.main(["validate"], io.StringIO()) == 1
+
+
+def test_status_shows_an_override_and_only_printable_reasons() -> None:
+    held = {"contract": 1, "generation": 3, "world": "Ashwake", "state": "held", "reason": "loaded empty\x1b[2J"}
+    status = {
+        "contract": 1,
+        "generation": 3,
+        "override": {"generation": 3, "worlds": {"Meadowfold": 2, "Ashwake": None}},
+        "worlds": {"Ashwake": {"state": "held", "report": held, "report_age_s": 1}},
+    }
+    out = io.StringIO()
+    cli.show_status(status, out)
+    assert out.getvalue().splitlines() == [
+        "generation 3",
+        "generation 3 restarted Ashwake (players unknown), Meadowfold (2 player(s)), as the server manager confirmed",
+        "Ashwake: held (loaded empty?[2J)",
+    ]

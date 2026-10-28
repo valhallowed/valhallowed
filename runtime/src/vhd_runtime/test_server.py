@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 from vhd_runtime import server
@@ -48,7 +49,7 @@ def test_command_keeps_the_world_unlisted() -> None:
 
 
 def test_command_passes_a_password_only_when_set() -> None:
-    generation = Generation(**{**GENERATION.__dict__, "password": "hearth-and-horn"})
+    generation = replace(GENERATION, password="hearth-and-horn")
     args = server.command(Path("/s"), Path("/v"), generation)
     assert args[args.index("-password") + 1] == "hearth-and-horn"
 

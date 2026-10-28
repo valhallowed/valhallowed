@@ -6,7 +6,7 @@
 
 # SteamCMD, for the plugin build and for scripts/game-build.sh, which asks Steam
 # for the dedicated server's current build.
-FROM debian AS steamcmd
+FROM vhd-debian AS steamcmd
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates=20250419+deb13u1 \
@@ -18,7 +18,8 @@ RUN mkdir /steamcmd && tar -xzf /tmp/steamcmd.tar.gz -C /steamcmd && rm /tmp/ste
 
 # The dedicated server build GAME_BUILD names, downloaded to take its assemblies
 # and discarded in the same step: the layer holds only the assemblies and the
-# build id, and is reused exactly while the build is unchanged. SteamCMD's exit
+# build id, and a local builder reuses it exactly while the build is unchanged
+# (CI keeps no cache of it: see ci.yml). SteamCMD's exit
 # code is unreliable on a first run, so success is the app manifest it writes,
 # marked fully installed, and a failed attempt is retried.
 FROM steamcmd AS game
@@ -30,7 +31,7 @@ RUN if [[ ! $GAME_BUILD =~ ^[0-9]+$ ]]; then \
  && manifest=/server/steamapps/appmanifest_896660.acf \
  && installed() { grep -qE '^[[:space:]]*"StateFlags"[[:space:]]+"4"' "$manifest" 2>/dev/null; } \
  && for attempt in 1 2 3; do \
-      /steamcmd/steamcmd.sh +force_install_dir /server +login anonymous +app_update 896660 validate +quit || true; \
+      timeout -k 30 1200 /steamcmd/steamcmd.sh +force_install_dir /server +login anonymous +app_update 896660 validate +quit || true; \
       installed && break; \
       echo "steamcmd attempt $attempt failed" >&2; \
     done \
@@ -44,8 +45,10 @@ RUN if [[ ! $GAME_BUILD =~ ^[0-9]+$ ]]; then \
  && rm -rf /server /steamcmd /root/Steam /root/.steam /root/.local/share/Steam
 
 FROM busybox:1.38.0@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e AS bepinex
+# scripts/check-upstream.sh reports a newer pack.
+ARG BEPINEX_PACK_VERSION=5.4.2351
 ADD --checksum=sha256:bce631497976a93977ceb08e166712e6c31d15244956f89f17df092a9b62e29f \
-    https://thunderstore.io/package/download/denikson/BepInExPack_Valheim/5.4.2351/ /tmp/bepinex.zip
+    https://thunderstore.io/package/download/denikson/BepInExPack_Valheim/${BEPINEX_PACK_VERSION}/ /tmp/bepinex.zip
 RUN mkdir /bepinex && unzip -q /tmp/bepinex.zip -d /bepinex
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:747cbade5bfd918a175ac32f8f1d931edec2c7d0d5397a3de72eaef1ac1f66d2 AS build
@@ -69,7 +72,11 @@ FROM scratch AS plugin
 COPY --from=check /out/Valhallowed.Plugin.dll /
 COPY --from=game /refs/game-build /
 
-FROM debian AS runtime
+FROM vhd-debian AS runtime
+# The dedicated server build the plugin was compiled against, which the game
+# stage checked Steam served. A release names it.
+ARG GAME_BUILD
+LABEL com.valhallowed.game-build=$GAME_BUILD
 # lib32gcc-s1 for SteamCMD, which is 32-bit; libatomic1 and the PulseAudio
 # libraries for the server's PlayFab library, which it loads at start; tini reaps
 # the processes SteamCMD leaves behind; Python and jsonschema for the supervisor.
@@ -112,5 +119,4 @@ COPY runtime/src/vhd_runtime/ /opt/vhd/runtime/vhd_runtime/
 ENV PYTHONPATH=/opt/vhd/runtime PYTHONDONTWRITEBYTECODE=1
 USER vhd
 WORKDIR /data
-EXPOSE 2456-2458/udp
 ENTRYPOINT ["tini", "--", "python3", "-m", "vhd_runtime"]

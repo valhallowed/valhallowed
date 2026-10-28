@@ -5,7 +5,7 @@ BUILD := $(shell git rev-parse --verify -q HEAD || echo dev)
 endif
 # The dedicated server build to compile against: Steam's current one unless given.
 ifndef GAME_BUILD
-GAME_BUILD := $(shell scripts/game-build.sh)
+GAME_BUILD := $(or $(shell scripts/game-build.sh),$(error scripts/game-build.sh found no game build))
 endif
 
 .PHONY: build plugin accept

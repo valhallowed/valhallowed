@@ -1,5 +1,5 @@
 from vhd_control.reconcile import STATUS_INTERVAL_S
-from vhd_control.status import STALE_AFTER, StatusBook
+from vhd_control.status import EMPTY_WITHIN, STALE_AFTER, StatusBook
 
 
 class Clock:
@@ -30,6 +30,16 @@ def test_a_recent_report_is_the_state() -> None:
     clock.now = 4.0
     view = book.view("Meadowfold")
     assert (view.state, view.age_s, view.empty) == ("running", 4.0, True)
+
+
+def test_an_empty_report_older_than_an_interval_or_so_no_longer_vouches() -> None:
+    clock = Clock()
+    book = StatusBook(clock)
+    book.record(report("running", players=0))
+    clock.now = EMPTY_WITHIN * STATUS_INTERVAL_S + 0.1
+    view = book.view("Meadowfold")
+    assert view.state == "running"
+    assert not view.empty
 
 
 def test_a_silent_runtime_becomes_unknown_and_counts_as_occupied() -> None:

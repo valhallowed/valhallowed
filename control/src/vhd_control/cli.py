@@ -12,9 +12,9 @@ from vhd_control import client, layout, manifest
 from vhd_control.apply import Apply, Refused
 from vhd_control.daemon import Daemon
 from vhd_control.docker import Cli, DockerError
-from vhd_control.listeners import Senders, control_server, status_server
+from vhd_control.listeners import control_server, status_server
 from vhd_control.manifest import InvalidSettings
-from vhd_control.reconcile import reconcile
+from vhd_control.reconcile import last_port, reconcile
 from vhd_control.schemas import Schemas
 from vhd_control.status import StatusBook
 from vhd_control.store import Store
@@ -35,13 +35,13 @@ def main(argv: list[str] | None = None, out: TextIO = sys.stdout) -> int:
     schemas = Schemas(layout.SCHEMAS)
     try:
         if args.command == "validate":
-            return validate(schemas, out)
-        if args.command == "status":
-            return show_status(client.status(layout.CONTROL_SOCKET), out)
-        if args.command == "apply":
+            validate(schemas, out)
+        elif args.command == "status":
+            show_status(client.status(layout.CONTROL_SOCKET), out)
+        elif args.command == "apply":
             Apply(
                 install=layout.INSTALL,
-                store=Store(layout.GENERATIONS),
+                generations=layout.GENERATIONS,
                 control_dir=layout.CONTROL_DIR,
                 schemas=schemas,
                 docker=Cli(),
@@ -49,48 +49,61 @@ def main(argv: list[str] | None = None, out: TextIO = sys.stdout) -> int:
                 hostname=os.environ.get("HOSTNAME", ""),
                 out=out,
             ).run(args.disconnect_players)
-            return 0
-        return daemon(schemas)
+        else:
+            daemon(schemas)
     except (InvalidSettings, Refused, DockerError, client.Unreachable) as error:
         print(f"vhd {args.command}: {error}", file=sys.stderr)
         return 1
+    return 0
 
 
-def validate(schemas: Schemas, out: TextIO) -> int:
+def validate(schemas: Schemas, out: TextIO) -> None:
     settings = manifest.load(layout.INSTALL, schemas)
     reconcile(settings, None)
     for world in settings.worlds:
         password = "set" if world.password is not None else "unset"
-        print(f"world {world.name}: udp {world.port}-{world.port + 2}, password {password}", file=out)
+        print(f"world {world.name}: udp {world.port}-{last_port(world.port)}, password {password}", file=out)
     print(f"web map: tcp {settings.web_map_port}", file=out)
-    return 0
 
 
-def show_status(status: dict[str, Any], out: TextIO) -> int:
+def show_status(status: dict[str, Any], out: TextIO) -> None:
     print(f"generation {status['generation']}", file=out)
     if "refused" in status:
         print(f"refused: {status['refused']}; generation {status['generation']} keeps running", file=out)
+    if "override" in status:
+        override = status["override"]
+        named = ", ".join(
+            f"{world} ({'players unknown' if players is None else f'{players} player(s)'})"
+            for world, players in sorted(override["worlds"].items())
+        )
+        print(f"generation {override['generation']} restarted {named}, as the server manager confirmed", file=out)
     for name, world in sorted(status["worlds"].items()):
         line = f"{name}: {world['state']}"
         report = world.get("report", {})
         if "players" in report:
             line += f", {report['players']} player(s)"
         if "reason" in report:
-            line += f" ({report['reason']})"
-        if "pending" in world:
+            # A runtime faces players; its words reach a terminal only as printable text.
+            line += f" ({_printable(report['reason'])})"
+        if world.get("removed"):
+            line += "; removed from the manifest, waits for vhd apply"
+        elif "pending" in world:
             line += f"; generation {world['pending']['generation']} waits for {world['pending']['waits_for']}"
         print(line, file=out)
-    return 0
 
 
-def daemon(schemas: Schemas) -> int:
+def _printable(text: str) -> str:
+    return "".join(c if c.isprintable() else "?" for c in text)
+
+
+def daemon(schemas: Schemas) -> None:
     book = StatusBook()
     control = Daemon(install=layout.INSTALL, store=Store(layout.GENERATIONS), schemas=schemas, book=book)
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda signum, frame: stop.set())
     signal.signal(signal.SIGINT, lambda signum, frame: stop.set())
     servers = [
-        status_server(book, schemas, Senders(), ("", layout.STATUS_PORT)),
+        status_server(book, schemas, control.worlds, ("", layout.STATUS_PORT)),
         control_server(control, layout.CONTROL_SOCKET),
     ]
     for server in servers:
@@ -99,4 +112,3 @@ def daemon(schemas: Schemas) -> int:
     for server in servers:
         server.shutdown()
         server.server_close()
-    return 0

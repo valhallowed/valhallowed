@@ -23,3 +23,6 @@ UnityDoorstop 4.4.0 (doorstop_libs/libdoorstop_x64.so)
 
 SteamCMD and the Valheim dedicated server are not in this image. The runtime
 downloads them from Valve at first start.
+
+Debian packages, each under the license in /usr/share/doc/<package>/copyright.
+  Source: snapshot.debian.org, at the snapshot images/debian's base image names.

@@ -19,9 +19,16 @@ from vhd_runtime.generation import Generation, IncompleteGeneration, InvalidGene
 # Well below the game's autosave interval (30 minutes unless changed), so a
 # world held at this point has not saved.
 LOAD_TIMEOUT_S = 900
+# vhd apply's stop grace for a world (render.STOP_GRACE) must exceed this.
 STOP_TIMEOUT_S = 120
 POLL_S = 1.0
 GENERATION_POLL_S = 2.0
+# A world status file the plugin has not rewritten for this many of its intervals says nothing:
+# a plugin that throws after a game patch leaves its last count behind.
+WORLD_STALE_AFTER = 3
+# The final players check trusts a count only this many intervals old, as the control plane
+# does: an older one may predate a player who joined since.
+EMPTY_WITHIN = 1.5
 HELD_AFTER_OBJECTS = "the world loaded with no objects where it last held {last}; stopped before its first autosave"
 HELD_OVER_SAVE = "the world loaded with no objects although a save existed; stopped before its first autosave"
 HELD_UNREPORTED = (
@@ -63,7 +70,7 @@ class Paths:
 
     @property
     def last_objects(self) -> Path:
-        """The object count the runtime last saw its world hold, kept beside the world's save."""
+        """The object count the runtime last saw its world hold, kept in the data volume."""
         return self.data / "vhd" / "last-objects.json"
 
 
@@ -100,6 +107,11 @@ class Supervisor:
     _stop: bool = field(default=False, init=False)
     _problem: str | None = field(default=None, init=False)
     _remembered: int | None = field(default=None, init=False)
+    # The newest write of the world status file, and when the supervisor first saw it.
+    _world_stamp: tuple[int, int] | None = field(default=None, init=False)
+    _world_seen: float = field(default=0.0, init=False)
+    # The generation a restart waits on, so the wait is logged once.
+    _waiting: int | None = field(default=None, init=False)
 
     def request_stop(self, signum: int, frame: FrameType | None) -> None:
         """Signal handler: stop at the next poll, saving the world first."""
@@ -113,6 +125,9 @@ class Supervisor:
         build = self._install(generation, reporter)
         if build is None:
             return 0
+        # The control plane may have handed a newer generation while the server installed.
+        generation = self._read_generation() or generation
+        reporter = status.Reporter(generation.status_url, self.post)
         server.install_mods(
             self.paths.pack, self.paths.plugin, self.paths.server, self.paths.world_status, generation.status_interval_s
         )
@@ -171,26 +186,56 @@ class Supervisor:
         while True:
             if self._stop:
                 return self._shut_down(process, state, "stop requested")
-            generation, restart = self._follow(generation)
-            if restart:
-                return self._shut_down(process, state, "a newer generation changes this world's settings")
             if state is not State.HELD:
                 code = process.poll()
                 if code is not None:
                     _log.error("the dedicated server exited with code %d", code)
                     return code
-                world = status.read_world(self.paths.world_status, generation.world) or world
+                world = self._read_world(generation.world) or world
+            fresh = world if self._seen_within(WORLD_STALE_AFTER, generation) else None
+            current = world if self._seen_within(EMPTY_WITHIN, generation) else None
+            generation, newer = self._follow(generation)
+            if newer is not None and self._may_restart(state, newer, current):
+                return self._shut_down(process, state, "a newer generation changes this world's settings")
             previous = state
-            if state in (State.LOADING, State.UNVERIFIED) and world is not None:
-                state, reason = self._on_report(process, generation.world, world.objects, save_existed)
-            if state is State.RUNNING and world is not None:
-                self._remember_objects(generation.world, world.objects)
+            if state in (State.LOADING, State.UNVERIFIED) and fresh is not None:
+                state, reason = self._on_report(process, generation.world, fresh.objects, save_existed)
+            if state is State.RUNNING and fresh is not None:
+                self._remember_objects(generation.world, fresh.objects)
             elif state is State.LOADING and self.clock.now() - launched > LOAD_TIMEOUT_S:
                 state, reason = self._on_load_timeout(process, generation.world, save_existed)
             if state is not previous or self.clock.now() >= next_report:
-                reporter.send(_status(generation, state, reason, build, world))
+                reporter.send(_status(generation, state, reason, build, fresh))
                 next_report = self.clock.now() + generation.status_interval_s
             self.clock.sleep(POLL_S)
+
+    def _read_world(self, world: str) -> status.WorldStatus | None:
+        """The plugin's report, noting when a new write of it first appeared."""
+        read = status.read_world(self.paths.world_status, world)
+        if read is not None and read.stamp != self._world_stamp:
+            self._world_stamp, self._world_seen = read.stamp, self.clock.now()
+        return read
+
+    def _seen_within(self, intervals: float, generation: Generation) -> bool:
+        """Whether the plugin rewrote its report within this many of its intervals."""
+        if self._world_stamp is None:
+            return False
+        return self.clock.now() - self._world_seen <= intervals * generation.status_interval_s
+
+    def _may_restart(self, state: State, newer: Generation, world: status.WorldStatus | None) -> bool:
+        """The final players check, made here because only the runtime sees the count at the
+        moment it would stop the game. A held world has no game. A generation the server manager
+        confirmed goes now, cutting a load short by a kill, which saves nothing. Anything else
+        waits for a current report of no players, so no load ends without that confirmation."""
+        if state is State.HELD or newer.disconnect_players:
+            return True
+        if state in (State.RUNNING, State.UNVERIFIED) and world is not None and world.players == 0:
+            return True
+        if self._waiting != newer.number:
+            players = "unknown" if world is None or state is State.LOADING else str(world.players)
+            _log.info("generation %d waits for an empty world; players %s", newer.number, players)
+            self._waiting = newer.number
+        return False
 
     def _on_report(self, process: Process, world: str, objects: int, save_existed: bool) -> tuple[State, str | None]:
         """World truth on the plugin's first report: run the world, or hold it if it loaded empty."""
@@ -203,33 +248,30 @@ class Supervisor:
     def _on_load_timeout(self, process: Process, world: str, save_existed: bool) -> tuple[State, str | None]:
         """World truth when the plugin never reported: what loaded is unknown, so a world with
         something to lose is held, and one with nothing to lose runs unverified."""
-        if self._expects_objects(world, save_existed):
+        if self._expects_objects(self._last_objects(world), save_existed):
             return self._hold(process, HELD_UNREPORTED)
         _log.warning("unverified: %s", UNVERIFIED_REASON)
         return State.UNVERIFIED, UNVERIFIED_REASON
 
     def _hold(self, process: Process, reason: str) -> tuple[State, str]:
         # Killed, not interrupted: SIGINT would save whatever loaded over the real world.
-        process.kill()
-        process.wait()
+        _kill(process)
         _log.error("held: %s", reason)
         return State.HELD, reason
 
-    def _expects_objects(self, world: str, save_existed: bool) -> bool:
+    @staticmethod
+    def _expects_objects(last: int | None, save_existed: bool) -> bool:
         """Whether the world held objects when last seen, or, with nothing remembered, had a save."""
-        last = self._last_objects(world)
         return save_existed if last is None else last > 0
 
     def _loaded_empty(self, world: str, objects: int, save_existed: bool) -> str | None:
         """Why the world must be held, or None. An empty load fails world truth when the
         world held objects when last seen, or, with nothing remembered, when a save existed.
         A world last seen empty, such as one stopped moments after its creation, may load empty."""
-        if objects > 0:
-            return None
         last = self._last_objects(world)
-        if last is None:
-            return HELD_OVER_SAVE if save_existed else None
-        return HELD_AFTER_OBJECTS.format(last=last) if last > 0 else None
+        if objects > 0 or not self._expects_objects(last, save_existed):
+            return None
+        return HELD_OVER_SAVE if last is None else HELD_AFTER_OBJECTS.format(last=last)
 
     def _last_objects(self, world: str) -> int | None:
         try:
@@ -253,14 +295,17 @@ class Supervisor:
         _log.info("stopping: %s", why)
         if state is State.HELD or process.poll() is not None:
             return 0
+        if state is State.LOADING:
+            # World truth has not passed, and SIGINT would save whatever has loaded.
+            _kill(process)
+            return 0
         # The dedicated server saves the world on SIGINT.
         process.send_signal(signal.SIGINT)
         try:
             process.wait(timeout=STOP_TIMEOUT_S)
         except subprocess.TimeoutExpired:
             _log.error("the dedicated server did not stop within %d s; killing it", STOP_TIMEOUT_S)
-            process.kill()
-            process.wait()
+            _kill(process)
         return 0
 
     def _wait_for_generation(self) -> Generation | None:
@@ -271,16 +316,16 @@ class Supervisor:
             self.clock.sleep(GENERATION_POLL_S)
         return None
 
-    def _follow(self, current: Generation) -> tuple[Generation, bool]:
-        """The generation to run on, and whether reaching it takes a restart. A newer generation
-        that differs only in its number is adopted in place."""
+    def _follow(self, current: Generation) -> tuple[Generation, Generation | None]:
+        """The generation to run on, and a newer one that takes a restart, if any. A newer
+        generation with the same settings is adopted in place."""
         newer = self._read_generation()
         if newer is None or newer.number <= current.number:
-            return current, False
+            return current, None
         if newer.same_settings(current):
             _log.info("generation %d has the settings of %d; running on", newer.number, current.number)
-            return newer, False
-        return current, True
+            return newer, None
+        return current, newer
 
     def _read_generation(self) -> Generation | None:
         """The complete, valid generation on disk, or None. An invalid one is refused, and an
@@ -297,6 +342,11 @@ class Supervisor:
             return None
         self._problem = None
         return generation
+
+
+def _kill(process: Process) -> None:
+    process.kill()
+    process.wait()
 
 
 def _status(

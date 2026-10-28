@@ -1,3 +1,4 @@
+import http.client
 import json
 import logging
 from pathlib import Path
@@ -12,7 +13,10 @@ REPORT: status.RuntimeStatus = {"contract": 1, "generation": 1, "world": "Meadow
 def test_reads_the_plugins_report_for_this_world(tmp_path: Path) -> None:
     path = tmp_path / "world.json"
     path.write_text(json.dumps({"world": "Meadowfold", "objects": 48113, "players": 2}))
-    assert status.read_world(path, "Meadowfold") == status.WorldStatus(objects=48113, players=2)
+    info = path.stat()
+    assert status.read_world(path, "Meadowfold") == status.WorldStatus(
+        objects=48113, players=2, stamp=(info.st_ino, info.st_mtime_ns)
+    )
     assert status.read_world(path, "Ashwake") is None
 
 
@@ -50,3 +54,19 @@ def test_reporter_posts_the_report() -> None:
     bodies: list[bytes] = []
     status.Reporter("http://control-plane:9457/status", lambda url, body, timeout: bodies.append(body)).send(REPORT)
     assert json.loads(bodies[0]) == REPORT
+
+
+def test_a_garbled_answer_never_stops_the_world() -> None:
+    def garble(url: str, body: bytes, timeout: float) -> None:
+        raise http.client.BadStatusLine("HTTP/9")
+
+    status.Reporter("http://control-plane:9457/status", garble).send(REPORT)
+
+
+def test_an_unchanged_report_is_logged_once(caplog: pytest.LogCaptureFixture) -> None:
+    reporter = status.Reporter(None)
+    with caplog.at_level(logging.INFO):
+        reporter.send(REPORT)
+        reporter.send(REPORT)
+        reporter.send({**REPORT, "state": "held", "reason": "x"})
+    assert len([r for r in caplog.records if r.message.startswith("status ")]) == 2

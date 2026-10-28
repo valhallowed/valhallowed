@@ -1,0 +1,1 @@
+{"contract": 2, "generation": 7, "world": {"name": "Meadowfold", "port": 2456}, "plugin": {"status_interval_s": 5}, "status_url": "http://control-plane:9457/status", "disconnect_players": true}

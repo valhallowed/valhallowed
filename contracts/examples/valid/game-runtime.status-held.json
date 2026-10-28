@@ -1,1 +1,1 @@
-{"contract": 1, "generation": 3, "world": "Meadowfold", "state": "held", "reason": "the world loaded empty although a save existed; stopped before its first autosave", "game_build": "25909431", "objects": 0, "players": 0}
+{"contract": 1, "generation": 3, "world": "Meadowfold", "state": "held", "reason": "the world loaded with no objects although a save existed; stopped before its first autosave", "game_build": "25909431", "objects": 0, "players": 0}

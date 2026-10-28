@@ -4,6 +4,7 @@
     <root>/<child id>/<port>/secrets.json       what that child reads (B1), secrets first
     <root>/<child id>/<port>/generation.json
     <root>/.lock                                held by whichever writes: the control plane or vhd apply
+    <root>/.apply.lock                          held by vhd apply for its whole run
 
 A child's container mounts only the directory for its own port, so the root, state.json
 included, is the control plane's and vhd's alone, and a world whose port changes reads its new
@@ -14,7 +15,7 @@ import fcntl
 import json
 import os
 import shutil
-from collections.abc import Iterator, Mapping
+from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,6 +42,9 @@ class State:
     handed: dict[str, Handed] = field(default_factory=dict)
     # The port each world's container was created with, by child id. None until vhd apply has run.
     applied: dict[str, int] | None = None
+    # The last time vhd apply restarted worlds that may have had players online, as the server
+    # manager confirmed: the generation, and each such world's player count, or None if unknown.
+    override: dict[str, object] | None = None
 
 
 class Store:
@@ -73,6 +77,7 @@ class Store:
             generation=None if generation is None else _generation(generation),
             handed={cid: Handed(h["number"], _child(h["child"])) for cid, h in document["handed"].items()},
             applied=document.get("applied"),
+            override=document.get("override"),
         )
 
     def save(self, state: State) -> None:
@@ -80,25 +85,29 @@ class Store:
             "generation": None if state.generation is None else _generation_document(state.generation),
             "handed": {cid: {"number": h.number, "child": _child_document(h.child)} for cid, h in state.handed.items()},
             "applied": state.applied,
+            "override": state.override,
         }
         # It holds every world's secrets, so only its owner reads it.
         self._write(self.root / STATE_FILE, document, 0o600)
 
-    def hand(self, state: State, child_id: str, child: Child, number: int, record: bool = True) -> None:
-        """Publish a child's documents under number, into the directory for its port: secrets
-        first, the generation second (B1). Unless record is false, state notes that the child
-        holds them; vhd apply records a world moving to a new port only once Compose has moved it."""
+    def hand(self, state: State, child_id: str, child: Child, number: int, disconnect_players: bool = False) -> None:
+        """Publish a child's documents under number, and note in state that the child holds them."""
+        self.publish(child_id, child, number, disconnect_players)
+        state.handed[child_id] = Handed(number, child)
+
+    def publish(self, child_id: str, child: Child, number: int, disconnect_players: bool = False) -> None:
+        """Write a child's documents under number into the directory for its port: secrets first,
+        the generation second (B1). vhd apply notes a world moving to a new port as holding them
+        only once Compose has moved it."""
         directory = self.directory(child_id, child.port)
         for level in (directory.parent, directory):
             level.mkdir(exist_ok=True)
             level.chmod(0o755)
             if self.owner is not None:
                 os.chown(level, *self.owner)
-        generation, secrets = child.numbered(number)
+        generation, secrets = child.numbered(number, disconnect_players)
         self._write(directory / SECRETS_FILE, secrets, 0o644)
         self._write(directory / GENERATION_FILE, generation, 0o644)
-        if record:
-            state.handed[child_id] = Handed(number, child)
 
     def holds(self, child_id: str, port: int) -> bool:
         """Whether the directory for port has both of the child's files."""
@@ -109,17 +118,17 @@ class Store:
         """Where a child's documents live while its container runs on port: its subpath."""
         return self.root / child_id / str(port)
 
-    def prune(self, ports: Mapping[str, int]) -> None:
-        """Remove every directory no container mounts any more: a removed world's, and a world's
-        old ports once Compose has moved it."""
-        for entry in self.root.iterdir():
-            if not entry.is_dir():
+    def prune(self, ports: Mapping[str, int], removed: Collection[str]) -> None:
+        """Remove what no container mounts any more: a removed child's directory, and a world's
+        old ports once Compose has moved it. A directory the store never handed is left alone."""
+        for child_id in removed:
+            shutil.rmtree(self.root / child_id, ignore_errors=True)
+        for child_id, port in ports.items():
+            directory = self.root / child_id
+            if not directory.is_dir():
                 continue
-            if entry.name not in ports:
-                shutil.rmtree(entry)
-                continue
-            for stale in entry.iterdir():
-                if stale.name == str(ports[entry.name]):
+            for stale in directory.iterdir():
+                if stale.name == str(port):
                     continue
                 if stale.is_dir():
                     shutil.rmtree(stale)

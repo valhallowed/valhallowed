@@ -10,6 +10,9 @@ from vhd_control.reconcile import STATUS_INTERVAL_S
 
 # A runtime silent for this many of its reporting intervals is unknown, never its last state.
 STALE_AFTER = 3
+# Only a report no older than this many intervals vouches for an empty world: one arrives every
+# interval, give or take its delivery, and an older one may predate a player who joined since.
+EMPTY_WITHIN = 1.5
 # States in which no game process runs, so no player can be connected.
 NO_GAME = frozenset({"installing", "held"})
 
@@ -22,8 +25,11 @@ class WorldView:
 
     @property
     def empty(self) -> bool:
-        """Whether status vouches that no player is connected. Unknown is never empty."""
+        """Whether status vouches that no player is connected now. Unknown is never empty, and
+        neither is a world whose newest report is older than EMPTY_WITHIN intervals."""
         if self.state == "unknown" or self.report is None:
+            return False
+        if self.age_s is None or self.age_s > EMPTY_WITHIN * STATUS_INTERVAL_S:
             return False
         players = self.report.get("players")
         return players == 0 if players is not None else self.state in NO_GAME
