@@ -21,9 +21,8 @@ shows what is built.
 ## Releases
 
 Images live at `ghcr.io/valhallowed/<component>`. They are built once, on
-`main`, and a version tag promotes them without a rebuild; candidates and
-releases attach `compose.yaml`, pinned by digest, the manifest and secrets
-schemas, the plugin and `SHA256SUMS`. The channels and gates are in
+`main`, and a version tag promotes them without a rebuild. What a release
+attaches, its channels and its gates are in
 [Architecture § Releases](docs/architecture.md#releases).
 
 ## Installing
@@ -57,8 +56,8 @@ make accept
 ```
 
 Builds the images with the definition CI uses, installs them through the
-release compose file and runs acceptance against the local build, on udp
-32456-32458 and tcp 38456 so it never meets an install on the defaults.
+release compose file and runs acceptance against the local build, on ports
+away from the defaults so it never meets an install on them.
 
 ```bash
 make plugin

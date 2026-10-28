@@ -43,8 +43,8 @@ the reasons.
   player data. Acceptance material is synthesized or anonymized.
 - **Colours and type come from design/tokens.css.** A surface never hard-codes
   a colour or a font.
-- **Every public page carries the trademark line** in docs/brand.md, as it
-  defines a public page, except the one page it exempts.
+- **Public pages carry the trademark line.** docs/brand.md says which pages
+  are public, and the one it exempts.
 
 ## Verify
 
@@ -60,11 +60,11 @@ the reasons.
 | Images or the install | `scripts/check-images.sh`, then `make accept` |
 | A pinned download's version (an `ARG` in a Dockerfile) | `scripts/check-upstream.sh` |
 
-CI runs all of these on every pull request and every push to `main`.
-Acceptance runs on the local build for a pull request, and on `main` from the
-registry, after CI pushes the images. `scripts/check-upstream.sh` runs in the
-nightly checks instead. CI runs actionlint, shellcheck and Python from the
-images pinned in `images/tools/Dockerfile`; locally, run the same images with
+CI runs all of these on every pull request and every push to `main`, except
+`scripts/check-upstream.sh`, which `nightly.yml` runs. Acceptance runs on the
+local build for a pull request, and on `main` from the registry, after CI
+pushes the images. CI runs actionlint, shellcheck and Python from the images
+pinned in `images/tools/Dockerfile`; locally, run the same images with
 `docker run --rm -v "$PWD:/repo:ro" -w /repo "$(scripts/tool-image.sh shellcheck)" scripts/*.sh`.
 
 ## Delivering
