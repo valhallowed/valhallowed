@@ -51,7 +51,7 @@ ADD --checksum=sha256:bce631497976a93977ceb08e166712e6c31d15244956f89f17df092a9b
     https://thunderstore.io/package/download/denikson/BepInExPack_Valheim/${BEPINEX_PACK_VERSION}/ /tmp/bepinex.zip
 RUN mkdir /bepinex && unzip -q /tmp/bepinex.zip -d /bepinex
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:747cbade5bfd918a175ac32f8f1d931edec2c7d0d5397a3de72eaef1ac1f66d2 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b AS build
 ARG VHD_BUILD=dev
 WORKDIR /src
 COPY plugin/ ./
