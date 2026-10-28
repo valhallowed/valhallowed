@@ -65,8 +65,8 @@ CI runs all of these on every pull request and every push to `main`, except
 `scripts/check-upstream.sh`, which `nightly.yml` runs. Acceptance runs on the
 local build for a pull request, and on `main` from the registry, after CI
 pushes the images. CI runs actionlint, shellcheck and Python from the images
-pinned in `images/tools/Dockerfile`; locally, run the same images with
-`docker run --rm -v "$PWD:/repo:ro" -w /repo "$(scripts/tool-image.sh shellcheck)" scripts/*.sh`.
+pinned in `images/tools/Dockerfile`; locally, run the same images, for
+shellcheck with `docker run --rm -v "$PWD:/repo:ro" -w /repo "$(scripts/tool-image.sh shellcheck)" scripts/*.sh`.
 
 ## Delivering
 

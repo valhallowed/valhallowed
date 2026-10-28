@@ -69,9 +69,9 @@ flowchart LR
   services (chat relay, LLM provider, their own database).
 - **Least privilege.** Each child receives only the secrets it needs. No child
   reads the secrets source. Status shows set, unset or invalid, never a value.
-  One exception is the game's: the dedicated server takes a world's password
-  only on its command line, where any user on the host can read it from the
-  process list.
+  One secret escapes this: the dedicated server takes a world's password only on
+  its command line, where any user on the host can read it from the process
+  list.
 - **Kept apart from the manifest,** in a file of their own (G18), so the
   manifest can be committed and shared.
 
@@ -125,26 +125,25 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   Compose fails partway, `vhd apply` brings the install back on the compose
   file Compose last ran successfully, which it replaces only once a run
   succeeds; a moving world's old directory stays as it was until then.
-- **Running as.** The control plane runs as the user who owns the install
-  folder, which `vhd apply` reads from the folder, so the secrets file can stay
-  readable by its owner alone. Every other child runs as VHD's own
-  unprivileged user.
+- **Running as.** The control plane runs as the install folder's owner, whom
+  `vhd apply` reads from the folder, so the secrets file can stay readable by
+  its owner alone. Every other child runs as VHD's own unprivileged user.
 - **Host check.** At first start and on every reconcile, the control plane
   compares what the manifest asks for with what the host has: ports, memory
   and CPU per world, disk for worlds and backups. A shortfall is a warning in
   status, never a silent failure. A port already taken on the host stops only
   the world that needs it.
 - **Interfaces.** One control API. The TUI, the admin console and the CLI,
-  `vhd`, are its clients. The CLI runs from the control plane's image, so a
-  host needs only Docker. The control API answers on a Unix socket in a volume
-  only the control plane and `vhd` mount, so no child and no network reaches
-  it. Children report status to a separate listener on the install network
-  that accepts status and nothing else, and only from the reporting
+  `vhd`, are its clients, and cover manifest errors, hot reload, status, world
+  import and export, backups and logs. The CLI runs from the control plane's
+  image, so a host needs only Docker. The control API answers on a Unix socket
+  in a volume only the control plane and `vhd` mount, so no child and no network
+  reaches it. Children report status to a separate listener on the install
+  network that accepts status and nothing else, and only from the reporting
   world's own container: it trusts source addresses, which holds because no
   child has the capability to forge one. The admin console will put the control
-  API on the host's loopback unless the manifest opens it,
-  once its authentication is settled (O14). They cover manifest errors, hot
-  reload, status, world import and export, backups and logs.
+  API on the host's loopback unless the manifest opens it, once its
+  authentication is settled (O14).
 - **Failure domain.** Needed to start or change an install, not to keep it
   running. If it stops at steady state, children keep running on the last good
   generation.
@@ -170,7 +169,7 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   restart the game, since only it sees the count at that moment: it restarts
   only for a current count of no players, or for a generation that carries the
   server manager's confirmation (B1). Only that confirmation, or a stop, ends a
-  load, and then by a kill, which saves nothing.
+  world that is still loading, and then by a kill, which saves nothing.
 - **Children read only the effective configuration.** Generated files, such as
   the plugin's BepInEx config, are never edited by hand.
 - **World truth gates saving.** A world that fails world truth is stopped
