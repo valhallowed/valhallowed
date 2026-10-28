@@ -6,10 +6,9 @@ meaning for an old one, lands here first.
 
 ## Terms
 
-**Acceptance** — Installing a channel's images from the registry, anonymously,
-on a clean runner, then checking that the install works. Commit builds are what
-it installs; a candidate or a release publishes only after it passes. The same
-check runs on a local build for a pull request and in `make accept`.
+**Acceptance** — Installing images from the registry, anonymously, on a clean
+runner, then checking that the install works. The same check runs on a local
+build for a pull request and in `make accept`.
 
 **Acceptance material** — Recorded sessions, world saves, schema constraints
 and chat-command contracts that every capability must keep. Synthesized or
@@ -139,9 +138,8 @@ world render (B5).
 order, tracked as a GitHub milestone. It lands in one or more pull requests.
 
 **Nightly game check** — The pipeline job, every night, that checks the
-newest commit against the newest game build. A failure blocks the next
-candidate. Beside it, the same run compares the pinned downloads Dependabot
-cannot watch with their newest releases, which blocks nothing.
+newest commit against the newest game build. A candidate needs a recent pass
+of it.
 
 **Operator action** — A one-off request through the control API, such as
 importing a world, taking a backup or reading logs. Validated like the

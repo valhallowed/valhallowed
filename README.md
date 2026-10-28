@@ -48,7 +48,7 @@ such as a new world or port, waits for the next `vhd apply`.
 
 ## Building locally
 
-Needs Linux, or WSL on Windows (the scripts use GNU coreutils and sed), and
+Needs Linux, or WSL on Windows (the scripts use bash 4 and GNU tools), and
 Docker with Buildx and Compose, `make`, `git`, `jq` and `curl`.
 
 ```bash

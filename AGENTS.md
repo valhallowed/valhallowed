@@ -37,7 +37,8 @@ the reasons.
   rebuilt. Never push to the registry by hand.
 - **Pin every dependency:** actions by commit SHA, base images by digest,
   packages by exact version. The one exception is G16's: SteamCMD and the
-  dedicated server download into the install, newest first.
+  dedicated server are downloaded at their newest, into the install and into
+  the plugin's build.
 - **Everything here is public:** the repo, its history and its images. Never
   commit host names, private addresses, personal paths, credentials or real
   player data. Acceptance material is synthesized or anonymized.

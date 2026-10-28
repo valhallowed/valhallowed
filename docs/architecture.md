@@ -2,9 +2,10 @@
 
 Valhallowed (VHD): what it is, the rules it is built under, and the decisions
 still open. Terms mean exactly what [glossary.md](glossary.md) says; the name
-and its rules live in [brand.md](brand.md). The [diagrams](diagrams/README.md)
-draw this document; where they disagree, this document wins. It describes VHD
-as designed; the [board](https://github.com/orgs/valhallowed/projects/1) shows what is built.
+and its rules live in [brand.md](brand.md). It describes VHD as designed; the
+[board](https://github.com/orgs/valhallowed/projects/1) shows what is built.
+The [diagrams](diagrams/README.md) draw it, and say how they treat a part
+built short of the design.
 
 ## Target
 
@@ -88,10 +89,10 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   `world.<save name>`. A secret's key mirrors the manifest path it belongs to
   (`world.<save name>.password`). A port is an integer; any other quantity is
   a string that carries its unit (`5s`, `6GiB`).
-- **Reconcile.** Manifest plus defaults produce one effective configuration
-  (a generation). All or nothing: an invalid manifest on hot reload is rejected
-  and the last good generation keeps running. Reconcile reports what was set,
-  what defaulted and what that implies.
+- **Reconcile.** The manifest, secrets and defaults produce one effective
+  configuration (a generation). All or nothing: an invalid manifest on hot
+  reload is rejected and the last good generation keeps running. Reconcile
+  reports what was set, what defaulted and what that implies.
 - **Change cost.** Every setting is classed as live, service restart or
   game-server restart. A change that needs a game-server restart waits as
   pending while players are online, unless the server manager applies it now
@@ -259,7 +260,7 @@ Follows from G4 and G12.
 
 | Channel | Image tags | Made by |
 |---|---|---|
-| Commit | `sha-<commit>`, `edge` | Every merge to `main`: CI builds and pushes the images |
+| Commit | `sha-<short commit>`, `edge` | Every merge to `main`: CI builds and pushes the images |
 | Candidate | `X.Y.Z-rc.N` | Tag `vX.Y.Z-rc.N`: promotes that commit's images |
 | Release | `X.Y.Z`, `latest` | Tag `vX.Y.Z`: promotes the newest candidate on the same commit, and is refused if there is none |
 
@@ -268,11 +269,11 @@ Follows from G4 and G12.
 - **Acceptance installs from the registry.** A clean runner installs a
   channel's images anonymously and checks that the install works. An image
   that was never pushed, or is not public, fails there, not on someone's
-  server. Commit builds are what acceptance installs; a candidate or a release
-  is published only after acceptance passes on its images.
+  server. It runs on every commit build, and again on the images a version tag
+  promotes, before the tag moves them.
 - **The nightly game check** builds and accepts the newest commit against the
-  newest game build, because game patches arrive without notice. A failure
-  blocks the next candidate. Beside it, the pinned downloads Dependabot cannot
+  newest game build, because game patches arrive without notice. A candidate
+  needs a recent pass. Beside it, the pinned downloads Dependabot cannot
   watch are compared with their newest releases; a newer one opens an issue and
   blocks nothing, since a game-patch fix must not wait on an unrelated bump.
 - **Candidates and releases attach** `compose.yaml`, with every image pinned by
