@@ -1,8 +1,9 @@
 # Design
 
 The single source of the Valhallowed design system: tokens and fonts. The
-diagram pages, the valhallowed.com site and the product's interfaces use it. What the colours mean, and the
-names and voices, are in [docs/brand.md](../docs/brand.md).
+diagram pages, the valhallowed.com site and the product's interfaces use it.
+What the colours mean, and the names and voices, are in
+[docs/brand.md](../docs/brand.md).
 
 | Path | Holds |
 |---|---|

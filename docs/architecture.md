@@ -96,8 +96,7 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   game-server restart. A change that needs a game-server restart waits as
   pending while players are online, unless the server manager applies it now
   after being shown which worlds and how many players it disconnects. The
-  override is recorded with the
-  change.
+  override is recorded with the change.
 - **Applying a change.** The control plane publishes a generation; each child
   it affects reloads it in place, or exits and Docker restarts it. A change to
   the containers themselves waits as pending until the server manager runs
@@ -111,16 +110,16 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   stopped reporting counts as occupied, since status cannot vouch for it. A
   player who joins in the seconds between that check and Compose recreating
   a container is disconnected; a change a runtime applies in place has no
-  such window. The
-  Compose it runs is the one in the control plane's image, so the host needs
-  Docker Engine 26 or newer and any Compose that can start the one-shot.
+  such window. The Compose it runs is the one in the control plane's image,
+  so the host needs Docker Engine 26 or newer and any Compose that can start
+  the one-shot.
 - **Delivering a generation.** The control plane writes each child's
   generation, and the secrets scoped to it, into that child's own directory of
   one generations volume. The directory, like the child's Compose service, is
-  named for it: a world's save name in lower case with a short hash, since save names
-  allow characters Compose names do not. Each child mounts only its own
-  directory, read-only (a volume subpath, which needs Docker Engine 26), so it
-  can read no other child's secrets. The secrets go first and the generation
+  named for it: a world's save name in lower case with a short hash, since
+  save names allow characters Compose names do not. Each child mounts only its
+  own directory, read-only (a volume subpath, which needs Docker Engine 26), so
+  it can read no other child's secrets. The secrets go first and the generation
   second, and a child acts on neither until both carry the same generation
   (B1). A world's directory is also keyed by its port, so when `vhd apply`
   moves a world to a new port only the new container reads that change. If
@@ -279,8 +278,7 @@ Follows from G4 and G12.
   blocks nothing, since a game-patch fix must not wait on an unrelated bump.
 - **Candidates and releases attach** `compose.yaml`, with every image pinned by
   digest, the manifest and secrets schemas, the plugin artifact and
-  `SHA256SUMS`. Release
-  notes name the game build the release was accepted on.
+  `SHA256SUMS`. Release notes name the game build the release was accepted on.
 - **Three gates.** The merge gate: every check passes before a merge to
   `main`. The candidate gate: acceptance passes on the registry images,
   including against the newest game build, before a candidate tag. The release
