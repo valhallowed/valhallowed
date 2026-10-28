@@ -6,7 +6,7 @@ Closes #
 
 ## Retro
 
-<!-- Each finding and the commit that fixed it. A gap whose fix is a later slice's deliverable is added as a task to that slice's issue, which its row names. -->
+<!-- Each finding and the commit that fixed it, or `task in #n` for a gap AGENTS.md § Delivering defers. -->
 
 | Finding | Fixed in |
 |---|---|

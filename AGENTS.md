@@ -73,19 +73,23 @@ Work is planned on the [board](https://github.com/orgs/valhallowed/projects/1)
 and lands through pull requests.
 
 - **One branch, one pull request.** It opens as a draft when the branch does,
-  holds single-purpose commits, and closes its issues (`Closes #n`). Like pull
-  requests are combined into one, dependency updates included.
+  holds single-purpose commits, and closes its issues (`Closes #n`). Related
+  pull requests are combined into one, dependency updates included: the week's
+  Dependabot pull request is folded into an open branch when there is one. A
+  Debian base update stays apart, since its pins move by hand.
 - **A retro before it is marked ready.** Review its whole diff for defects,
   simplification, performance and hygiene, and check every doc and comment it
-  touches against the code, the glossary and docs/architecture.md. Its Retro
-  section lists each finding and the commit that fixed it.
+  touches against the code, the glossary and docs/architecture.md, and that
+  each issue it closes has its delivered tasks ticked. Its Retro section lists
+  each finding and the commit that fixed it.
 - **Fix, don't defer.** Every finding is fixed in the pull request. The one
-  exception is a gap whose fix is a later slice's deliverable: it becomes a
-  task in that slice's issue, which its Retro row names.
+  exception is a gap whose fix is the deliverable of a later slice that has an
+  issue: it becomes a task in that issue, and its Retro row reads `task in #n`.
+  A gap whose slice has no issue yet is fixed in the pull request.
 - **Progress lives on the board, nowhere else.** Issues exist for the current
   milestone, plus the next one while it is planned; later work stays in
   docs/architecture.md § Delivery order. An issue's tasks are ticked as each
   is done, so a closed issue shows what it delivered. The issues `nightly.yml`
-  opens are alerts, not plans, and close themselves on the next pass. Docs say
-  what VHD is and why, never where the work stands.
+  opens are alerts, not plans, and close themselves when a pass succeeds. Docs
+  say what VHD is and why, never where the work stands.
 - **Delete merged branches,** on GitHub and in every clone.

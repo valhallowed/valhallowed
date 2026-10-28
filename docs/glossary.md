@@ -25,8 +25,7 @@ secret.
 
 **Board** — The `valhallowed` GitHub project, where delivery progress lives:
 one issue per slice or other piece of planned work, each in a column from
-Backlog to Done. Docs say what VHD is and why; the board says where the work
-stands.
+Backlog to Done.
 
 **Boundary** — A point inside VHD where data or control crosses between two
 parts. Each boundary has one typed contract, one validator on the receiving
@@ -175,11 +174,8 @@ between building VHD and running it.
 images, `compose.yaml`, the plugin artifact and the manifest and secrets
 schemas.
 
-**Retro** — The review a pull request passes before it is marked ready: its
-whole diff for defects, simplification, performance and hygiene, and every doc
-and comment it touches against the code, this glossary and the architecture.
-Every finding is fixed in that pull request, except a gap whose fix is a later
-slice's deliverable.
+**Retro** — The review a pull request passes before it is marked ready, and
+the fixes it calls for. AGENTS.md § Delivering says what it covers.
 
 **Secrets** — Sensitive values a server manager supplies, such as a world's
 password or a chat service token, kept in a TOML file apart from the manifest.
@@ -199,7 +195,7 @@ Steam (B9). Only people the game has seen can sign in.
 serves the commit it was built from on the web map's port. Not a child.
 
 **Slice** — One deliverable of a milestone that keeps `main` green on its own,
-tracked as one issue on the board.
+tracked as one issue on the board once its milestone is current or next.
 
 **Status** — The control plane's report on an install and its children. It
 reports world truth, not container health.
