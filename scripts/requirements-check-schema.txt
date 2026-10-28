@@ -1,7 +1,9 @@
 # Exact pins for scripts/check-schema.sh, transitive dependencies included.
+# check-jsonschema checks the schema files and their examples; each component's
+# own checks validate with the jsonschema its image ships.
 check-jsonschema==0.38.2
 attrs==26.1.0
-certifi==2026.10.19
+certifi==2026.10.23
 charset-normalizer==3.5.2
 click==8.5.0
 idna==3.20

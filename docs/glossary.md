@@ -6,18 +6,17 @@ meaning for an old one, lands here first.
 
 ## Terms
 
-**Acceptance** — Installing a channel's images from the registry, anonymously,
-on a clean runner, then checking that the install works. Commit builds are what
-it installs; a candidate or a release publishes only after it passes. The same
-check runs on a local build for a pull request and in `make accept`.
+**Acceptance** — Installing images from the registry, anonymously, on a clean
+runner, then checking that the install works. The same check runs on a local
+build for a pull request and in `make accept`.
 
 **Acceptance material** — Recorded sessions, world saves, schema constraints
 and chat-command contracts that every capability must keep. Synthesized or
 anonymized; never real player data.
 
 **Admin console** — The control plane's web interface for server managers:
-status, manifest errors, changes, worlds, backups and logs. Listens locally
-unless the manifest opens it. Not the web map.
+status, manifest errors, changes, worlds, backups and logs. Listens on the
+host's loopback unless the manifest opens it. Not the web map.
 
 **Assistant** — The capability that answers players' questions in game, worded
 by an LLM provider from facts the data layer computed (B7). Off without its
@@ -25,8 +24,7 @@ secret.
 
 **Board** — The `valhallowed` GitHub project, where delivery progress lives:
 one issue per slice or other piece of planned work, each in a column from
-Backlog to Done. Docs say what VHD is and why; the board says where the work
-stands.
+Backlog to Done.
 
 **Boundary** — A point inside VHD where data or control crosses between two
 parts. Each boundary has one typed contract, one validator on the receiving
@@ -49,7 +47,7 @@ in-game commands, chat relay, assistant, web map, sign-in. It declares what it
 depends on, and its failure degrades only itself.
 
 **Change cost** — What applying a setting change requires: live, service
-restart or game-server restart. Every setting carries one in the manifest
+restart or game-server restart. Every setting and secret carries one in its
 schema, beside what applies it: the control plane or `vhd apply`.
 
 **Channel** — A release stream a consumer follows: commit builds, candidates
@@ -97,7 +95,7 @@ plugin is built against, and what a game runtime installs.
 
 **Game runtime** — A child that runs one world: the Valheim dedicated server,
 BepInEx and the plugin, under its supervisor. It runs what the control plane
-hands it and holds no policy.
+hands it and sets no policy.
 
 **Generation** — One numbered effective configuration of the whole install.
 Reconcile produces it whole or not at all: when a new manifest is rejected,
@@ -129,10 +127,9 @@ released artifacts only.
 install. Checked against the manifest schema; never holds secrets.
 
 **Manifest schema** — The versioned JSON Schema for the manifest,
-`schema/manifest.schema.json`: every setting with its type, default, change
-cost and what applies it. The secrets file has its own beside it, with the
-closed list of secret keys. Together they produce validation, defaults, each
-child's configuration and the settings reference.
+`schema/manifest.schema.json`: every setting with its type, default, change cost
+and what applies it. With the secrets schema, it produces validation, defaults,
+each child's configuration and the settings reference.
 
 **Map export** — The file the plugin writes with a world's map, the input to
 world render (B5).
@@ -140,10 +137,9 @@ world render (B5).
 **Milestone** — A set of slices that together reach a point in the delivery
 order, tracked as a GitHub milestone. It lands in one or more pull requests.
 
-**Nightly game check** — The pipeline run, every night, that builds the
-plugin against the newest game build. A failure blocks the next candidate.
-Beside it, the same run compares the pinned downloads Dependabot cannot watch
-with their newest releases, which blocks nothing.
+**Nightly game check** — The pipeline job, every night, that checks the
+newest commit against the newest game build. A candidate needs a recent pass
+of it.
 
 **Operator action** — A one-off request through the control API, such as
 importing a world, taking a backup or reading logs. Validated like the
@@ -175,15 +171,17 @@ between building VHD and running it.
 images, `compose.yaml`, the plugin artifact and the manifest and secrets
 schemas.
 
-**Retro** — The review a pull request passes before it is marked ready: its
-whole diff for defects, simplification, performance and hygiene, and every doc
-and comment it touches against the code, this glossary and the architecture.
-Every finding is fixed in that pull request, except a gap whose fix is a later
-slice's deliverable.
+**Retro** — The review a pull request passes before it is marked ready, and
+the fixes it calls for. AGENTS.md § Delivering says what it covers.
 
-**Secrets** — Sensitive values a server manager supplies, such as a world's
-password or a chat service token, kept in a TOML file apart from the manifest.
-Key names come from a closed list in the manifest schema.
+**Secrets** — Sensitive values. A server manager supplies those that cannot
+be generated, such as a world's password or a chat service token, in a TOML
+file apart from the manifest, under the keys the secrets schema lists. VHD
+generates the rest, such as the bundled database's password.
+
+**Secrets schema** — The versioned JSON Schema for the secrets file,
+`schema/secrets.schema.json`: the closed list of secret keys, each with its
+format, change cost and what applies it.
 
 **Server manager** — The person who operates an install through the control
 plane. Not a player.
@@ -199,7 +197,7 @@ Steam (B9). Only people the game has seen can sign in.
 serves the commit it was built from on the web map's port. Not a child.
 
 **Slice** — One deliverable of a milestone that keeps `main` green on its own,
-tracked as one issue on the board.
+tracked as one issue on the board once its milestone is current or next.
 
 **Status** — The control plane's report on an install and its children. It
 reports world truth, not container health.
@@ -231,7 +229,7 @@ admin console.
 **World** — One Valheim save and the game runtime that serves it.
 
 **World ports** — The UDP ports a world reserves on the host: its port through
-port+2. Worlds that share a host need ranges that do not overlap.
+port+2.
 
 **World render** — Turning a world's map export into the web map's base image.
 Runs on the install, so no image carries a world's map.

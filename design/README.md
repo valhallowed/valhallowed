@@ -1,8 +1,9 @@
 # Design
 
 The single source of the Valhallowed design system: tokens and fonts. The
-diagram pages, the valhallowed.com site and the product's interfaces use it. What the colours mean, and the
-names and voices, are in [docs/brand.md](../docs/brand.md).
+diagram pages, the valhallowed.com site and the product's interfaces use it.
+What the colours mean, and the names and voices, are in
+[docs/brand.md](../docs/brand.md).
 
 | Path | Holds |
 |---|---|
@@ -20,4 +21,4 @@ overrides the system preference.
 ## Changing it
 
 A token or font change lands here first, then reaches each surface. A consumer
-outside this repo pins a commit of it and moves the pin on purpose.
+outside this repo pins a commit and moves the pin to take a change.

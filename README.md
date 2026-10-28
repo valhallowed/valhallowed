@@ -4,14 +4,14 @@ A self-hosted Valheim dedicated server with a server-side plugin, telemetry,
 governed in-game commands and a web map, configured through one manifest. VHD
 for short. Its home is [valhallowed.com](https://valhallowed.com).
 
-Pre-release; the [board](https://github.com/orgs/valhallowed/projects/1)
-shows what is built.
+The [board](https://github.com/orgs/valhallowed/projects/1) shows what is
+built.
 
 ## Docs
 
 | Doc | What it covers |
 |---|---|
-| [Architecture](docs/architecture.md) | The target, ground rules, the model, boundaries, exposure, releases, open decisions |
+| [Architecture](docs/architecture.md) | What VHD is, the rules it is built under, and the decisions still open |
 | [Glossary](docs/glossary.md) | Every term, with exactly one meaning |
 | [Schema](schema/) | Every setting and secret key, with its default and change cost |
 | [Brand](docs/brand.md) | The name, the two voices, what the colours mean |
@@ -20,11 +20,9 @@ shows what is built.
 
 ## Releases
 
-Images live at `ghcr.io/valhallowed/<component>`. They are built once, on
-`main`, and a version tag promotes them without a rebuild; candidates and
-releases attach `compose.yaml`, pinned by digest, the manifest and secrets
-schemas, the plugin and `SHA256SUMS`. The channels and gates are in
-[Architecture § Releases](docs/architecture.md#releases).
+Images live at `ghcr.io/valhallowed/<component>`. How they are built and
+promoted, and what a release attaches, is in [Architecture §
+Releases](docs/architecture.md#releases).
 
 ## Installing
 
@@ -36,20 +34,20 @@ of its own:
    [`schema/examples/valid`](schema/examples/valid/).
 3. For a world password, write `secrets.toml` beside it, readable by you
    alone.
-4. Run `docker compose run --rm vhd apply`, and `docker compose run --rm vhd
-   status` to see each world.
+4. Run `docker compose run --rm vhd apply`, and
+   `docker compose run --rm vhd status` to see each world.
 
 `vhd apply` adds `COMPOSE_IGNORE_ORPHANS=true` to the folder's `.env`: the
 host's Compose would otherwise call the install's own containers orphans of
 `compose.yaml` and suggest `--remove-orphans`, which would delete them.
 
-Edit either file and the control plane applies the change, holding a game
-restart while players are online. A change to the containers themselves,
+Edit either file and the control plane applies the change, keeping a game-server
+restart pending while players are online. A change to the containers themselves,
 such as a new world or port, waits for the next `vhd apply`.
 
 ## Building locally
 
-Needs Linux, or WSL on Windows (the scripts use GNU coreutils and sed), and
+Needs Linux, or WSL on Windows (the scripts use bash 4 and GNU tools), and
 Docker with Buildx and Compose, `make`, `git`, `jq` and `curl`.
 
 ```bash
@@ -57,8 +55,8 @@ make accept
 ```
 
 Builds the images with the definition CI uses, installs them through the
-release compose file and runs acceptance against the local build, on udp
-32456-32458 and tcp 38456 so it never meets an install on the defaults.
+release compose file and runs acceptance against the local build, on ports
+away from the defaults so it never meets an install on them.
 
 ```bash
 make plugin

@@ -37,14 +37,15 @@ the reasons.
   rebuilt. Never push to the registry by hand.
 - **Pin every dependency:** actions by commit SHA, base images by digest,
   packages by exact version. The one exception is G16's: SteamCMD and the
-  dedicated server download into the install, newest first.
+  dedicated server are downloaded at their newest, into the install and into
+  the plugin's build.
 - **Everything here is public:** the repo, its history and its images. Never
   commit host names, private addresses, personal paths, credentials or real
   player data. Acceptance material is synthesized or anonymized.
 - **Colours and type come from design/tokens.css.** A surface never hard-codes
   a colour or a font.
-- **Every public page carries the trademark line** in docs/brand.md, as it
-  defines a public page, except the one page it exempts.
+- **Public pages carry the trademark line.** docs/brand.md says which pages
+  are public, and the one it exempts.
 
 ## Verify
 
@@ -60,12 +61,12 @@ the reasons.
 | Images or the install | `scripts/check-images.sh`, then `make accept` |
 | A pinned download's version (an `ARG` in a Dockerfile) | `scripts/check-upstream.sh` |
 
-CI runs all of these on every pull request and every push to `main`.
-Acceptance runs on the local build for a pull request, and on `main` from the
-registry, after CI pushes the images. `scripts/check-upstream.sh` runs in the
-nightly checks instead. CI runs actionlint, shellcheck and Python from the
-images pinned in `images/tools/Dockerfile`; locally, run the same images with
-`docker run --rm -v "$PWD:/repo:ro" -w /repo "$(scripts/tool-image.sh shellcheck)" scripts/*.sh`.
+CI runs all of these on every pull request and every push to `main`, except
+`scripts/check-upstream.sh`, which `nightly.yml` runs. Acceptance runs on the
+local build for a pull request, and on `main` from the registry, after CI
+pushes the images. CI runs actionlint, shellcheck and Python from the images
+pinned in `images/tools/Dockerfile`; locally, run the same images, for
+shellcheck with `docker run --rm -v "$PWD:/repo:ro" -w /repo "$(scripts/tool-image.sh shellcheck)" scripts/*.sh`.
 
 ## Delivering
 
@@ -73,18 +74,23 @@ Work is planned on the [board](https://github.com/orgs/valhallowed/projects/1)
 and lands through pull requests.
 
 - **One branch, one pull request.** It opens as a draft when the branch does,
-  holds single-purpose commits, and closes its issues (`Closes #n`). Like pull
-  requests are combined into one, dependency updates included.
+  holds single-purpose commits, and closes its issues (`Closes #n`). Related
+  pull requests are combined into one, dependency updates included: the week's
+  Dependabot pull request is folded into an open branch when there is one. A
+  Debian base update stays apart, since its pins move by hand.
 - **A retro before it is marked ready.** Review its whole diff for defects,
   simplification, performance and hygiene, and check every doc and comment it
-  touches against the code, the glossary and docs/architecture.md. Its Retro
-  section lists each finding and the commit that fixed it.
+  touches against the code, the glossary and docs/architecture.md, and that
+  each issue it closes has its delivered tasks ticked. Its Retro section lists
+  each finding and the commit that fixed it.
 - **Fix, don't defer.** Every finding is fixed in the pull request. The one
-  exception is a gap whose fix is a later slice's deliverable: it becomes a
-  task in that slice's issue.
+  exception is a gap whose fix is the deliverable of a later slice that has an
+  issue: it becomes a task in that issue, and its Retro row reads `task in #n`.
+  A gap whose slice has no issue yet is fixed in the pull request.
 - **Progress lives on the board, nowhere else.** Issues exist for the current
   milestone, plus the next one while it is planned; later work stays in
-  docs/architecture.md § Delivery order. The issues the nightly checks open
-  are alerts, not plans, and close themselves on the next pass. Docs say what VHD is and why, never
-  where the work stands.
+  docs/architecture.md § Delivery order. An issue's tasks are ticked as each
+  is done, so a closed issue shows what it delivered. The issues `nightly.yml`
+  opens are alerts, not plans, and close themselves when a pass succeeds. Docs
+  say what VHD is and why, never where the work stands.
 - **Delete merged branches,** on GitHub and in every clone.

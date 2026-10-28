@@ -4,8 +4,9 @@
 # tags only what the install lists, so an image in one list and not the other
 # leaves every candidate unpromotable, or ships an image no install runs. Also
 # fail unless Dependabot's docker updates watch every images/ directory with a
-# Dockerfile, and unless each image's NOTICE names the versions its Dockerfile
-# pins as ARGs.
+# Dockerfile, unless each image's NOTICE names the versions its Dockerfile pins
+# as ARGs, and unless the checks run the Python minor version the images
+# install.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -46,4 +47,12 @@ for dockerfile in images/*/Dockerfile; do
     fi
   done < <(sed -n 's/^ARG [A-Z_]*_VERSION=//p' "$dockerfile")
 done
-echo "check-images: CI builds exactly the images the install lists, Dependabot watches every Dockerfile, and every NOTICE names its pinned versions"
+# Dependabot takes only patch releases of the checks' Python; a new minor version
+# moves with the Debian base, by hand.
+checks=$(sed -n 's/^FROM python:\([0-9]*\.[0-9]*\)\..*/\1/p' images/tools/Dockerfile)
+shipped=$(sed -n 's/^ *python3=\([0-9]*\.[0-9]*\)\..*/\1/p' images/*/Dockerfile | sort -u)
+if [[ -z $checks || $shipped != "$checks" ]]; then
+  echo "check-images: the checks run Python ${checks:-none}; the images install ${shipped//$'\n'/, }" >&2
+  exit 1
+fi
+echo "check-images: CI builds exactly the images the install lists, Dependabot watches every Dockerfile, every NOTICE names its pinned versions, and the checks run the images' Python"

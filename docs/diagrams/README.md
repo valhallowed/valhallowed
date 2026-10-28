@@ -1,10 +1,10 @@
 # Diagrams
 
 Interactive pages that draw [architecture.md](../architecture.md). Where a page
-and the doc disagree, the doc wins and the page is out of date. Like the doc,
-they draw VHD as designed, and what they show of a built part matches its code;
-the [board](https://github.com/orgs/valhallowed/projects/1) shows what is built. Open a page in
-any current browser; it needs no build step.
+and the doc disagree on the design, the doc wins and the page is out of date. A
+part that is built is drawn as built, matching its code, even where it falls
+short of the design; the [board](https://github.com/orgs/valhallowed/projects/1)
+tracks that gap. Open a page in any current browser.
 
 | Page | Shows |
 |---|---|
@@ -21,8 +21,8 @@ any current browser; it needs no build step.
   vocabulary. A page defines no colour of its own.
 - **One script.** [`vhd.js`](vhd.js) gives every page the same detail panel and
   step-through behaviour.
-- **Both themes.** Dark is the home theme; every page also reads correctly in
-  light, and at phone width without horizontal scrolling.
+- **Both themes, any width.** Dark is the home theme; every page also reads
+  correctly in light, and at phone width without horizontal scrolling.
 - **Glossary terms only,** and the trademark line from brand.md in every
   footer.
 - **Self-contained.** No build step and no outside requests; the fonts come

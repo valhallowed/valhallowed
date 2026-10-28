@@ -2,18 +2,18 @@
 
 Valhallowed (VHD): what it is, the rules it is built under, and the decisions
 still open. Terms mean exactly what [glossary.md](glossary.md) says; the name
-and its rules live in [brand.md](brand.md). The [diagrams](diagrams/README.md)
-draw this document; where they disagree, this document wins. It describes VHD
-as designed; the [board](https://github.com/orgs/valhallowed/projects/1) shows what is built.
+and its rules live in [brand.md](brand.md). It describes VHD as designed; the
+[board](https://github.com/orgs/valhallowed/projects/1) shows what is built.
+The [diagrams](diagrams/README.md) draw it, and say how they treat a part
+built short of the design.
 
 ## Target
 
 Someone with only Docker installs a Valheim dedicated server that carries the
-VHD plugin, telemetry, governed in-game commands and the web map. They write
-one manifest and, optionally, a secrets file. Everything else is defaulted,
-derived or generated. The host is x86-64, because the dedicated server ships for
-nothing else: a Linux machine, or Docker Desktop on Windows or macOS with an
-Intel or AMD processor.
+VHD plugin, telemetry, governed in-game commands and the web map. They write one
+manifest and, optionally, a secrets file. Everything else is defaulted, derived
+or generated. The host is x86-64 (§ Game facts): a Linux machine, or Docker
+Desktop on Windows or macOS with an Intel or AMD processor.
 
 ## Ground rules
 
@@ -28,7 +28,7 @@ open decision names it.
 | G3 | **Bring your own, with complete defaults.** Every external dependency has a built-in default that works with no setup, and a typed way to substitute your own. | An existing database or chat service is a setting, not a fork. |
 | G4 | **Release pipeline first.** The pipeline exists and passes before any feature lands. Every feature ships through it. | Capability stays tested as features ship. |
 | G5 | **Distribution:** images on a public registry (G10), the plugin as a release artifact. Builds run locally and in GitHub Actions from one definition. | Several ways to consume it, one way to build it. |
-| G6 | **One way in.** Settings, secrets and operator actions enter only through the control plane and are validated there. Nothing past it reads raw input. | Validate once at the boundary. Internal logic never sees raw input, and failures stay in their own domain. |
+| G6 | **One way in.** Settings, secrets and operator actions enter only through the control plane and are validated there. Nothing past it reads raw input. | Validate once at the ingress. Internal logic never sees raw input, and failures stay in their own domain. |
 | G7 | **License: MIT.** | The simplest terms for the people who host it and the people who contribute. Settled from O9. |
 | G8 | **Name:** the product is Valhallowed, short form VHD, at valhallowed.com. | One name across code, docs and marketing. |
 | G9 | **Every port, address and resource allocation is a default.** Each has a sensible default and can be changed in the manifest. That covers what meets the host: published ports, addresses, and each world's resources. Wiring inside an install, between VHD's own containers, is fixed. | Hosts differ. Defaults make the first install work; overrides make every install fit. |
@@ -56,9 +56,9 @@ flowchart LR
 
 ### Secrets
 
-- **Closed key set.** The schema defines every permitted key name. An unknown
-  key is rejected, so a misspelt key fails at the boundary instead of silently
-  doing nothing.
+- **Closed key set.** The secrets schema defines every permitted key name. An
+  unknown key is rejected, so a misspelt key fails at the ingress instead of
+  silently doing nothing.
 - **Format check per key.**
 - **Optional by default.** An absent secret turns off the capability that needs
   it, and status says why. If the manifest explicitly enables a capability and
@@ -69,9 +69,9 @@ flowchart LR
   services (chat relay, LLM provider, their own database).
 - **Least privilege.** Each child receives only the secrets it needs. No child
   reads the secrets source. Status shows set, unset or invalid, never a value.
-  One exception is the game's: the dedicated server takes a world's password
-  only on its command line, where any user on the host can read it from the
-  process list.
+  One secret escapes this: the dedicated server takes a world's password only on
+  its command line, where any user on the host can read it from the process
+  list.
 - **Kept apart from the manifest,** in a file of their own (G18), so the
   manifest can be committed and shared.
 
@@ -79,8 +79,8 @@ flowchart LR
 
 Owns ingress, reconcile, child lifecycle, operator actions and status.
 
-- **Manifest.** Strongly typed, with a versioned schema (G18). The one schema
-  produces validation, defaults, each child's configuration and the
+- **Manifest.** Strongly typed, with a versioned schema (G18). With the secrets
+  schema, it produces validation, defaults, each child's configuration and the
   user-facing settings reference, so the reference cannot drift from the code.
   Every setting records its change cost and what applies it.
 - **Setting names.** Keys are snake_case. A capability's settings sit in a
@@ -88,65 +88,62 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   `world.<save name>`. A secret's key mirrors the manifest path it belongs to
   (`world.<save name>.password`). A port is an integer; any other quantity is
   a string that carries its unit (`5s`, `6GiB`).
-- **Reconcile.** Manifest plus defaults produce one effective configuration
-  (a generation). All or nothing: an invalid manifest on hot reload is rejected
-  and the last good generation keeps running. Reconcile reports what was set,
-  what defaulted and what that implies.
+- **Reconcile.** The manifest, secrets and defaults produce one effective
+  configuration (a generation). All or nothing: an invalid manifest on hot
+  reload is rejected and the last good generation keeps running. Reconcile
+  reports what was set, what defaulted and what that implies.
 - **Change cost.** Every setting is classed as live, service restart or
   game-server restart. A change that needs a game-server restart waits as
   pending while players are online, unless the server manager applies it now
   after being shown which worlds and how many players it disconnects. The
-  override is recorded with the
-  change.
-- **Applying a change.** The control plane publishes a generation; each child
-  it affects reloads it in place, or exits and Docker restarts it. A change to
-  the containers themselves waits as pending until the server manager runs
+  override is recorded with the change.
+- **Applying a change.** The control plane publishes a generation; each child it
+  affects reloads it in place, or exits and Docker restarts it. A change to the
+  containers themselves waits as pending until the server manager runs
   `vhd apply` (G13): a one-shot container that only the server manager starts,
   and the only one that gets the Docker socket, for that run. It validates the
-  manifest, holds a game-server restart while players are online unless the
-  server manager confirms it, renders the install's compose file from the
-  current generation and the release's `compose.yaml`, and has Compose
-  recreate only the containers whose definition changed. `vhd apply
-  --disconnect-players` is that confirmation. A world whose runtime has
-  stopped reporting counts as occupied, since status cannot vouch for it. A
-  player who joins in the seconds between that check and Compose recreating
-  a container is disconnected; a change a runtime applies in place has no
-  such window. The
-  Compose it runs is the one in the control plane's image, so the host needs
-  Docker Engine 26 or newer and any Compose that can start the one-shot.
+  manifest, keeps a game-server restart pending while players are online unless
+  the server manager confirms it, renders the install's compose file from the
+  current generation and the release's `compose.yaml`, and has Compose recreate
+  only the containers whose definition changed. `vhd apply --disconnect-players`
+  is that confirmation. A world whose runtime has stopped reporting counts as
+  occupied, since status cannot vouch for it. A player who joins in the seconds
+  between that check and Compose recreating a container is disconnected; a
+  change a runtime applies in place has no such window. The Compose it runs is
+  the one in the control plane's image, so the host's own Compose only has to
+  start the one-shot.
 - **Delivering a generation.** The control plane writes each child's
   generation, and the secrets scoped to it, into that child's own directory of
   one generations volume. The directory, like the child's Compose service, is
-  named for it: a world's save name in lower case with a short hash, since save names
-  allow characters Compose names do not. Each child mounts only its own
-  directory, read-only (a volume subpath, which needs Docker Engine 26), so it
-  can read no other child's secrets. The secrets go first and the generation
+  named for it: a world's save name in lower case with a short hash, since
+  save names allow characters Compose names do not. Each child mounts only its
+  own directory, read-only (a volume subpath, which needs Docker Engine 26), so
+  it can read no other child's secrets. The secrets go first and the generation
   second, and a child acts on neither until both carry the same generation
   (B1). A world's directory is also keyed by its port, so when `vhd apply`
   moves a world to a new port only the new container reads that change. If
   Compose fails partway, `vhd apply` brings the install back on the compose
   file Compose last ran successfully, which it replaces only once a run
   succeeds; a moving world's old directory stays as it was until then.
-- **Running as.** The control plane runs as the user who owns the install
-  folder, which `vhd apply` reads from the folder, so the secrets file can stay
-  readable by its owner alone. Every other child runs as VHD's own
-  unprivileged user.
+- **Running as.** The control plane runs as the install folder's owner, whom
+  `vhd apply` reads from the folder, so the secrets file can stay readable by
+  its owner alone. Every other child runs as VHD's own unprivileged user.
 - **Host check.** At first start and on every reconcile, the control plane
   compares what the manifest asks for with what the host has: ports, memory
   and CPU per world, disk for worlds and backups. A shortfall is a warning in
   status, never a silent failure. A port already taken on the host stops only
   the world that needs it.
 - **Interfaces.** One control API. The TUI, the admin console and the CLI,
-  `vhd`, are its clients. The CLI runs from the control plane's image, so a
-  host needs only Docker. The control API answers on a Unix socket in a volume
-  only the control plane and `vhd` mount, so no child and no network reaches
-  it. Children report status to a separate listener on the install network
-  that accepts status and nothing else, and only from the reporting
+  `vhd`, are its clients, and cover manifest errors, hot reload, status, world
+  import and export, backups and logs. The CLI runs from the control plane's
+  image, so a host needs only Docker. The control API answers on a Unix socket
+  in a volume only the control plane and `vhd` mount, so no child and no network
+  reaches it. Children report status to a separate listener on the install
+  network that accepts status and nothing else, and only from the reporting
   world's own container: it trusts source addresses, which holds because no
   child has the capability to forge one. The admin console will put the control
-  API on the host's loopback, listening locally unless the manifest opens it,
-  once its authentication is settled (O14). They cover manifest errors, hot
-  reload, status, world import and export, backups and logs.
+  API on the host's loopback unless the manifest opens it, once its
+  authentication is settled (O14).
 - **Failure domain.** Needed to start or change an install, not to keep it
   running. If it stops at steady state, children keep running on the last good
   generation.
@@ -167,12 +164,12 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   Each world downloads and updates a server of its own, so a crash, an update
   or a full disk stays inside it; worlds on one host pay that disk space and
   download once each.
-- **Restart gating is shared.** The control plane holds a change while status
-  shows players, and the runtime makes the final check when it would restart
-  the game, since only it sees the count at that moment: it restarts only for
-  a current count of no players, or for a generation that carries the server
-  manager's confirmation (B1). Only that confirmation, or a stop, ends a
-  load, and then by a kill, which saves nothing.
+- **Restart gating is shared.** The control plane keeps a change pending while
+  status shows players, and the runtime makes the final check when it would
+  restart the game, since only it sees the count at that moment: it restarts
+  only for a current count of no players, or for a generation that carries the
+  server manager's confirmation (B1). Only that confirmation, or a stop, ends a
+  world that is still loading, and then by a kill, which saves nothing.
 - **Children read only the effective configuration.** Generated files, such as
   the plugin's BepInEx config, are never edited by hand.
 - **World truth gates saving.** A world that fails world truth is stopped
@@ -210,7 +207,7 @@ boundary, and every boundary follows one standard. Each contract lives in
 
 | # | Boundary | Crosses | Contract | On failure |
 |---|---|---|---|---|
-| I0 | Ingress | Manifest, secrets, operator actions into the control plane | Manifest schema, secrets key list, control API | Reject whole; the last good generation keeps running |
+| I0 | Ingress | Manifest, secrets, operator actions into the control plane | Manifest schema, secrets schema, control API | Reject whole; the last good generation keeps running |
 | B1 | Control plane → children | Effective configuration and scoped secrets; status back | Generation schema | The child keeps its last good generation |
 | B2 | Plugin → intake | Telemetry events | Event schema | Fail soft |
 | B3 | Broker ↔ plugin | Commands and their outcomes | Command verbs, limits, idempotency key | Fail closed |
@@ -238,15 +235,15 @@ address in a profile is a default (G9).
 In every profile the admin console stays on loopback unless the manifest opens
 it, and no data-layer service or database gets a host port.
 
-A profile sets what the install opens on the host. Whether that reaches the
-internet is up to the host's network: behind a home router it takes a port
-forward, and on a server with its own public address everything the LAN profile
-opens is public unless a firewall closes it.
+Whether what a profile opens reaches the internet is up to the host's network:
+behind a home router it takes a port forward, and on a server with its own
+public address everything the LAN profile opens is public unless a firewall
+closes it.
 
 ## Lanes
 
 Follows from G2 and G4. Building VHD, developing it and running it can share one
-host without touching each other. The registry is the boundary between building
+host without touching each other. The registry is the line between building
 the product and running it.
 
 | Lane | Runs | Isolation |
@@ -261,7 +258,7 @@ Follows from G4 and G12.
 
 | Channel | Image tags | Made by |
 |---|---|---|
-| Commit | `sha-<commit>`, `edge` | Every merge to `main`: CI builds and pushes the images |
+| Commit | `sha-<short commit>`, `edge` | Every merge to `main`: CI builds and pushes the images |
 | Candidate | `X.Y.Z-rc.N` | Tag `vX.Y.Z-rc.N`: promotes that commit's images |
 | Release | `X.Y.Z`, `latest` | Tag `vX.Y.Z`: promotes the newest candidate on the same commit, and is refused if there is none |
 
@@ -270,17 +267,16 @@ Follows from G4 and G12.
 - **Acceptance installs from the registry.** A clean runner installs a
   channel's images anonymously and checks that the install works. An image
   that was never pushed, or is not public, fails there, not on someone's
-  server. Commit builds are what acceptance installs; a candidate or a release
-  is published only after acceptance passes on its images.
+  server. It runs on every commit build, and again on the images a version tag
+  promotes, before the tag moves them.
 - **The nightly game check** builds and accepts the newest commit against the
-  newest game build, because game patches arrive without notice. A failure
-  blocks the next candidate. Beside it, the pinned downloads Dependabot cannot
+  newest game build, because game patches arrive without notice. A candidate
+  needs a recent pass. Beside it, the pinned downloads Dependabot cannot
   watch are compared with their newest releases; a newer one opens an issue and
   blocks nothing, since a game-patch fix must not wait on an unrelated bump.
 - **Candidates and releases attach** `compose.yaml`, with every image pinned by
   digest, the manifest and secrets schemas, the plugin artifact and
-  `SHA256SUMS`. Release
-  notes name the game build the release was accepted on.
+  `SHA256SUMS`. Release notes name the game build the release was accepted on.
 - **Three gates.** The merge gate: every check passes before a merge to
   `main`. The candidate gate: acceptance passes on the registry images,
   including against the newest game build, before a candidate tag. The release
@@ -289,11 +285,11 @@ Follows from G4 and G12.
 
 ## Delivery order
 
-1. **Charter.** Settle the decisions that shape the skeleton (G13–G19) and the
-   first version of the manifest schema.
+1. **Charter.** Settle the decisions that shape the walking skeleton (G13–G19)
+   and the first version of the manifest schema.
 2. **Pipeline and walking skeleton.** Build, publish, install from the registry
-   on a clean host, and see one live player on the web map. The skeleton runs
-   on built-in defaults.
+   on a clean host, and see one live player on the web map. The walking
+   skeleton runs on built-in defaults.
 3. **Acceptance material.** Recorded sessions, world saves and contracts that
    every capability must keep, synthesized or anonymized.
 4. **Capabilities, one release at a time,** each passing its acceptance
@@ -329,9 +325,9 @@ What any design here must respect about the game.
 - The plugin builds against stock, unmodified game assemblies plus BepInEx and
   Harmony, with no publicizer step. The dedicated-server download carries every
   game assembly it references (`assembly_valheim`, `UnityEngine`,
-  `UnityEngine.CoreModule`), so a build stage fetches them and the plugin
-  builds anywhere, including GitHub Actions. Game files never enter
-  an image or a release.
+  `UnityEngine.CoreModule`), so a build stage fetches them and the plugin builds
+  anywhere, including GitHub Actions. Game files never enter an image or a
+  release.
 
 ## Open decisions
 

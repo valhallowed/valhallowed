@@ -16,12 +16,12 @@ RUN apt-get update \
 ADD https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz /tmp/steamcmd.tar.gz
 RUN mkdir /steamcmd && tar -xzf /tmp/steamcmd.tar.gz -C /steamcmd && rm /tmp/steamcmd.tar.gz
 
-# The dedicated server build GAME_BUILD names, downloaded to take its assemblies
-# and discarded in the same step: the layer holds only the assemblies and the
-# build id, and a local builder reuses it exactly while the build is unchanged
-# (CI keeps no cache of it: see ci.yml). SteamCMD's exit
-# code is unreliable on a first run, so success is the app manifest it writes,
-# marked fully installed, and a failed attempt is retried.
+# The game build GAME_BUILD names, downloaded to take its assemblies and
+# discarded in the same step: the layer holds only the assemblies and the build
+# id, and a local builder reuses it exactly while the build is unchanged (CI
+# keeps no cache of it: see ci.yml). SteamCMD's exit code is unreliable on a
+# first run, so success is the app manifest it writes, marked fully installed,
+# and a failed attempt is retried.
 FROM steamcmd AS game
 ARG GAME_BUILD
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -51,7 +51,7 @@ ADD --checksum=sha256:bce631497976a93977ceb08e166712e6c31d15244956f89f17df092a9b
     https://thunderstore.io/package/download/denikson/BepInExPack_Valheim/${BEPINEX_PACK_VERSION}/ /tmp/bepinex.zip
 RUN mkdir /bepinex && unzip -q /tmp/bepinex.zip -d /bepinex
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:747cbade5bfd918a175ac32f8f1d931edec2c7d0d5397a3de72eaef1ac1f66d2 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b AS build
 ARG VHD_BUILD=dev
 WORKDIR /src
 COPY plugin/ ./
@@ -73,7 +73,7 @@ COPY --from=check /out/Valhallowed.Plugin.dll /
 COPY --from=game /refs/game-build /
 
 FROM vhd-debian AS runtime
-# The dedicated server build the plugin was compiled against, which the game
+# The game build the plugin was compiled against, which the game
 # stage checked Steam served. A release names it.
 ARG GAME_BUILD
 LABEL com.valhallowed.game-build=$GAME_BUILD

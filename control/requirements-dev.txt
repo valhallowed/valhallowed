@@ -1,7 +1,8 @@
 # Exact pins for the control plane's checks, transitive dependencies included.
-# The runtime dependencies match the Debian trixie packages the control plane
-# image installs from its base image's snapshot, so they stay equal until the
-# base image moves.
+# jsonschema and the packages it needs match the Debian trixie packages the
+# control plane image installs from its base image's snapshot, and
+# types-jsonschema matches that jsonschema, so they move only with the base
+# image.
 jsonschema==4.19.2
 attrs==25.3.0
 jsonschema-specifications==2023.12.1
@@ -12,7 +13,7 @@ iniconfig==2.3.1
 packaging==26.3
 pluggy==1.7.0
 Pygments==2.21.0
-ruff==0.17.1
+ruff==0.17.2
 mypy==2.4.0
 ast-serialize==0.13.1
 librt==0.16.0
