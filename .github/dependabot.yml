@@ -1,5 +1,6 @@
 # Pinned dependencies move only through pull requests that pass the same checks
-# as any other change. Every ecosystem lands in one weekly pull request.
+# as any other change. Every ecosystem lands in one weekly pull request, except
+# the Debian base.
 version: 2
 multi-ecosystem-groups:
   weekly:
@@ -18,14 +19,17 @@ updates:
       - /images/tools
     patterns: ["*"]
     multi-ecosystem-group: weekly
-    # The checks' Python mirrors the minor version the Debian base ships, and
-    # moves with the base instead: patch releases only.
+    # The checks' Python (images/tools) follows the minor version the Debian
+    # base ships, so the checks run the Python the images do: patch releases
+    # only. scripts/check-images.sh fails when the two differ.
     ignore:
       - dependency-name: python
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
-  # Not with the others: a new Debian base digest moves the package snapshot with
-  # it, and its apt pins must move by hand in its own pull request, which
-  # Dependabot cannot do; the rest of the week's updates need not wait for it.
+  # Apart from the others: a new Debian base digest moves the package snapshot
+  # with it, and what mirrors the snapshot moves by hand in the same pull
+  # request, which Dependabot cannot do: the apt pins, the pip pins ignored
+  # below, and the checks' Python minor version above. The rest of the week's
+  # updates need not wait for it.
   - package-ecosystem: docker
     directory: /images/debian
     schedule:
