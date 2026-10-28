@@ -81,10 +81,11 @@ and lands through pull requests.
   section lists each finding and the commit that fixed it.
 - **Fix, don't defer.** Every finding is fixed in the pull request. The one
   exception is a gap whose fix is a later slice's deliverable: it becomes a
-  task in that slice's issue.
+  task in that slice's issue, which its Retro row names.
 - **Progress lives on the board, nowhere else.** Issues exist for the current
   milestone, plus the next one while it is planned; later work stays in
-  docs/architecture.md § Delivery order. The issues the nightly checks open
-  are alerts, not plans, and close themselves on the next pass. Docs say what VHD is and why, never
-  where the work stands.
+  docs/architecture.md § Delivery order. An issue's tasks are ticked as each
+  is done, so a closed issue shows what it delivered. The issues `nightly.yml`
+  opens are alerts, not plans, and close themselves on the next pass. Docs say
+  what VHD is and why, never where the work stands.
 - **Delete merged branches,** on GitHub and in every clone.
