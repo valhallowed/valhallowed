@@ -140,10 +140,10 @@ world render (B5).
 **Milestone** — A set of slices that together reach a point in the delivery
 order, tracked as a GitHub milestone. It lands in one or more pull requests.
 
-**Nightly game check** — The pipeline run, every night, that builds the
-plugin against the newest game build. A failure blocks the next candidate.
-Beside it, the same run compares the pinned downloads Dependabot cannot watch
-with their newest releases, which blocks nothing.
+**Nightly game check** — The pipeline job, every night, that checks the
+newest commit against the newest game build. A failure blocks the next
+candidate. Beside it, the same run compares the pinned downloads Dependabot
+cannot watch with their newest releases, which blocks nothing.
 
 **Operator action** — A one-off request through the control API, such as
 importing a world, taking a backup or reading logs. Validated like the
@@ -183,7 +183,7 @@ slice's deliverable.
 
 **Secrets** — Sensitive values a server manager supplies, such as a world's
 password or a chat service token, kept in a TOML file apart from the manifest.
-Key names come from a closed list in the manifest schema.
+Key names come from the closed list in `schema/secrets.schema.json`.
 
 **Server manager** — The person who operates an install through the control
 plane. Not a player.
