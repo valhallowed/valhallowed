@@ -10,11 +10,10 @@ built short of the design.
 ## Target
 
 Someone with only Docker installs a Valheim dedicated server that carries the
-VHD plugin, telemetry, governed in-game commands and the web map. They write
-one manifest and, optionally, a secrets file. Everything else is defaulted,
-derived or generated. The host is x86-64, because the dedicated server ships for
-nothing else: a Linux machine, or Docker Desktop on Windows or macOS with an
-Intel or AMD processor.
+VHD plugin, telemetry, governed in-game commands and the web map. They write one
+manifest and, optionally, a secrets file. Everything else is defaulted, derived
+or generated. The host is x86-64 (§ Game facts): a Linux machine, or Docker
+Desktop on Windows or macOS with an Intel or AMD processor.
 
 ## Ground rules
 
@@ -111,8 +110,8 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   occupied, since status cannot vouch for it. A player who joins in the seconds
   between that check and Compose recreating a container is disconnected; a
   change a runtime applies in place has no such window. The Compose it runs is
-  the one in the control plane's image, so the host needs Docker Engine 26 or
-  newer and any Compose that can start the one-shot.
+  the one in the control plane's image, so the host's own Compose only has to
+  start the one-shot.
 - **Delivering a generation.** The control plane writes each child's
   generation, and the secrets scoped to it, into that child's own directory of
   one generations volume. The directory, like the child's Compose service, is
@@ -237,10 +236,10 @@ address in a profile is a default (G9).
 In every profile the admin console stays on loopback unless the manifest opens
 it, and no data-layer service or database gets a host port.
 
-A profile sets what the install opens on the host. Whether that reaches the
-internet is up to the host's network: behind a home router it takes a port
-forward, and on a server with its own public address everything the LAN profile
-opens is public unless a firewall closes it.
+Whether what a profile opens reaches the internet is up to the host's network:
+behind a home router it takes a port forward, and on a server with its own
+public address everything the LAN profile opens is public unless a firewall
+closes it.
 
 ## Lanes
 

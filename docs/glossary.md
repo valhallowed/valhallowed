@@ -229,7 +229,7 @@ admin console.
 **World** — One Valheim save and the game runtime that serves it.
 
 **World ports** — The UDP ports a world reserves on the host: its port through
-port+2. Worlds that share a host need ranges that do not overlap.
+port+2.
 
 **World render** — Turning a world's map export into the web map's base image.
 Runs on the install, so no image carries a world's map.

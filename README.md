@@ -4,14 +4,14 @@ A self-hosted Valheim dedicated server with a server-side plugin, telemetry,
 governed in-game commands and a web map, configured through one manifest. VHD
 for short. Its home is [valhallowed.com](https://valhallowed.com).
 
-Pre-release; the [board](https://github.com/orgs/valhallowed/projects/1)
-shows what is built.
+The [board](https://github.com/orgs/valhallowed/projects/1) shows what is
+built.
 
 ## Docs
 
 | Doc | What it covers |
 |---|---|
-| [Architecture](docs/architecture.md) | The target, ground rules, the model, boundaries, exposure, releases, open decisions |
+| [Architecture](docs/architecture.md) | What VHD is, the rules it is built under, and the decisions still open |
 | [Glossary](docs/glossary.md) | Every term, with exactly one meaning |
 | [Schema](schema/) | Every setting and secret key, with its default and change cost |
 | [Brand](docs/brand.md) | The name, the two voices, what the colours mean |
@@ -20,10 +20,9 @@ shows what is built.
 
 ## Releases
 
-Images live at `ghcr.io/valhallowed/<component>`. They are built once, on
-`main`, and a version tag promotes them without a rebuild. What a release
-attaches, its channels and its gates are in
-[Architecture § Releases](docs/architecture.md#releases).
+Images live at `ghcr.io/valhallowed/<component>`. How they are built and
+promoted, and what a release attaches, is in [Architecture §
+Releases](docs/architecture.md#releases).
 
 ## Installing
 

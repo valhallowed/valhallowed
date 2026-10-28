@@ -21,8 +21,8 @@ tracks that gap. Open a page in any current browser.
   vocabulary. A page defines no colour of its own.
 - **One script.** [`vhd.js`](vhd.js) gives every page the same detail panel and
   step-through behaviour.
-- **Both themes.** Dark is the home theme; every page also reads correctly in
-  light, and at phone width without horizontal scrolling.
+- **Both themes, any width.** Dark is the home theme; every page also reads
+  correctly in light, and at phone width without horizontal scrolling.
 - **Glossary terms only,** and the trademark line from brand.md in every
   footer.
 - **Self-contained.** No build step and no outside requests; the fonts come
