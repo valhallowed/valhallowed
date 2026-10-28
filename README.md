@@ -42,8 +42,8 @@ of its own:
 host's Compose would otherwise call the install's own containers orphans of
 `compose.yaml` and suggest `--remove-orphans`, which would delete them.
 
-Edit either file and the control plane applies the change, holding a game
-restart while players are online. A change to the containers themselves,
+Edit either file and the control plane applies the change, keeping a game-server
+restart pending while players are online. A change to the containers themselves,
 such as a new world or port, waits for the next `vhd apply`.
 
 ## Building locally

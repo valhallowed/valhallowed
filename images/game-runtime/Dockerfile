@@ -16,7 +16,7 @@ RUN apt-get update \
 ADD https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz /tmp/steamcmd.tar.gz
 RUN mkdir /steamcmd && tar -xzf /tmp/steamcmd.tar.gz -C /steamcmd && rm /tmp/steamcmd.tar.gz
 
-# The dedicated server build GAME_BUILD names, downloaded to take its assemblies
+# The game build GAME_BUILD names, downloaded to take its assemblies
 # and discarded in the same step: the layer holds only the assemblies and the
 # build id, and a local builder reuses it exactly while the build is unchanged
 # (CI keeps no cache of it: see ci.yml). SteamCMD's exit
@@ -73,7 +73,7 @@ COPY --from=check /out/Valhallowed.Plugin.dll /
 COPY --from=game /refs/game-build /
 
 FROM vhd-debian AS runtime
-# The dedicated server build the plugin was compiled against, which the game
+# The game build the plugin was compiled against, which the game
 # stage checked Steam served. A release names it.
 ARG GAME_BUILD
 LABEL com.valhallowed.game-build=$GAME_BUILD

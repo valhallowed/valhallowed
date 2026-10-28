@@ -16,8 +16,8 @@ and chat-command contracts that every capability must keep. Synthesized or
 anonymized; never real player data.
 
 **Admin console** — The control plane's web interface for server managers:
-status, manifest errors, changes, worlds, backups and logs. Listens locally
-unless the manifest opens it. Not the web map.
+status, manifest errors, changes, worlds, backups and logs. Listens on the
+host's loopback unless the manifest opens it. Not the web map.
 
 **Assistant** — The capability that answers players' questions in game, worded
 by an LLM provider from facts the data layer computed (B7). Off without its
@@ -48,7 +48,7 @@ in-game commands, chat relay, assistant, web map, sign-in. It declares what it
 depends on, and its failure degrades only itself.
 
 **Change cost** — What applying a setting change requires: live, service
-restart or game-server restart. Every setting carries one in the manifest
+restart or game-server restart. Every setting and secret carries one in its
 schema, beside what applies it: the control plane or `vhd apply`.
 
 **Channel** — A release stream a consumer follows: commit builds, candidates
@@ -96,7 +96,7 @@ plugin is built against, and what a game runtime installs.
 
 **Game runtime** — A child that runs one world: the Valheim dedicated server,
 BepInEx and the plugin, under its supervisor. It runs what the control plane
-hands it and holds no policy.
+hands it and sets no policy.
 
 **Generation** — One numbered effective configuration of the whole install.
 Reconcile produces it whole or not at all: when a new manifest is rejected,
@@ -128,10 +128,9 @@ released artifacts only.
 install. Checked against the manifest schema; never holds secrets.
 
 **Manifest schema** — The versioned JSON Schema for the manifest,
-`schema/manifest.schema.json`: every setting with its type, default, change
-cost and what applies it. The secrets file has its own beside it, with the
-closed list of secret keys. Together they produce validation, defaults, each
-child's configuration and the settings reference.
+`schema/manifest.schema.json`: every setting with its type, default, change cost
+and what applies it. With the secrets schema, it produces validation, defaults,
+each child's configuration and the settings reference.
 
 **Map export** — The file the plugin writes with a world's map, the input to
 world render (B5).
@@ -177,9 +176,14 @@ schemas.
 **Retro** — The review a pull request passes before it is marked ready, and
 the fixes it calls for. AGENTS.md § Delivering says what it covers.
 
-**Secrets** — Sensitive values a server manager supplies, such as a world's
-password or a chat service token, kept in a TOML file apart from the manifest.
-Key names come from the closed list in `schema/secrets.schema.json`.
+**Secrets** — Sensitive values. A server manager supplies those that cannot
+be generated, such as a world's password or a chat service token, in a TOML
+file apart from the manifest, under the keys the secrets schema lists. VHD
+generates the rest, such as the bundled database's password.
+
+**Secrets schema** — The versioned JSON Schema for the secrets file,
+`schema/secrets.schema.json`: the closed list of secret keys, each with its
+format, change cost and what applies it.
 
 **Server manager** — The person who operates an install through the control
 plane. Not a player.
