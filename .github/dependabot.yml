@@ -18,6 +18,11 @@ updates:
       - /images/tools
     patterns: ["*"]
     multi-ecosystem-group: weekly
+    # The checks' Python mirrors the minor version the Debian base ships, and
+    # moves with the base instead: patch releases only.
+    ignore:
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
   # Not with the others: a new Debian base digest moves the package snapshot with
   # it, and its apt pins must move by hand in its own pull request, which
   # Dependabot cannot do; the rest of the week's updates need not wait for it.
