@@ -16,12 +16,12 @@ RUN apt-get update \
 ADD https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz /tmp/steamcmd.tar.gz
 RUN mkdir /steamcmd && tar -xzf /tmp/steamcmd.tar.gz -C /steamcmd && rm /tmp/steamcmd.tar.gz
 
-# The game build GAME_BUILD names, downloaded to take its assemblies
-# and discarded in the same step: the layer holds only the assemblies and the
-# build id, and a local builder reuses it exactly while the build is unchanged
-# (CI keeps no cache of it: see ci.yml). SteamCMD's exit
-# code is unreliable on a first run, so success is the app manifest it writes,
-# marked fully installed, and a failed attempt is retried.
+# The game build GAME_BUILD names, downloaded to take its assemblies and
+# discarded in the same step: the layer holds only the assemblies and the build
+# id, and a local builder reuses it exactly while the build is unchanged (CI
+# keeps no cache of it: see ci.yml). SteamCMD's exit code is unreliable on a
+# first run, so success is the app manifest it writes, marked fully installed,
+# and a failed attempt is retried.
 FROM steamcmd AS game
 ARG GAME_BUILD
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]

@@ -325,9 +325,9 @@ What any design here must respect about the game.
 - The plugin builds against stock, unmodified game assemblies plus BepInEx and
   Harmony, with no publicizer step. The dedicated-server download carries every
   game assembly it references (`assembly_valheim`, `UnityEngine`,
-  `UnityEngine.CoreModule`), so a build stage fetches them and the plugin
-  builds anywhere, including GitHub Actions. Game files never enter
-  an image or a release.
+  `UnityEngine.CoreModule`), so a build stage fetches them and the plugin builds
+  anywhere, including GitHub Actions. Game files never enter an image or a
+  release.
 
 ## Open decisions
 
