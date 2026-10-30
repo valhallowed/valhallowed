@@ -1,8 +1,8 @@
 # The game runtime: the supervisor, BepInEx and the plugin on a pinned base
 # (G16), the snapshot Debian of images/debian. The plugin is built here against
-# the dedicated server's own assemblies, downloaded in a build stage and
-# discarded. SteamCMD and the server download into /data at first start, so no
-# Valve or Iron Gate file is in any image.
+# the dedicated server's own assemblies: a build stage downloads the server and
+# keeps only those. SteamCMD and the server download into /data at first start,
+# so no Valve or Iron Gate file is in any image.
 
 # SteamCMD, for the plugin build and for scripts/game-build.sh, which asks Steam
 # for the dedicated server's current build.
@@ -73,8 +73,8 @@ COPY --from=check /out/Valhallowed.Plugin.dll /
 COPY --from=game /refs/game-build /
 
 FROM vhd-debian AS runtime
-# The game build the plugin was compiled against, which the game
-# stage checked Steam served. A release names it.
+# The game build the plugin was compiled against, which the game stage checked
+# Steam served. A release names it.
 ARG GAME_BUILD
 LABEL com.valhallowed.game-build=$GAME_BUILD
 # lib32gcc-s1 for SteamCMD, which is 32-bit; libatomic1 and the PulseAudio
@@ -96,6 +96,9 @@ RUN apt-get update \
  && chown vhd:vhd /data /run/vhd
 COPY --from=bepinex /bepinex/BepInExPack_Valheim/BepInEx/ /opt/vhd/bepinex/BepInEx/
 COPY --from=bepinex /bepinex/BepInExPack_Valheim/doorstop_libs/libdoorstop_x64.so /opt/vhd/bepinex/doorstop_libs/
+# The pack's licenses. A new BEPINEX_PACK_VERSION moves the BepInEx commit,
+# DOORSTOP_VERSION and NOTICE with it; a checksum moves only when its text does.
+ARG DOORSTOP_VERSION=4.6.0
 ADD --checksum=sha256:e6e534ef6f4347b6449407ee046a3d09cb0174c6f688c996ad0bed94b74b3933 \
     https://raw.githubusercontent.com/AzumattDev/BepInEx/b89fcc8ecbec7e07cd37b67315b932506084e8b4/LICENSE \
     /opt/vhd/licenses/BepInEx-LICENSE
@@ -109,7 +112,7 @@ ADD --checksum=sha256:13d58ecbed676511c0c4c4009bff107025e50007ff5e7901dc562700ec
     https://raw.githubusercontent.com/jbevain/cecil/882ca5eedda1e62eb41bd5869aeb15d8f1538e51/LICENSE.txt \
     /opt/vhd/licenses/Mono.Cecil-LICENSE
 ADD --checksum=sha256:20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331 \
-    https://raw.githubusercontent.com/NeighTools/UnityDoorstop/v4.6.0/LICENSE \
+    https://raw.githubusercontent.com/NeighTools/UnityDoorstop/v${DOORSTOP_VERSION}/LICENSE \
     /opt/vhd/licenses/UnityDoorstop-LICENSE
 COPY images/game-runtime/NOTICE /opt/vhd/licenses/NOTICE
 COPY --from=check /out/Valhallowed.Plugin.dll /opt/vhd/plugin/
