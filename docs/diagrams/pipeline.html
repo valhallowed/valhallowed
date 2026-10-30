@@ -64,7 +64,7 @@
             <g class="z-data"><rect class="chipr" x="803" y="337" width="46" height="16" rx="3"/><text class="chipt" x="826" y="349" text-anchor="middle">data</text></g>
           </g>
           <g class="n z-neutral" data-k="schedule"><rect x="35" y="410" width="210" height="56" rx="6"/><text class="t" x="49" y="433">Nightly game check</text><text class="s" x="49" y="452">accepted on newest game build</text></g>
-          <g class="n z-neutral" data-k="accept"><rect x="310" y="410" width="320" height="56" rx="6"/><text class="t" x="324" y="433">Acceptance</text><text class="s" x="324" y="452">clean runner installs from the registry</text></g>
+          <g class="n z-neutral" data-k="accept"><rect x="310" y="410" width="320" height="56" rx="6"/><text class="t" x="324" y="433">Acceptance</text><text class="s" x="324" y="452">clean runner installs, then loads a world</text></g>
           <g class="n z-external" data-k="rc"><rect x="685" y="520" width="230" height="56" rx="6"/><text class="t" x="699" y="543">Candidate</text><text class="s" x="699" y="562">same images, retagged</text></g>
           <g class="n z-people" data-k="candch"><rect x="965" y="520" width="200" height="56" rx="6"/><text class="t" x="979" y="543">Candidate channel</text><text class="s" x="979" y="562">dev lane, opted-in installs</text></g>
           <g class="n z-neutral" data-k="reltag"><rect x="35" y="630" width="210" height="56" rx="6"/><text class="t" x="49" y="653">Release tag</text><text class="s" x="49" y="672">a maintainer promotes</text></g>
@@ -150,8 +150,8 @@
     merge: { kind: 'Source control', title: 'Merge to main', text: 'Main always builds. Branch protection holds the merge until the merge gate passes.', rows: [['Requires', 'merge gate green']] },
     build: { kind: 'CI runner', title: 'Build', text: 'Asks Steam for the dedicated server’s current build, downloads that build, keeps its assemblies and discards the rest. CI keeps no cache of them. Nothing proprietary is committed or shipped.', rows: [['Produces', 'every image the install lists; the plugin, inside the game runtime image'], ['Inputs', 'the repo at one commit; the game build and its assemblies; the BepInEx pack'], ['Locally', 'the same steps run in the build lane']] },
     commitbuild: { kind: 'Registry', title: 'Commit build', text: 'Every merge publishes its images under the commit tag, the plugin inside the game runtime image. Nothing on this tag is meant for consumers.', rows: [['Tags', 'sha-<commit>, edge'], ['Followed by', 'CI acceptance, the dev lane']] },
-    accept: { kind: 'CI runner', title: 'Acceptance', text: 'A clean runner installs VHD from the registry the way a server manager does, with vhd apply, and checks the install.', rows: [['Pulls', 'registry images, not the local build cache, so a missing push fails here'], ['Checks', 'every image is from the commit; the world downloads the newest dedicated server and passes world truth, loading with the plugin'], ['Gate', 'candidate gate']] },
-    schedule: { kind: 'Source control', title: 'Nightly game check', text: 'Game patches arrive without notice. Every night the plugin is built against the newest game build, and the newest commit is accepted on it; a candidate needs a pass from the last 36 hours. Beside it, the pinned downloads Dependabot cannot watch are compared with their newest releases.', rows: [['Catches', 'a game patch that breaks the plugin’s build, or stops a world loading with the plugin; a pinned download that fell behind'], ['On failure', 'an issue opens for each check, closed by the next pass; only the game check holds back candidates']] },
+    accept: { kind: 'CI runner', title: 'Acceptance', text: 'A clean runner installs VHD the way a server manager does, with vhd apply, and checks the install.', rows: [['Installs', 'on main and before a tag moves them, the registry’s images, so a missing push fails here; for a pull request and the nightly game check, the build it just made'], ['Checks', 'every image is from the commit; the world downloads the newest dedicated server and the plugin reports it loaded'], ['Gate', 'candidate gate']] },
+    schedule: { kind: 'Source control', title: 'Nightly game check', text: 'Game patches arrive without notice. Every night the plugin is built against the newest game build, and the newest commit is accepted on it; a candidate needs a recent pass. Beside it, the pinned downloads Dependabot cannot watch are compared with their newest releases.', rows: [['Catches', 'a game patch that breaks the plugin’s build, or stops a world loading with the plugin; a pinned download that fell behind'], ['On failure', 'an issue opens for each check, closed by the next pass; only the game check holds back candidates']] },
     rc: { kind: 'Registry', title: 'Candidate', text: 'The commit build that passed the candidate gate, promoted. Same image digests.', rows: [['Tag', 'X.Y.Z-rc.N'], ['Rebuilds', 'never']] },
     candch: { kind: 'Consumers', title: 'Candidate channel', text: 'Installs that opt in to candidates: the dev lane, and any consumer who wants early releases.', rows: [['Watches', 'world truth, errors, pending changes'], ['Feeds', 'the release gate']] },
     reltag: { kind: 'Source control', title: 'Release tag', text: 'A maintainer promotes a candidate that soaked clean.', rows: [['Requires', 'the release gate']] },
@@ -173,7 +173,7 @@
     scenarios: {
       pr: { label: 'Pull request', steps: [
         { t: 'Push a branch', d: 'A pull request starts the checks.', on: ['src', 'e-push', 'checks'] },
-        { t: 'Checks run', d: 'Lint, unit and contract tests, the schema check and the public-content check, then acceptance of the pull request’s own build.', on: ['checks'] },
+        { t: 'Checks run', d: 'Lint, unit and contract tests, the schema check and the public-content check, then acceptance of the pull request’s own build.', on: ['checks', 'accept'] },
         { t: 'Merge gate', d: 'The merge stays blocked until every check is green.', on: ['checks', 'e-green', 'g1', 'merge'] }
       ] },
       merge: { label: 'Merge to main', steps: [
@@ -183,9 +183,9 @@
         { t: 'Acceptance', d: 'A clean runner installs from the registry with vhd apply and checks the install.', on: ['commitbuild', 'e-pull', 'accept'] }
       ] },
       nightly: { label: 'Nightly game check', steps: [
-        { t: 'Schedule fires', d: 'Once a night, against the newest dedicated-server build.', on: ['schedule', 'e-sched'] },
+        { t: 'Schedule fires', d: 'Once a night, against the newest game build.', on: ['schedule', 'e-sched'] },
         { t: 'Build the plugin', d: 'Catches a game patch that breaks the plugin’s build before a consumer meets it.', on: ['schedule', 'e-sched', 'build'] },
-        { t: 'Accept on it', d: 'Installs the newest commit and waits for its world to load with the plugin on the newest dedicated server.', on: ['schedule', 'accept'] },
+        { t: 'Accept on it', d: 'Builds the newest commit, installs that build and waits for its world to load with the plugin on the newest dedicated server.', on: ['schedule', 'e-sched', 'build', 'accept'] },
         { t: 'Result', d: 'Pass: the candidate gate may open, and an open issue closes. Fail: an issue opens, and no candidate is promoted until a run passes.', on: ['schedule'] },
         { t: 'Pinned downloads', d: 'Beside it, the downloads Dependabot cannot watch are compared with their newest releases. A newer one opens an issue of its own and blocks nothing.', on: ['schedule'] }
       ] },

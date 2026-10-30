@@ -117,7 +117,7 @@
       <table id="reg">
         <thead><tr><th>Dependency</th><th>Used by</th><th>Arrives</th><th>License</th><th>If it breaks or changes</th></tr></thead>
         <tbody>
-          <tr data-a="start"><td>Valheim dedicated server</td><td>Game runtime</td><td>Downloaded at first start and on update</td><td>Proprietary, Iron Gate</td><td>A patch can break plugin patches and load an empty world. World truth holds the update; the nightly check blocks the next candidate.</td></tr>
+          <tr data-a="start"><td>Valheim dedicated server</td><td>Game runtime</td><td>Downloaded at first start and on update</td><td>Proprietary, Iron Gate</td><td>A patch can break plugin patches and load an empty world. World truth holds the update; the nightly game check blocks the next candidate.</td></tr>
           <tr data-a="build"><td>Game assemblies</td><td>Plugin build</td><td>Fetched in CI, discarded</td><td>Proprietary; never committed or shipped</td><td>A renamed game method fails the build or a patch. Caught by the nightly game check.</td></tr>
           <tr data-a="start"><td>SteamCMD</td><td>Game runtime</td><td>Downloaded at first start</td><td>Valve’s terms</td><td>If Steam is unreachable, new installs and game updates wait. Running worlds keep running.</td></tr>
           <tr data-a="image"><td>Debian 13 and its packages: Python 3, jsonschema, tini, the libraries the server loads</td><td>Every VHD image built on Debian</td><td>Pinned by base image digest, packages from that image’s own snapshot</td><td>Free software licenses (DFSG)</td><td>Moves only when the base image digest moves, in a pull request that passes every check.</td></tr>
@@ -183,9 +183,9 @@
   VHD.details(document.getElementById('chainsvg'), chainData, document.getElementById('detail'), { first: 'plugin' });
 
   const blasts = {
-    patch: { label: 'Game patch', on: ['irongate', 'e-build', 'e-same', 'server', 'asm', 'e-runs', 'e-compile', 'plugin', 'e-patch', 'runtime', 'e-report', 'truth', 'e-night', 'nightly'], text: 'Harmony binds game methods by name, so a patch can leave a plugin patch applying and then throwing, and the world comes up empty. The nightly check catches it before a release. On an install, world truth stops the game before its first autosave, so it cannot save over the real world, and holds the runtime and the update.' },
+    patch: { label: 'Game patch', on: ['irongate', 'e-build', 'e-same', 'server', 'asm', 'e-runs', 'e-compile', 'plugin', 'e-patch', 'runtime', 'e-report', 'truth', 'e-night', 'nightly'], text: 'Harmony binds game methods by name, so a patch can leave a plugin patch applying and then throwing, and the world comes up empty. The nightly game check catches a patch that stops a world loading before a release. On an install, world truth stops the game before its first autosave, so it cannot save over the real world, and holds the runtime and the update.' },
     bepinex: { label: 'BepInEx release', on: ['bepproj', 'e-rel', 'bepinex', 'e-hosts', 'plugin', 'e-night', 'nightly'], text: 'VHD pins BepInEx in the game runtime image, so a new release reaches installs only inside a VHD release that passed acceptance. Nothing on an install changes on its own.' },
-    steam: { label: 'Steam unreachable', on: ['valve', 'e-tool', 'steamcmd', 'e-dl', 'server'], text: 'New installs and game updates wait. Running worlds keep running: nothing in the game chain needs Steam once the server is downloaded.' },
+    steam: { label: 'Steam unreachable', on: ['valve', 'e-tool', 'steamcmd', 'e-dl', 'server', 'e-night', 'nightly'], text: 'New installs and game updates wait. Running worlds keep running: nothing in the game chain needs Steam once the server is downloaded. In CI the plugin build, acceptance and the nightly game check fail until it returns, so no merge, candidate or release moves.' },
     base: { label: 'lloesche image change', on: ['lloesche'], text: 'Nothing. VHD builds its own game runtime image and keeps lloesche/valheim-server as a reference only (G16), so an upstream change reaches no install.' }
   };
   const svg = document.getElementById('chainsvg');
