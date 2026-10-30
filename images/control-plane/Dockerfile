@@ -24,16 +24,19 @@ RUN apt-get update \
       python3-jsonschema=4.19.2-6 \
       tini=0.19.0-3+b8 \
  && rm -rf /var/lib/apt/lists/* \
- && useradd --system --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin vhd
+ && useradd --system --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin vhd \
+ && mkdir -p /opt/vhd/licenses
 COPY --from=docker /tmp/docker/docker /usr/local/bin/docker
 ADD --checksum=sha256:47737f4236e6d3ccea7291995203f8f018058783b4c3a9469119811a0b5db8c0 --chmod=0755 \
     https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/docker-compose-linux-x86_64 \
     /usr/local/libexec/docker/cli-plugins/docker-compose
-ADD --checksum=sha256:2d81ea060825006fc8f3fe28aa5dc0ffeb80faf325b612c955229157b8c10dc0 \
+# The licenses. The RUN above makes their directory: ADD would give one it
+# creates the files' mode, which no one could traverse.
+ADD --checksum=sha256:2d81ea060825006fc8f3fe28aa5dc0ffeb80faf325b612c955229157b8c10dc0 --chmod=0644 \
     https://raw.githubusercontent.com/docker/cli/v${DOCKER_VERSION}/LICENSE /opt/vhd/licenses/docker-cli-LICENSE
-ADD --checksum=sha256:a8c869fbda819afb8d80e0ac19bac52e766bc6c19cb38cf94f52d64c4be2aab6 \
+ADD --checksum=sha256:a8c869fbda819afb8d80e0ac19bac52e766bc6c19cb38cf94f52d64c4be2aab6 --chmod=0644 \
     https://raw.githubusercontent.com/docker/cli/v${DOCKER_VERSION}/NOTICE /opt/vhd/licenses/docker-cli-NOTICE
-ADD --checksum=sha256:58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd \
+ADD --checksum=sha256:58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd --chmod=0644 \
     https://raw.githubusercontent.com/docker/compose/v${COMPOSE_VERSION}/LICENSE /opt/vhd/licenses/docker-compose-LICENSE
 COPY images/control-plane/NOTICE /opt/vhd/licenses/NOTICE
 COPY contracts/*.schema.json /opt/vhd/contracts/

@@ -2,10 +2,10 @@
 # Promote images already in the registry to a version tag. Nothing is rebuilt:
 #   vX.Y.Z-rc.N  candidate  promotes the commit channel's sha-<commit> images,
 #                           and is refused unless ci's accept job passed on
-#                           that commit, and the plugin built against the
-#                           newest game build in a nightly run on main of the
-#                           last 36 hours (it vouches for main, which a
-#                           candidate's commit is on)
+#                           that commit, and the newest nightly run on main
+#                           passed its game check, building and accepting on
+#                           the newest game build, in the last 36 hours (it
+#                           vouches for main, which a candidate's commit is on)
 #   vX.Y.Z       release    promotes the newest candidate on the same commit,
 #                           and moves latest
 # The images are the install's x-vhd block, which check-images.sh holds equal to

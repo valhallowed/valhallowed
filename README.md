@@ -55,15 +55,17 @@ make accept
 ```
 
 Builds the images with the definition CI uses, installs them through the
-release compose file and runs acceptance against the local build, on ports
-away from the defaults so it never meets an install on them.
+release compose file and runs acceptance against them: the install's world
+downloads the dedicated server from Steam and must load with the plugin, which
+can take up to 20 minutes. It uses ports away from the defaults, so it never
+meets an install on them.
 
 ```bash
 make plugin
 ```
 
 Builds the plugin into `dist/plugin`. The build downloads the dedicated server
-to compile against its assemblies, and keeps none of its files.
+to compile against its assemblies, and ships none of its files.
 
 ## Contributing
 

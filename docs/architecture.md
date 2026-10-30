@@ -268,12 +268,18 @@ Follows from G4 and G12.
   channel's images anonymously and checks that the install works. An image
   that was never pushed, or is not public, fails there, not on someone's
   server. It runs on every commit build, and again on the images a version tag
-  promotes, before the tag moves them.
+  promotes, before the tag moves them. The install's world downloads the newest
+  dedicated server and must load with the plugin, so a pass depends on Steam and
+  on the game build of the day: a game patch that stops a world loading fails
+  every acceptance, a pull request's included, until the plugin is fixed, and a
+  failure at a tag moves no tag.
 - **The nightly game check** builds and accepts the newest commit against the
   newest game build, because game patches arrive without notice. A candidate
-  needs a recent pass. Beside it, the pinned downloads Dependabot cannot
-  watch are compared with their newest releases; a newer one opens an issue and
-  blocks nothing, since a game-patch fix must not wait on an unrelated bump.
+  needs a recent pass from the newest run. A failed run is not retried; a run
+  by hand replaces it, so a failure stays visible. Beside it, the pinned
+  downloads Dependabot cannot watch are compared with their newest releases; a
+  newer one opens an issue and blocks nothing, since a game-patch fix must not
+  wait on an unrelated bump.
 - **Candidates and releases attach** `compose.yaml`, with every image pinned by
   digest, the manifest and secrets schemas, the plugin artifact and
   `SHA256SUMS`. Release notes name the game build the release was accepted on.

@@ -6,7 +6,9 @@ Closes #
 
 ## Retro
 
-<!-- Each finding and the commit that fixed it, or `task in #n` for a gap AGENTS.md § Delivering defers. -->
+<!-- AGENTS.md § Delivering: name the reviews, then each finding with its commit, or `task in #n`. With none, write "No findings" in place of the table. -->
+
+Reviews:
 
 | Finding | Fixed in |
 |---|---|
