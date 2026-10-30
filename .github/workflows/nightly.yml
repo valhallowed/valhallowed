@@ -1,10 +1,10 @@
 # The nightly checks. A game patch arrives without notice, so every night the
-# plugin is built against the newest game build, and the newest commit is
-# accepted on it: its world loads with the plugin on the newest dedicated
-# server. promote.sh refuses a candidate unless that job passed within 36 hours. Apart from it, the pinned downloads
-# Dependabot cannot watch are compared with their newest releases. Each job's
-# failure opens an issue of its own, which the next pass closes. It pushes
-# nothing (G12).
+# game check builds the plugin against the newest game build and accepts the
+# newest commit on it: its world loads with the plugin on the newest dedicated
+# server. promote.sh refuses a candidate unless the newest run of that job
+# passed recently. Beside it, the pinned downloads Dependabot cannot watch are
+# compared with their newest releases. Each check's failure opens an issue of
+# its own, which the next pass closes. The workflow pushes nothing (G12).
 name: nightly
 
 on:
@@ -85,6 +85,6 @@ jobs:
             fi
           }
           report "Nightly game check failed" "$GAME" \
-            "The plugin no longer builds against the newest game build. No candidate can be promoted until it does:"
+            "The plugin no longer builds, or its world no longer loads, on the newest game build. No candidate can be promoted until a run passes; gh workflow run nightly.yml reruns it:"
           report "A pinned download has a newer release" "$UPSTREAM" \
-            "scripts/check-upstream.sh found a newer release of a download Dependabot cannot watch; move its ARG and checksums:"
+            "scripts/check-upstream.sh found a newer release of a download Dependabot cannot watch; move its ARG, its checksums and what its Dockerfile says moves with it:"

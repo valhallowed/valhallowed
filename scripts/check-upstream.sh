@@ -2,8 +2,9 @@
 # Fail when a pinned download Dependabot cannot watch has a newer upstream
 # release: the Docker CLI and Compose in the control plane's image, and the
 # BepInEx pack in the game runtime's. Each version is an ARG in its Dockerfile;
-# moving to a newer one changes that ARG and its checksums. The nightly game
-# check runs this. GITHUB_TOKEN, when set, lifts GitHub's anonymous rate limit.
+# moving to a newer one changes that ARG and its checksums. nightly.yml runs
+# this beside the game check. GITHUB_TOKEN, when set, lifts GitHub's anonymous
+# rate limit.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
