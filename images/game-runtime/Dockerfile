@@ -46,8 +46,8 @@ RUN if [[ ! $GAME_BUILD =~ ^[0-9]+$ ]]; then \
 
 FROM busybox:1.38.0@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e AS bepinex
 # scripts/check-upstream.sh reports a newer pack.
-ARG BEPINEX_PACK_VERSION=5.4.2351
-ADD --checksum=sha256:bce631497976a93977ceb08e166712e6c31d15244956f89f17df092a9b62e29f \
+ARG BEPINEX_PACK_VERSION=5.4.2360
+ADD --checksum=sha256:6bca77b1016acfe0ffaebb6534c84b12ae8d12e5a96abbf59ec6e4526204fc6f \
     https://thunderstore.io/package/download/denikson/BepInExPack_Valheim/${BEPINEX_PACK_VERSION}/ /tmp/bepinex.zip
 RUN mkdir /bepinex && unzip -q /tmp/bepinex.zip -d /bepinex
 
@@ -97,7 +97,7 @@ RUN apt-get update \
 COPY --from=bepinex /bepinex/BepInExPack_Valheim/BepInEx/ /opt/vhd/bepinex/BepInEx/
 COPY --from=bepinex /bepinex/BepInExPack_Valheim/doorstop_libs/libdoorstop_x64.so /opt/vhd/bepinex/doorstop_libs/
 ADD --checksum=sha256:e6e534ef6f4347b6449407ee046a3d09cb0174c6f688c996ad0bed94b74b3933 \
-    https://raw.githubusercontent.com/AzumattDev/BepInEx/fd72254e7debd1b8b7289c1639a8a231c49e403f/LICENSE \
+    https://raw.githubusercontent.com/AzumattDev/BepInEx/b89fcc8ecbec7e07cd37b67315b932506084e8b4/LICENSE \
     /opt/vhd/licenses/BepInEx-LICENSE
 ADD --checksum=sha256:7e54ab4766ef78637a05fb3454663a66de6bb960dbd4c7088890ed76b0844f36 \
     https://raw.githubusercontent.com/BepInEx/HarmonyX/217cc408cc3909ee67c727a2d782bede84f6c2b1/LICENSE \
@@ -109,7 +109,7 @@ ADD --checksum=sha256:13d58ecbed676511c0c4c4009bff107025e50007ff5e7901dc562700ec
     https://raw.githubusercontent.com/jbevain/cecil/882ca5eedda1e62eb41bd5869aeb15d8f1538e51/LICENSE.txt \
     /opt/vhd/licenses/Mono.Cecil-LICENSE
 ADD --checksum=sha256:20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331 \
-    https://raw.githubusercontent.com/NeighTools/UnityDoorstop/v4.4.0/LICENSE \
+    https://raw.githubusercontent.com/NeighTools/UnityDoorstop/v4.6.0/LICENSE \
     /opt/vhd/licenses/UnityDoorstop-LICENSE
 COPY images/game-runtime/NOTICE /opt/vhd/licenses/NOTICE
 COPY --from=check /out/Valhallowed.Plugin.dll /opt/vhd/plugin/
