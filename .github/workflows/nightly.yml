@@ -1,6 +1,7 @@
 # The nightly checks. A game patch arrives without notice, so every night the
-# plugin is built against the newest game build; promote.sh refuses a candidate
-# unless that job passed within 36 hours. Apart from it, the pinned downloads
+# plugin is built against the newest game build, and the newest commit is
+# accepted on it: its world loads with the plugin on the newest dedicated
+# server. promote.sh refuses a candidate unless that job passed within 36 hours. Apart from it, the pinned downloads
 # Dependabot cannot watch are compared with their newest releases. Each job's
 # failure opens an issue of its own, which the next pass closes. It pushes
 # nothing (G12).
@@ -37,6 +38,10 @@ jobs:
         env:
           GAME_BUILD: ${{ steps.game.outputs.build }}
         run: make plugin BUILD="$GITHUB_SHA"
+      - name: Accept, on it
+        env:
+          GAME_BUILD: ${{ steps.game.outputs.build }}
+        run: make accept BUILD="$GITHUB_SHA"
 
   upstream:
     runs-on: ubuntu-24.04
