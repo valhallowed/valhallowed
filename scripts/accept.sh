@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Acceptance: install from a rendered compose file the way a server manager
 # does, with vhd from the control plane's image, and check that the install
-# runs the expected commit. Pulls from the registry by default, so an image that
-# was never pushed, or is not public, cannot pass. VHD_PULL=never accepts a
-# local build. The world's game download that follows is not waited for. The
-# install uses ports away from the defaults, so it never meets a real install on
-# the same host.
+# runs the expected commit and that its world passes world truth: the runtime
+# downloads the newest dedicated server and the world loads with the plugin.
+# Pulls from the registry by default, so an image that was never pushed, or is
+# not public, cannot pass. VHD_PULL=never accepts a local build. The install
+# uses ports away from the defaults, so it never meets a real install on the
+# same host.
 set -euo pipefail
 
 [[ $# -eq 2 ]] || { echo "usage: $0 COMPOSE_FILE COMMIT" >&2; exit 2; }
@@ -70,16 +71,23 @@ if [[ $user != vhd || $caps != '["ALL"]' ]]; then
   echo "accept: $world runs as '$user' dropping $caps; expected vhd dropping [\"ALL\"]" >&2
   exit 1
 fi
-status=
-for _ in $(seq 30); do
+# World truth: running means the plugin reported the loaded world, so the dedicated
+# server, BepInEx, doorstop and the plugin all loaded. Held fails at once.
+status='' state='' seen=''
+deadline=$((SECONDS + 20 * 60))
+while ((SECONDS < deadline)); do
   status=$("${cli[@]}" run --rm vhd status 2>/dev/null || true)
-  if grep -qx 'Meadowfold: installing' <<< "$status"; then
-    echo "accept: vhd status shows the world installing"
-    exit 0
+  state=$(sed -n 's/^Meadowfold: \([a-z]*\).*/\1/p' <<< "$status")
+  if [[ -n $state && $state != "$seen" ]]; then
+    echo "accept: vhd status shows the world $state after ${SECONDS}s"
+    seen=$state
   fi
-  sleep 3
+  [[ $state == running || $state == held ]] && break
+  sleep 5
 done
-echo "accept: vhd status never showed the world installing:" >&2
-echo "$status" >&2
-docker logs --tail 20 "$world" >&2 || true
-exit 1
+if [[ $state != running ]]; then
+  echo "accept: the world never passed world truth:" >&2
+  echo "$status" >&2
+  docker logs --tail 40 "$world" >&2 || true
+  exit 1
+fi
