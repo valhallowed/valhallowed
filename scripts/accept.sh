@@ -77,15 +77,22 @@ if [[ $user != vhd || $caps != '["ALL"]' ]]; then
 fi
 
 # Running means the plugin reported the loaded world. Held and unverified fail at
-# once, and so does a world container that stops or restarts: with one generation
-# the runtime has no reason to exit.
+# once, and so does a world or control plane container that stops or restarts:
+# with one generation neither has a reason to exit.
+control=$(docker ps -q --filter "$label" --filter label=com.docker.compose.service=control-plane)
+if [[ -z $control ]]; then
+  echo "accept: no control plane container is running" >&2
+  exit 1
+fi
 status='' state='' seen='' outcome=''
 while ((SECONDS - applied < wait_s)); do
-  read -r container restarts < <(docker inspect --format '{{.State.Status}} {{.RestartCount}}' "$world" 2>/dev/null || echo gone 0)
-  if [[ $container != running || $restarts != 0 ]]; then
-    outcome="its container is $container after $restarts restart(s)"
-    break
-  fi
+  for container in "$world" "$control"; do
+    read -r run restarts < <(docker inspect --format '{{.State.Status}} {{.RestartCount}}' "$container" 2>/dev/null || echo gone 0)
+    if [[ $run != running || $restarts != 0 ]]; then
+      outcome="container $container is $run after $restarts restart(s)"
+      break 2
+    fi
+  done
   status=$(timeout 60 "${cli[@]}" run --rm vhd status 2>"$install/status.err") || true
   state=$(sed -n "s/^$world_name: \([a-z]*\).*/\1/p" <<< "$status")
   if [[ -n $state && $state != "$seen" ]]; then
@@ -103,7 +110,6 @@ if [[ $state != running ]]; then
   echo "$status" >&2
   cat "$install/status.err" >&2 2>/dev/null || true
   docker logs --tail 40 "$world" >&2 || true
-  control=$(docker ps -aq --filter "$label" --filter label=com.docker.compose.service=control-plane)
   [[ -z $control ]] || docker logs --tail 20 "$control" >&2 || true
   exit 1
 fi
