@@ -92,26 +92,28 @@ RUN apt-get update \
       tini=0.19.0-3+b8 \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --uid 10001 --user-group --home-dir /data --shell /usr/sbin/nologin vhd \
- && mkdir -p /data /run/vhd \
+ && mkdir -p /data /run/vhd /opt/vhd/licenses \
  && chown vhd:vhd /data /run/vhd
 COPY --from=bepinex /bepinex/BepInExPack_Valheim/BepInEx/ /opt/vhd/bepinex/BepInEx/
 COPY --from=bepinex /bepinex/BepInExPack_Valheim/doorstop_libs/libdoorstop_x64.so /opt/vhd/bepinex/doorstop_libs/
 # The pack's licenses. A new BEPINEX_PACK_VERSION moves the BepInEx commit,
 # DOORSTOP_VERSION and NOTICE with it; a checksum moves only when its text does.
+# The RUN above makes their directory: ADD would give one it creates the files'
+# mode, which no one could traverse.
 ARG DOORSTOP_VERSION=4.6.0
-ADD --checksum=sha256:e6e534ef6f4347b6449407ee046a3d09cb0174c6f688c996ad0bed94b74b3933 \
+ADD --checksum=sha256:e6e534ef6f4347b6449407ee046a3d09cb0174c6f688c996ad0bed94b74b3933 --chmod=0644 \
     https://raw.githubusercontent.com/AzumattDev/BepInEx/b89fcc8ecbec7e07cd37b67315b932506084e8b4/LICENSE \
     /opt/vhd/licenses/BepInEx-LICENSE
-ADD --checksum=sha256:7e54ab4766ef78637a05fb3454663a66de6bb960dbd4c7088890ed76b0844f36 \
+ADD --checksum=sha256:7e54ab4766ef78637a05fb3454663a66de6bb960dbd4c7088890ed76b0844f36 --chmod=0644 \
     https://raw.githubusercontent.com/BepInEx/HarmonyX/217cc408cc3909ee67c727a2d782bede84f6c2b1/LICENSE \
     /opt/vhd/licenses/HarmonyX-LICENSE
-ADD --checksum=sha256:0b64833222e3c6a426ad29362d26334619fe02eaf2b89ea9c37805521896c920 \
+ADD --checksum=sha256:0b64833222e3c6a426ad29362d26334619fe02eaf2b89ea9c37805521896c920 --chmod=0644 \
     https://raw.githubusercontent.com/MonoMod/MonoMod/164dd5bcb54675e2d4263785d758995cd0c2ad87/LICENSE \
     /opt/vhd/licenses/MonoMod-LICENSE
-ADD --checksum=sha256:13d58ecbed676511c0c4c4009bff107025e50007ff5e7901dc562700ec62509e \
+ADD --checksum=sha256:13d58ecbed676511c0c4c4009bff107025e50007ff5e7901dc562700ec62509e --chmod=0644 \
     https://raw.githubusercontent.com/jbevain/cecil/882ca5eedda1e62eb41bd5869aeb15d8f1538e51/LICENSE.txt \
     /opt/vhd/licenses/Mono.Cecil-LICENSE
-ADD --checksum=sha256:20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331 \
+ADD --checksum=sha256:20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331 --chmod=0644 \
     https://raw.githubusercontent.com/NeighTools/UnityDoorstop/v${DOORSTOP_VERSION}/LICENSE \
     /opt/vhd/licenses/UnityDoorstop-LICENSE
 COPY images/game-runtime/NOTICE /opt/vhd/licenses/NOTICE
