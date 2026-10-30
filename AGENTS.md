@@ -81,8 +81,9 @@ and lands through pull requests.
 - **A retro before it is marked ready.** Review its whole diff for defects,
   simplification, performance and hygiene, and check every doc and comment it
   touches against the code, the glossary and docs/architecture.md, and that
-  each issue it closes has its delivered tasks ticked. Its Retro section lists
-  each finding and the commit that fixed it.
+  each issue it closes has its delivered tasks ticked. Its Retro section names
+  the reviews, then lists each finding and the commit that fixed it, or says
+  it found none.
 - **Fix, don't defer.** Every finding is fixed in the pull request. The one
   exception is a gap whose fix is the deliverable of a later slice that has an
   issue: it becomes a task in that issue, and its Retro row reads `task in #n`.
