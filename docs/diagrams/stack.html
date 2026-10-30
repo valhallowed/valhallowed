@@ -177,7 +177,7 @@
     runtime: D('Game runtime', 'Game runtime', [['Runs', 'one world: the server, BepInEx and the plugin']]),
     plugin: D('Game runtime', 'Plugin', [['Binds', 'game methods by name through Harmony'], ['Failure mode', 'a patch can apply and then throw inside the game, leaving the world empty while every container looks healthy']]),
     truth: D('Game runtime', 'World truth', [['Checks', 'the world loaded, against the object count the supervisor last saw it hold'], ['On failure', 'stops the game before its first autosave and holds the runtime']]),
-    nightly: D('Pipeline', 'Nightly game check', [['Runs', 'the plugin build against the newest game build'], ['On failure', 'blocks the next candidate (candidate gate)']]),
+    nightly: D('Pipeline', 'Nightly game check', [['Runs', 'the plugin build, and acceptance, against the newest game build'], ['On failure', 'blocks the next candidate (candidate gate)']]),
     players: D('People', 'Players', [['Never join', 'a held world: its game is stopped before it can save']])
   };
   VHD.details(document.getElementById('chainsvg'), chainData, document.getElementById('detail'), { first: 'plugin' });

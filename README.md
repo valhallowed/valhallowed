@@ -55,8 +55,9 @@ make accept
 ```
 
 Builds the images with the definition CI uses, installs them through the
-release compose file and runs acceptance against the local build, on ports
-away from the defaults so it never meets an install on them.
+release compose file and runs acceptance against the local build: its world
+downloads the dedicated server and must load with the plugin. It uses ports
+away from the defaults, so it never meets an install on them.
 
 ```bash
 make plugin
