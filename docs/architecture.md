@@ -234,7 +234,7 @@ address in a profile is a default (G9).
 | Game only | Reachable | Off | Off |
 
 In every profile the admin console stays on loopback unless the manifest opens
-it, and no data-layer service or database gets a host port.
+it, and no database or data-layer service but the web map gets a host port.
 
 Whether what a profile opens reaches the internet is up to the host's network:
 behind a home router it takes a port forward, and on a server with its own
