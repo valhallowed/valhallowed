@@ -134,7 +134,8 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   per world, disk for worlds and backups. A shortfall is a warning in status,
   never a silent failure. Ports show where they are published: a port already
   taken on the host fails that `vhd apply`, and Compose names it. An install
-  that has run comes back as it ran, so no running world goes down for it.
+  that has run comes back as it ran: a world added on that port never starts
+  and the rest keep running, and a world moved to it restarts on its old port.
 - **Interfaces.** One control API. The TUI, the admin console and the CLI,
   `vhd`, are its clients, and cover manifest errors, hot reload, status, world
   import and export, backups and logs. The CLI runs from the control plane's
