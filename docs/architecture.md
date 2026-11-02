@@ -13,7 +13,8 @@ Someone with only Docker installs a Valheim dedicated server that carries the
 VHD plugin, telemetry, governed in-game commands and the web map. They write one
 manifest and, optionally, a secrets file. Everything else is defaulted, derived
 or generated. The host is x86-64 (§ Game facts): a Linux machine, or Docker
-Desktop on Windows or macOS with an Intel or AMD processor.
+Desktop on Windows or macOS with an Intel or AMD processor. Acceptance runs on
+Linux, so Docker Desktop and rootless Docker are goals no check covers.
 
 ## Ground rules
 
