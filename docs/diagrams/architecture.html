@@ -122,7 +122,7 @@
           <g class="bd" data-k="b9"><rect x="-7" y="-7" width="14" height="14" transform="translate(910 410) rotate(45)"/><text x="910" y="413.5" text-anchor="middle">B9</text></g>
         </svg>
       </div>
-      <figcaption>Wiring between data-layer services is left out; the figure shows only where one part crosses into another. Select a diamond or a row below for its contract, its validator and what happens when it fails.</figcaption>
+      <figcaption>Wiring between data-layer services is left out, and so is B12, which stays inside one game runtime; the figure shows only where one part crosses into another. Select a diamond or a row below for its contract, its validator and what happens when it fails.</figcaption>
     </figure>
 
     <div class="lower">
@@ -157,6 +157,7 @@
           <tr data-k="b9"><td>B9</td><td>Web map ↔ Steam</td><td>OpenID; server-side sessions</td><td>Web map stays public and read-only</td></tr>
           <tr data-k="b10"><td>B10</td><td>Players → game runtime</td><td>Game protocol; chat commands parsed and rate-limited</td><td>Command refused and audited</td></tr>
           <tr data-k="b11"><td>B11</td><td>Players → web map</td><td>Web map API schema; identity from the session</td><td>Request rejected</td></tr>
+          <tr data-k="b12"><td>B12</td><td>Supervisor ↔ plugin</td><td>Config keys, world status schema</td><td>The report counts as absent; world truth decides</td></tr>
         </tbody>
       </table>
     </div>
@@ -259,6 +260,13 @@
       ['Contract', 'web map API schema; identity comes from the session, never the request'],
       ['On failure', 'the request is rejected'],
     ]),
+    b12: B('B12 · Supervisor ↔ plugin', [
+      ['Crosses', 'the plugin’s generated config down; the world status file back'],
+      ['Contract', 'the config keys the plugin binds; world status schema, versioned with the image that ships both'],
+      ['Validated by', 'the supervisor, on every read of the file'],
+      ['On failure', 'the report counts as absent, and world truth decides what that means for the world'],
+      ['Owner', 'game runtime'],
+    ], 'The one crossing that world truth, and so every save, depends on.'),
     sm: N('People', 'Server manager', 'Operates an install through the control plane: writes the manifest, supplies secrets, takes operator actions.'),
     manifest: N('Ingress', 'Manifest', 'The one TOML file of settings, checked against its schema (G18). Safe to commit and share: it never holds secrets.'),
     secrets: N('Ingress', 'Secrets', 'Sensitive values kept apart from the manifest, such as world passwords and credentials for outside services. Key names come from a closed list; an unknown key is rejected.'),

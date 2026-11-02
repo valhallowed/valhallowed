@@ -7,7 +7,22 @@ import pytest
 
 from vhd_runtime import status
 
+EXAMPLES = Path(__file__).resolve().parents[3] / "contracts" / "examples"
 REPORT: status.RuntimeStatus = {"contract": 1, "generation": 1, "world": "Meadowfold", "state": "running"}
+
+
+@pytest.mark.parametrize("example", sorted(EXAMPLES.glob("valid/plugin.world-status-*.json")), ids=lambda p: p.name)
+def test_reads_every_valid_example_of_the_contract(tmp_path: Path, example: Path) -> None:
+    path = tmp_path / "world.json"
+    path.write_text(example.read_text())
+    assert status.read_world(path, "Meadowfold") is not None
+
+
+@pytest.mark.parametrize("example", sorted(EXAMPLES.glob("invalid/plugin.world-status-*.json")), ids=lambda p: p.name)
+def test_refuses_every_invalid_example_of_the_contract(tmp_path: Path, example: Path) -> None:
+    path = tmp_path / "world.json"
+    path.write_text(example.read_text())
+    assert status.read_world(path, "Meadowfold") is None
 
 
 def test_reads_the_plugins_report_for_this_world(tmp_path: Path) -> None:
