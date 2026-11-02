@@ -319,7 +319,9 @@ What any design here must respect about the game.
 - The server loads the save its world setting names. When no save has that
   name, or the save fails to load, the server creates a new, empty world under
   the name, and writes that world's small `_main.0.fwl2` into the save's
-  directory before any plugin loads; recovering a held world removes it.
+  directory before any plugin loads. A new world stopped at that moment leaves
+  only this file, which looks like a save. A complete save restored beside it
+  still loads, and the server's next save removes it.
 - A new world counts no objects when it first loads, and its real count about
   30 seconds later. A world loaded from a save counts its objects at once.
 - A world's server uses its port and the next one, over UDP; the server's own

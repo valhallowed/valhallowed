@@ -45,6 +45,27 @@ Edit either file and the control plane applies the change, keeping a game-server
 restart pending while players are online. A change to the containers themselves,
 such as a new world or port, waits for the next `vhd apply`.
 
+## A held world
+
+`vhd status` shows a world as `held`, with the reason, when it fails world truth:
+it loaded empty where it held objects or had a save, or the plugin never reported
+it. The game stops before its first autosave, so nothing empty is saved over the
+real world. A restart checks the world again, so fix the cause first. `docker ps`
+names each world's container, and `docker volume ls` its data volume.
+
+- **After a game update the plugin cannot load on:** download the release that
+  fixes it and run `vhd apply`.
+- **A missing or damaged save:** run `docker stop` on the world's container, put a
+  good save in its data volume under `saves/worlds_local/<save name>/`, and run
+  `docker start`.
+- **A new world stopped during its first load:** its save directory holds only
+  `_main.0.fwl2`, which looks like a save. Run `docker stop`, remove that
+  directory, and run `docker start`, and the game creates the world again:
+
+  ```bash
+  docker run --rm -v <data volume>:/data busybox rm -r "/data/saves/worlds_local/<save name>"
+  ```
+
 ## Building locally
 
 Needs Linux, or WSL on Windows (the scripts use bash 4 and GNU tools), and
