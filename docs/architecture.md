@@ -129,10 +129,11 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   `vhd apply` reads from the folder, so the secrets file can stay readable by
   its owner alone. Every other child runs as VHD's own unprivileged user.
 - **Host check.** At first start and on every reconcile, the control plane
-  compares what the manifest asks for with what the host has: ports, memory
-  and CPU per world, disk for worlds and backups. A shortfall is a warning in
-  status, never a silent failure. A port already taken on the host stops only
-  the world that needs it.
+  compares what the manifest asks for with what the host has: memory and CPU
+  per world, disk for worlds and backups. A shortfall is a warning in status,
+  never a silent failure. Ports show where they are published: a port already
+  taken on the host fails that `vhd apply`, and Compose names it. An install
+  that has run comes back as it ran, so no running world goes down for it.
 - **Interfaces.** One control API. The TUI, the admin console and the CLI,
   `vhd`, are its clients, and cover manifest errors, hot reload, status, world
   import and export, backups and logs. The CLI runs from the control plane's
