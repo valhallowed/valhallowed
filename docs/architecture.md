@@ -332,8 +332,12 @@ What any design here must respect about the game.
   the world's name or seed.
 - Harmony binds patches by name. After a game patch, a patch can apply and then
   throw, so a healthy container does not mean a loaded world.
-- Player names are client-supplied and not unique. Identity comes only from
-  same-object pairs (beds, tombstones, wards).
+- Player names are client-supplied and not unique, so a name is never a key. A
+  person is their Steam account, which the server reads from the peer's
+  connection. A character is its `playerID`, which the client mints once per
+  character and the server reads from the character's object. One connected
+  peer showing both links the character to its person; a character seen only in
+  a save stays unlinked.
 - Prefab names must be verified against live world data, never assumed.
 - A save parser fails closed outside the version range it was validated
   against.
