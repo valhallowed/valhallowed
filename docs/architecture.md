@@ -351,7 +351,7 @@ What any design here must respect about the game.
 ## Open decisions
 
 A number missing from this table was settled as a ground rule, which names it,
-or withdrawn.
+withdrawn, or found to be no decision about the product.
 
 | # | Question | Options | Lean |
 |---|---|---|---|
