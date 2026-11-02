@@ -59,11 +59,14 @@ names each world's container, and `docker volume ls` its data volume.
   good save in its data volume under `saves/worlds_local/<save name>/`, and run
   `docker start`.
 - **A new world stopped during its first load:** its save directory holds only
-  `_main.0.fwl2`, which looks like a save. Run `docker stop`, remove that
-  directory, and run `docker start`, and the game creates the world again:
+  `_main.0.fwl2`, which looks like a save. Run `docker stop`, remove that file
+  and its directory, and run `docker start`, and the game creates the world
+  again. If `ls` shows anything but that one file, stop: it is a real save.
 
   ```bash
-  docker run --rm -v <data volume>:/data busybox rm -r "/data/saves/worlds_local/<save name>"
+  docker run --rm -v <data volume>:/data busybox ls "/data/saves/worlds_local/<save name>"
+  docker run --rm -v <data volume>:/data busybox rm "/data/saves/worlds_local/<save name>/_main.0.fwl2"
+  docker run --rm -v <data volume>:/data busybox rmdir "/data/saves/worlds_local/<save name>"
   ```
 
 ## Building locally
