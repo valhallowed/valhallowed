@@ -301,6 +301,11 @@ Follows from G4 and G12.
    every capability must keep, synthesized or anonymized.
 4. **Capabilities, one release at a time,** each passing its acceptance
    material and each shipping with its bring-your-own settings (G3).
+5. **Control-plane work, one release at a time, beside the capabilities:**
+   operator actions (world import and export, backups, logs), the update policy,
+   the host check, exposure profiles, each world's resource limits, the TUI and
+   the admin console. Backups and world import lead it, since a world with a
+   history cannot move onto an install without them.
 
 ## Game facts
 
