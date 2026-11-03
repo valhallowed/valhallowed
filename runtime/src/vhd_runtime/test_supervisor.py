@@ -1,14 +1,17 @@
+import itertools
 import json
 import signal
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
+from urllib.error import URLError
 
 import pytest
 
 from vhd_runtime import steam, supervisor
 from vhd_runtime.generation import Reader, validator
 from vhd_runtime.supervisor import Clock, Paths, Supervisor
+from vhd_runtime.test_steam import STEAMCMD, Download
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "contracts"
 STATUS_URL = "http://control-plane:9457/status"
@@ -138,7 +141,7 @@ class World:
         for when in range(int(start), int(start) + 3000, 5):
             self.time.at(when, lambda: self.plugin_reports(objects, players()))
 
-    def supervisor(self, run_steamcmd: steam.Run | None = None) -> Supervisor:
+    def supervisor(self, run_steamcmd: steam.Run | None = None, fetch: steam.Fetch | None = None) -> Supervisor:
         def launch(command: list[str], env: dict[str, str], cwd: Path) -> FakeProcess:
             self.launches.append(command)
             return self.process
@@ -154,6 +157,8 @@ class World:
             reader=Reader(self.paths.generation, CONTRACTS),
             launch=launch,
             run_steamcmd=run_steamcmd or self.run_steamcmd,
+            fetch=fetch or steam.fetch,
+            jitter=lambda low, high: high,
             post=post,
             clock=Clock(now=lambda: self.time.now, sleep=self.time.sleep),
             environ={},
@@ -460,6 +465,44 @@ def test_a_generation_handed_during_the_install_is_the_one_launched(world: World
     assert sup.run() == 0
     assert len(world.launches) == 1
     assert "hearth-and-horn" in world.launches[0]
+
+
+def test_a_failed_download_shows_why_and_is_retried_with_backoff(world: World) -> None:
+    world.generation(1)
+    (world.paths.steamcmd / "steamcmd.sh").unlink()
+    tried: list[float] = []
+
+    def fetch(url: str, timeout: float) -> Download:
+        tried.append(world.time.now)
+        if len(tried) < 3:
+            raise URLError("[Errno -3] Temporary failure in name resolution")
+        return Download(STEAMCMD)
+
+    sup = world.supervisor(fetch=fetch)
+    world.plugin_running(100, start=200)
+    world.stop_at(400, sup)
+
+    assert sup.run() == 0
+    assert [round(b - a) for a, b in itertools.pairwise(tried)] == [supervisor.INSTALL_RETRY_FIRST_S, 60]
+    reasons = {r.get("reason") for r in world.reports if r["state"] == "installing"}
+    assert any("name resolution" in str(reason) for reason in reasons)
+    assert len(world.launches) == 1
+    assert "running" in world.states()
+
+
+def test_a_stop_while_an_install_waits_to_retry_launches_nothing(world: World) -> None:
+    world.generation(1)
+    (world.paths.steamcmd / "steamcmd.sh").unlink()
+
+    def fetch(url: str, timeout: float) -> Download:
+        raise URLError("[Errno 101] Network is unreachable")
+
+    sup = world.supervisor(fetch=fetch)
+    world.stop_at(10, sup)
+
+    assert sup.run() == 0
+    assert world.launches == []
+    assert world.time.now < supervisor.INSTALL_RETRY_FIRST_S
 
 
 def test_a_stop_while_loading_kills_rather_than_saves(world: World) -> None:

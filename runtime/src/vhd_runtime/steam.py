@@ -39,6 +39,10 @@ class Stopped(Exception):
     """A stop was requested while SteamCMD ran."""
 
 
+class InstallFailed(Exception):
+    """SteamCMD or the dedicated server could not be downloaded or installed; the message says why."""
+
+
 class Response(Protocol):
     def __enter__(self) -> IO[bytes]: ...
     def __exit__(self, *args: object) -> None: ...
@@ -92,11 +96,19 @@ def ensure_steamcmd(directory: Path, fetch: Fetch = fetch) -> Path:
     shutil.rmtree(partial, ignore_errors=True)
     partial.mkdir(parents=True)
     _log.info("downloading SteamCMD from %s", STEAMCMD_URL)
-    with fetch(STEAMCMD_URL, DOWNLOAD_TIMEOUT_S) as response, tarfile.open(fileobj=response, mode="r|gz") as archive:
-        archive.extractall(partial, filter="data")
+    try:
+        with (
+            fetch(STEAMCMD_URL, DOWNLOAD_TIMEOUT_S) as response,
+            tarfile.open(fileobj=response, mode="r|gz") as archive,
+        ):
+            archive.extractall(partial, filter="data")
+    # A connection that fails or drops partway: gzip ends early, or the archive reads short.
+    except (OSError, EOFError, tarfile.TarError) as error:
+        shutil.rmtree(partial)
+        raise InstallFailed(f"the SteamCMD download failed: {error}") from error
     if not (partial / script.name).exists():
         shutil.rmtree(partial)
-        raise RuntimeError(f"the SteamCMD download did not contain {script.name}")
+        raise InstallFailed(f"the SteamCMD download did not contain {script.name}")
     shutil.rmtree(directory, ignore_errors=True)
     partial.rename(directory)
     return script
@@ -119,7 +131,8 @@ def ensure_server(steamcmd: Path, install_dir: Path, run: Run = run, stopping: S
     """The dedicated server's build id, after installing or updating it. A first install
     validates every file and an update does not; an update that leaves the server not fully
     installed is retried with validation. When SteamCMD cannot reach Steam, the installed
-    build stays as it was. Raises Stopped when a stop is requested meanwhile."""
+    build stays as it was. Raises Stopped when a stop is requested meanwhile, and InstallFailed
+    when no attempt leaves the server installed."""
     installed = server_build(install_dir)
     validate = installed is None
     for attempt in range(1, INSTALL_ATTEMPTS + 1):
@@ -136,7 +149,7 @@ def ensure_server(steamcmd: Path, install_dir: Path, run: Run = run, stopping: S
             _log.info("dedicated server build %s%s", build, was)
             return build
         validate = True
-    raise RuntimeError(f"SteamCMD did not install the dedicated server after {INSTALL_ATTEMPTS} attempts")
+    raise InstallFailed(f"SteamCMD did not install the dedicated server after {INSTALL_ATTEMPTS} attempts")
 
 
 def _app_update(steamcmd: Path, install_dir: Path, validate: bool) -> list[str]:

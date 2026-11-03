@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import random
 import signal
 import subprocess
 import time
@@ -35,6 +36,12 @@ HELD_UNREPORTED = (
     "the plugin has not reported the loaded world, which held objects before; stopped before its first autosave"
 )
 UNVERIFIED_REASON = "the plugin has not reported the loaded world"
+# A failed install is retried after a wait that starts here and doubles up to the cap, each wait
+# jittered, so the worlds of one install do not all go back to Steam at once.
+INSTALL_RETRY_FIRST_S = 30
+INSTALL_RETRY_MAX_S = 600
+# The runtime status contract's bound on a reason.
+REASON_MAX = 500
 
 _log = logging.getLogger(__name__)
 
@@ -103,6 +110,7 @@ class Supervisor:
     run_steamcmd: steam.Run = steam.run
     post: status.Post = status.post
     clock: Clock = field(default_factory=Clock)
+    jitter: Callable[[float, float], float] = random.uniform
     environ: Mapping[str, str] = field(default_factory=lambda: dict(os.environ))
     _stop: bool = field(default=False, init=False)
     _problem: str | None = field(default=None, init=False)
@@ -150,7 +158,9 @@ class Supervisor:
     def _install(self, generation: Generation, reporter: status.Reporter) -> str | None:
         """SteamCMD and the dedicated server, installed or updated: the server's build id, or
         None when a stop arrived first, so nothing launches. Status keeps reporting the
-        install, which can take many minutes, so the control plane never takes it for silence."""
+        install, which can take many minutes, so the control plane never takes it for silence.
+        A failed install is retried until it succeeds or a stop arrives, its reason in status, so
+        a host that cannot reach Steam shows why instead of restarting the container."""
         installing: status.RuntimeStatus = {
             "contract": 1,
             "generation": generation.number,
@@ -167,10 +177,22 @@ class Supervisor:
                 next_report = self.clock.now() + generation.status_interval_s
             return self._stop
 
+        retry_s: float = INSTALL_RETRY_FIRST_S
         try:
-            steamcmd = steam.ensure_steamcmd(self.paths.steamcmd, self.fetch)
-            if not self._stop:
-                return steam.ensure_server(steamcmd, self.paths.server, self.run_steamcmd, stopping)
+            while not self._stop:
+                try:
+                    steamcmd = steam.ensure_steamcmd(self.paths.steamcmd, self.fetch)
+                    if not self._stop:
+                        return steam.ensure_server(steamcmd, self.paths.server, self.run_steamcmd, stopping)
+                except steam.InstallFailed as error:
+                    wait = self.jitter(retry_s / 2, retry_s)
+                    _log.error("the install failed, retrying in %d s: %s", wait, error)
+                    installing["reason"] = _reason(f"the last install attempt failed, and is retried: {error}")
+                    reporter.send(installing)
+                    deadline = self.clock.now() + wait
+                    while self.clock.now() < deadline and not stopping():
+                        self.clock.sleep(POLL_S)
+                    retry_s = min(retry_s * 2, INSTALL_RETRY_MAX_S)
         except steam.Stopped:
             pass
         _log.info("stopping: stop requested while installing")
@@ -365,3 +387,8 @@ def _status(
         report["objects"] = world.objects
         report["players"] = world.players
     return report
+
+
+def _reason(text: str) -> str:
+    """One line of printable text within the contract's bound: an error's text is not ours."""
+    return "".join(c if c.isprintable() else " " for c in text)[:REASON_MAX]

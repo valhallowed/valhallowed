@@ -4,6 +4,7 @@ import tarfile
 import time
 from pathlib import Path
 from typing import IO
+from urllib.error import URLError
 
 import pytest
 
@@ -51,19 +52,28 @@ def test_downloads_steamcmd_once(tmp_path: Path) -> None:
 
 def test_refuses_a_download_without_steamcmd(tmp_path: Path) -> None:
     directory = tmp_path / "steamcmd"
-    with pytest.raises(RuntimeError, match=r"steamcmd\.sh"):
+    with pytest.raises(steam.InstallFailed, match=r"steamcmd\.sh"):
         steam.ensure_steamcmd(directory, Download({"other": b""}))
     assert not directory.exists()
 
 
 def test_an_interrupted_download_leaves_no_steamcmd(tmp_path: Path) -> None:
     directory = tmp_path / "steamcmd"
-    with pytest.raises((EOFError, tarfile.TarError)):
+    with pytest.raises(steam.InstallFailed, match="download failed"):
         steam.ensure_steamcmd(directory, Download(STEAMCMD, cut=True))
     assert not (directory / "steamcmd.sh").exists()
 
     steam.ensure_steamcmd(directory, Download(STEAMCMD))
     assert (directory / "linux32" / "steamcmd").exists()
+    assert not (tmp_path / "steamcmd.partial").exists()
+
+
+def test_a_download_that_cannot_connect_fails_the_install(tmp_path: Path) -> None:
+    def unreachable(url: str, timeout: float) -> Download:
+        raise URLError("[Errno -3] Temporary failure in name resolution")
+
+    with pytest.raises(steam.InstallFailed, match="name resolution"):
+        steam.ensure_steamcmd(tmp_path / "steamcmd", unreachable)
     assert not (tmp_path / "steamcmd.partial").exists()
 
 
@@ -129,7 +139,7 @@ def test_installs_and_retries_until_the_manifest_exists(tmp_path: Path) -> None:
 
 def test_gives_up_after_the_last_attempt(tmp_path: Path) -> None:
     calls: list[list[str]] = []
-    with pytest.raises(RuntimeError, match="did not install"):
+    with pytest.raises(steam.InstallFailed, match="did not install"):
         steam.ensure_server(Path("/s/steamcmd.sh"), tmp_path, lambda c, t, s: calls.append(c))
     assert len(calls) == steam.INSTALL_ATTEMPTS
 
