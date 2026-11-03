@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Telemetry batch",
+  "description": "B2: a batch of telemetry the plugin posts to intake's POST /events. Intake knows the sending world by the batch's source address, so the batch never names it. Intake checks the envelope whole, then each event on its own: a malformed envelope is refused, and an event that breaks its kind is dropped and counted while the rest are taken (fail soft).",
+  "allOf": [
+    { "$ref": "#/$defs/envelope" },
+    { "properties": { "events": { "items": { "$ref": "#/$defs/event" } } } }
+  ],
+  "$defs": {
+    "envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "session", "sent_at", "events"],
+      "properties": {
+        "contract": {
+          "description": "The version of this contract.",
+          "const": 1
+        },
+        "session": {
+          "description": "The session the events belong to: one load of the world, named by the plugin when the world loads, in lower-case UUID form.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "sent_at": {
+          "description": "When the plugin sent the batch, by the game server's clock.",
+          "$ref": "#/$defs/time"
+        },
+        "events": {
+          "description": "The events, oldest first.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 500,
+          "items": { "type": "object" }
+        }
+      }
+    },
+    "time": {
+      "description": "A UTC time, to the microsecond at most.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    },
+    "player_id": {
+      "description": "The player's platform id. A player's name is chosen by the client and need not be unique (Game facts), so the id is the key.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]{1,64}$"
+    },
+    "coordinate": {
+      "description": "World units: metres from the world's centre.",
+      "type": "number",
+      "minimum": -100000,
+      "maximum": 100000
+    },
+    "event": {
+      "type": "object",
+      "required": ["kind", "at"],
+      "properties": {
+        "kind": {
+          "description": "session.start: the world loaded, and this session began. player.join and player.leave: a player connected or left. player.position: where a player is.",
+          "enum": ["session.start", "player.join", "player.leave", "player.position"]
+        },
+        "at": {
+          "description": "When it happened, by the game server's clock.",
+          "$ref": "#/$defs/time"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "session.start" } } },
+          "then": { "additionalProperties": false, "properties": { "kind": true, "at": true } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "player.join" } } },
+          "then": {
+            "additionalProperties": false,
+            "required": ["player"],
+            "properties": {
+              "kind": true,
+              "at": true,
+              "player": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "name"],
+                "properties": {
+                  "id": { "$ref": "#/$defs/player_id" },
+                  "name": {
+                    "description": "The name the player chose, in one line of printable text.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "player.leave" } } },
+          "then": {
+            "additionalProperties": false,
+            "required": ["player"],
+            "properties": { "kind": true, "at": true, "player": { "$ref": "#/$defs/player_ref" } }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "player.position" } } },
+          "then": {
+            "additionalProperties": false,
+            "required": ["player", "x", "y", "z"],
+            "properties": {
+              "kind": true,
+              "at": true,
+              "player": { "$ref": "#/$defs/player_ref" },
+              "x": { "$ref": "#/$defs/coordinate" },
+              "y": { "description": "Height.", "$ref": "#/$defs/coordinate" },
+              "z": { "$ref": "#/$defs/coordinate" }
+            }
+          }
+        }
+      ]
+    },
+    "player_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": { "id": { "$ref": "#/$defs/player_id" } }
+    }
+  }
+}
