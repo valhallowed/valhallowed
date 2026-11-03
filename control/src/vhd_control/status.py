@@ -1,4 +1,4 @@
-"""What each runtime last reported (B1), and how old that report is."""
+"""What each runtime and each data-layer service last reported (B1), and how old that report is."""
 
 import threading
 import time
@@ -8,7 +8,7 @@ from typing import Any
 
 from vhd_control.reconcile import STATUS_INTERVAL_S
 
-# A runtime silent for this many of its reporting intervals is unknown, never its last state.
+# A child silent for this many of its reporting intervals is unknown, never its last state.
 STALE_AFTER = 3
 # Only a report no older than this many intervals vouches for an empty world: one arrives every
 # interval, give or take its delivery, and an older one may predate a player who joined since.
@@ -35,23 +35,38 @@ class WorldView:
         return players == 0 if players is not None else self.state in NO_GAME
 
 
+@dataclass(frozen=True)
+class ServiceView:
+    state: str
+    report: dict[str, Any] | None
+    age_s: float | None
+
+
 class StatusBook:
     def __init__(self, now: Callable[[], float] = time.monotonic) -> None:
         self._now = now
         self._lock = threading.Lock()
-        self._reports: dict[str, tuple[dict[str, Any], float]] = {}
+        # By ("world", save name) or ("service", service name).
+        self._reports: dict[tuple[str, str], tuple[dict[str, Any], float]] = {}
 
     def record(self, report: dict[str, Any]) -> None:
-        """Keep a validated report as its world's latest."""
+        """Keep a validated report as its world's or service's latest."""
+        key = ("world", report["world"]) if "world" in report else ("service", report["service"])
         with self._lock:
-            self._reports[report["world"]] = (report, self._now())
+            self._reports[key] = (report, self._now())
 
     def view(self, world: str) -> WorldView:
+        return WorldView(*self._latest(("world", world)))
+
+    def service(self, name: str) -> ServiceView:
+        return ServiceView(*self._latest(("service", name)))
+
+    def _latest(self, key: tuple[str, str]) -> tuple[str, dict[str, Any] | None, float | None]:
         with self._lock:
-            entry = self._reports.get(world)
+            entry = self._reports.get(key)
         if entry is None:
-            return WorldView("unknown", None, None)
+            return "unknown", None, None
         report, received = entry
         age = self._now() - received
         state = "unknown" if age > STALE_AFTER * STATUS_INTERVAL_S else str(report["state"])
-        return WorldView(state, report, age)
+        return state, report, age

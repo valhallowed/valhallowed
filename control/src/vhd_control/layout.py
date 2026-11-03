@@ -6,6 +6,16 @@ from pathlib import Path
 CONTROL_PLANE = "control-plane"
 # Where runtimes send status (B1). Internal to the install network.
 STATUS_PORT = 9457
+# The data layer's services (G14), by their Compose service names, which Docker's DNS answers to.
+DATABASE = "database"
+INTAKE = "intake"
+SERVICES = (DATABASE, INTAKE)
+# Where each service listens on the install network. No service publishes a host port.
+DATABASE_PORT = 5432
+INTAKE_PORT = 9458
+# The database the services share, and the role intake signs in as.
+DATABASE_NAME = "vhd"
+INTAKE_ROLE = "intake"
 # The install folder, read-only in the control plane, read-write in vhd.
 INSTALL = Path("/install")
 # The generations volume: one directory per child, which mounts only its own.

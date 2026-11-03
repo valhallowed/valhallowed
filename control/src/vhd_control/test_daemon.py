@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import threading
 from pathlib import Path
 
@@ -44,13 +45,18 @@ class Install:
             path.write_text(text)
             os.utime(path, ns=(0, self.edits * 1_000_000_000))
 
-    def apply(self) -> None:
-        """What vhd apply does to the volume: hand every runtime its documents, record the ports."""
+    def apply(self, services: bool = True) -> None:
+        """What vhd apply does to the volume: hand every child its documents, record the ports and
+        the services. Without services, what a release before the data layer left."""
         with self.store.locked():
             state = self.store.load()
             generation = reconcile(load(self.folder, SCHEMAS), state.generation)
             for cid, child in generation.children.items():
                 self.store.hand(state, cid, child, generation.number)
+            if services:
+                for service in generation.services.values():
+                    self.store.serve(state, service, generation.number)
+                state.services_applied = sorted(generation.services)
             state.generation = generation
             state.applied = {cid: child.port for cid, child in generation.children.items()}
             self.store.save(state)
@@ -215,3 +221,51 @@ def test_status_shows_the_last_override(install: Install) -> None:
     assert status is not None
     assert status["override"] == {"generation": 1, "worlds": {"Meadowfold": 2}}
     assert SCHEMAS.problem("contracts/control.status.schema.json", status) is None
+
+
+def served(install: Install, name: str) -> dict[str, object]:
+    document: dict[str, object] = json.loads((install.volume / name / "generation.json").read_text())
+    return document
+
+
+def test_a_service_takes_every_generation_at_once(install: Install) -> None:
+    install.players("Meadowfold", 3)
+    install.write(TWO_WORLDS + "\n[world.Emberfjord]\nport = 2462\n")
+    install.daemon.step()
+
+    # The new world waits for vhd apply, but intake already takes its telemetry.
+    assert install.pending("Emberfjord") == {"generation": 2, "waits_for": WAITS_FOR_APPLY}
+    assert served(install, "intake")["generation"] == 2
+    assert child_id("Emberfjord") in served(install, "intake")["worlds"]  # type: ignore[operator]
+    assert served(install, "database")["generation"] == 2
+    status = install.daemon.status()
+    assert status is not None
+    assert status["services"]["intake"] == {"published": 2, "state": "unknown"}
+    assert SCHEMAS.problem("contracts/control.status.schema.json", status) is None
+
+
+def test_services_wait_for_vhd_apply_on_an_install_from_before_the_data_layer(tmp_path: Path) -> None:
+    install = Install(tmp_path)
+    shutil.rmtree(install.volume)
+    install.volume.mkdir()
+    install.apply(services=False)
+    install.daemon.step()
+
+    status = install.daemon.status()
+    assert status is not None
+    for name in ("database", "intake"):
+        pending = {"generation": 1, "waits_for": WAITS_FOR_APPLY}
+        assert status["services"][name] == {"state": "unknown", "pending": pending}
+        assert not (install.volume / name).exists()
+    assert SCHEMAS.problem("contracts/control.status.schema.json", status) is None
+
+
+def test_a_service_report_shows_in_status(install: Install) -> None:
+    install.daemon.step()
+    report = {"contract": 1, "generation": 1, "service": "intake", "state": "failing", "reason": "no database"}
+    install.book.record(report)
+    status = install.daemon.status()
+    assert status is not None
+    assert status["services"]["intake"]["state"] == "failing"
+    assert status["services"]["intake"]["report"] == report
+    assert status["services"]["database"]["state"] == "unknown"
