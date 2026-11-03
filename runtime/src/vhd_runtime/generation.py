@@ -32,6 +32,7 @@ class _World(TypedDict):
 
 class _Plugin(TypedDict):
     status_interval_s: int
+    intake_url: str
 
 
 class _GenerationDocument(TypedDict):
@@ -56,6 +57,8 @@ class Generation:
     port: int
     status_interval_s: int
     status_url: str | None
+    # Where the plugin posts telemetry (B2).
+    intake_url: str
     # Never in a repr, so no log line or test diff can carry it.
     password: str | None = field(repr=False)
     # The server manager confirmed restarting this world with players online, for this
@@ -105,6 +108,7 @@ class Reader:
             port=generation["world"]["port"],
             status_interval_s=generation["plugin"]["status_interval_s"],
             status_url=generation.get("status_url"),
+            intake_url=generation["plugin"]["intake_url"],
             password=secrets.get("password"),
             disconnect_players=generation.get("disconnect_players", False),
         )

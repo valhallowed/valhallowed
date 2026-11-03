@@ -101,10 +101,10 @@ class World:
         if secrets:
             self.secrets(number, password)
         document: dict[str, object] = {
-            "contract": 2,
+            "contract": 3,
             "generation": number,
             "world": {"name": "Meadowfold", "port": 2456},
-            "plugin": {"status_interval_s": 5},
+            "plugin": {"status_interval_s": 5, "intake_url": "http://intake:9458/events"},
             "status_url": STATUS_URL,
         }
         if disconnect:
@@ -581,7 +581,7 @@ def test_waits_for_a_generation(world: World) -> None:
 
 
 def test_an_invalid_generation_is_refused_and_nothing_launches(world: World) -> None:
-    (world.paths.generation / "generation.json").write_text(json.dumps({"contract": 2}))
+    (world.paths.generation / "generation.json").write_text(json.dumps({"contract": 3}))
     sup = world.supervisor()
     world.stop_at(60, sup)
 

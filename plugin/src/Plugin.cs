@@ -25,6 +25,7 @@ namespace Valhallowed.Plugin
 
         private ConfigEntry<string> _statusPath;
         private ConfigEntry<int> _statusIntervalSeconds;
+        private ConfigEntry<string> _intakeUrl;
         private bool _worldLoaded;
         private bool _statusFailing;
         private float _nextStatusAt;
@@ -32,14 +33,17 @@ namespace Valhallowed.Plugin
         private void Awake()
         {
             // The supervisor generates this config from the runtime's generation.
+            // contracts/plugin.config.schema.json states every key bound here.
             _statusPath = Config.Bind("Status", "Path", "",
                 "Where to write the world status file the runtime's supervisor reads. Empty writes none.");
             _statusIntervalSeconds = Config.Bind("Status", "IntervalSeconds", 5,
                 "How often to rewrite the world status file, in seconds.");
+            _intakeUrl = Config.Bind("Intake", "Url", "",
+                "Where to post telemetry batches (B2). Empty sends none.");
 
             string build = typeof(Plugin).Assembly
                 .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
-            Logger.LogInfo($"build {build} loaded");
+            Logger.LogInfo($"build {build} loaded; intake at {(_intakeUrl.Value.Length > 0 ? _intakeUrl.Value : "none")}");
         }
 
         private void Update()

@@ -8,7 +8,7 @@
   "properties": {
     "contract": {
       "description": "The version of this contract.",
-      "const": 2
+      "const": 3
     },
     "generation": {
       "description": "The generation number. A higher number replaces a lower one.",
@@ -35,13 +35,18 @@
     "plugin": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status_interval_s"],
+      "required": ["status_interval_s", "intake_url"],
       "properties": {
         "status_interval_s": {
           "description": "How often the plugin rewrites the runtime's world status file, and the runtime reports its status, in seconds.",
           "type": "integer",
           "minimum": 1,
           "maximum": 60
+        },
+        "intake_url": {
+          "description": "Where the plugin posts telemetry batches (B2): intake's POST /events on the install network.",
+          "type": "string",
+          "pattern": "^http://[A-Za-z0-9.-]+(:[0-9]{1,5})?/[A-Za-z0-9/._-]*$"
         }
       }
     },
