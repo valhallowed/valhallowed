@@ -37,7 +37,7 @@ def main(argv: list[str] | None = None, out: TextIO = sys.stdout) -> int:
         if args.command == "validate":
             validate(schemas, out)
         elif args.command == "status":
-            show_status(client.status(layout.CONTROL_SOCKET), out)
+            show_status(client.status(layout.CONTROL_SOCKET, schemas), out)
         elif args.command == "apply":
             Apply(
                 install=layout.INSTALL,
@@ -45,7 +45,7 @@ def main(argv: list[str] | None = None, out: TextIO = sys.stdout) -> int:
                 control_dir=layout.CONTROL_DIR,
                 schemas=schemas,
                 docker=Cli(),
-                status=lambda: client.status(layout.CONTROL_SOCKET),
+                status=lambda: client.status(layout.CONTROL_SOCKET, schemas),
                 hostname=os.environ.get("HOSTNAME", ""),
                 out=out,
             ).run(args.disconnect_players)

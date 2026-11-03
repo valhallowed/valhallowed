@@ -366,15 +366,34 @@ def test_a_failed_rollback_says_both_failed(setup: Setup) -> None:
     setup.apply()
     (setup.install / "manifest.toml").write_text(TWO_WORLDS.replace("2456", "2462"))
     setup.docker.fail_up = 2
-    with pytest.raises(DockerError, match="bringing back the previous install failed too"):
+    with pytest.raises(DockerError, match="bringing back the install as it ran before failed too"):
         setup.apply()
 
 
-def test_a_first_apply_that_fails_has_nothing_to_roll_back_to(setup: Setup) -> None:
+def test_a_first_apply_that_fails_removes_what_it_created(setup: Setup) -> None:
+    """A container whose start failed keeps no network, and the next Compose run would start it as it is."""
+    rendered: list[dict[str, Any]] = []
+    setup.docker.hook = lambda args: rendered.append(json.loads(Path(args[4]).read_text())) if "rm" in args else None
     setup.docker.fail_up = 1
-    with pytest.raises(DockerError, match="exited with 1"):
+
+    with pytest.raises(Refused, match="containers it created are removed"):
         setup.apply()
-    assert len(setup.docker.streamed) == 1
+
+    up, rm = setup.docker.streamed
+    assert rm[:5] == up[:5]
+    assert rm[5:] == ["rm", "--force", "--stop"]
+    assert rendered and set(rendered[0]["services"]) >= {MEADOWFOLD, ASHWAKE}
+    assert not (setup.install / layout.NEXT).exists()
+    assert not (setup.install / layout.RENDERED).exists()
+    state = Store(setup.volume).load()
+    assert state.generation is None and state.handed == {}
+    assert not (setup.volume / MEADOWFOLD).exists()
+
+
+def test_a_first_apply_whose_cleanup_fails_says_both_failed(setup: Setup) -> None:
+    setup.docker.fail_up = 2
+    with pytest.raises(DockerError, match="removing the containers it created failed too"):
+        setup.apply()
 
 
 def test_a_failed_compose_run_gives_same_port_worlds_back_their_documents(setup: Setup) -> None:

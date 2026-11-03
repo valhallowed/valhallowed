@@ -129,8 +129,10 @@ class Apply:
             except Exception as error:
                 failure = error
         if failure is not None:
-            next_file.unlink(missing_ok=True)
-            self._roll_back(host, previous is not None, before, generation, failure)
+            try:
+                self._roll_back(host, before, generation, next_file, failure)
+            finally:
+                next_file.unlink(missing_ok=True)
         next_file.replace(self._applied)
         with self.store.locked():
             self._commit(self.store.load(), generation, moving, override)
@@ -169,15 +171,21 @@ class Apply:
         ]  # fmt: skip
 
     def _roll_back(
-        self, host: Host, ran_before: bool, before: "_Before", generation: Generation, error: Exception
+        self, host: Host, before: "_Before", generation: Generation, rendered: Path, error: Exception
     ) -> NoReturn:
         """Something failed once worlds may have been stopped or handed documents: bring the install
         back as it ran. Each world gets back the documents it held, since a runtime from the
         previous release may refuse the new ones, and Compose runs the compose file it last ran
-        successfully, which vhd apply has not touched."""
-        if not ran_before:
-            raise error
-        print("vhd apply: failed; bringing back the install as it ran before", file=self.out, flush=True)
+        successfully, which vhd apply has not touched. After a first apply there is no such file:
+        the containers this run created are removed instead, since one whose start failed keeps no
+        network, and Compose would start it again as it is."""
+        ran_before = self._applied.exists()
+        doing, done = (
+            ("bringing back the install as it ran before", "The install is back as it ran before")
+            if ran_before
+            else ("removing the containers it created", "The containers it created are removed")
+        )
+        print(f"vhd apply: failed; {doing}", file=self.out, flush=True)
         with self.store.locked():
             state = self.store.load()
             for cid, handed in before.handed.items():
@@ -187,12 +195,15 @@ class Apply:
             self.store.save(state)
             self.store.prune(before.applied, set(generation.children) - set(before.handed))
         try:
-            self.docker.stream(self._up(host, self._applied))
+            if ran_before:
+                self.docker.stream(self._up(host, self._applied))
+            else:
+                self.docker.stream(["compose", "-p", host.project, "-f", str(rendered), "rm", "--force", "--stop"])
         except DockerError as again:
-            raise DockerError(f"{error}; bringing back the previous install failed too: {again}") from again
+            raise DockerError(f"{error}; {doing} failed too: {again}") from again
         raise Refused(
-            f"vhd apply could not apply generation {generation.number} ({error}). The install is back as "
-            "it ran before; fix the cause, then run vhd apply again."
+            f"vhd apply could not apply generation {generation.number} ({error}). {done}; fix the cause, "
+            "then run vhd apply again."
         ) from error
 
     def _check_engine(self) -> None:

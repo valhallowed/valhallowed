@@ -6,11 +6,15 @@ import socket
 from pathlib import Path
 from typing import Any
 
+from vhd_control.schemas import Schemas
+
 TIMEOUT_S = 10
+STATUS_CONTRACT = "contracts/control.status.schema.json"
 
 
 class Unreachable(Exception):
-    """The control plane is not running, did not answer, or answered with an error."""
+    """The control plane is not running, did not answer, answered with an error, or answered with
+    a document that breaks its contract. Either way it vouches for no world."""
 
 
 class _UnixConnection(http.client.HTTPConnection):
@@ -25,8 +29,8 @@ class _UnixConnection(http.client.HTTPConnection):
         self.sock = sock
 
 
-def status(path: Path) -> dict[str, Any]:
-    """GET /status (contracts/control.status.schema.json)."""
+def status(path: Path, schemas: Schemas) -> dict[str, Any]:
+    """GET /status, held to its contract."""
     connection = _UnixConnection(path)
     try:
         connection.request("GET", "/status")
@@ -38,5 +42,11 @@ def status(path: Path) -> dict[str, Any]:
         connection.close()
     if response.status != http.client.OK:
         raise Unreachable(f"the control plane answered {response.status}: {body.decode(errors='replace')}")
-    document: dict[str, Any] = json.loads(body)
+    try:
+        document: dict[str, Any] = json.loads(body)
+    except ValueError as error:
+        raise Unreachable(f"the control plane's status is not JSON: {error}") from error
+    problem = schemas.problem(STATUS_CONTRACT, document)
+    if problem is not None:
+        raise Unreachable(f"the control plane's status breaks its contract, {problem}")
     return document
