@@ -175,7 +175,7 @@ class Apply:
         self, host: Host, before: "_Before", generation: Generation, rendered: Path, error: Exception
     ) -> NoReturn:
         """Something failed once worlds may have been stopped or handed documents: bring the install
-        back as it ran. Each world gets back the documents it held, since a runtime from the
+        back as it ran. Each world and service gets back the documents it held, since a child from the
         previous release may refuse the new ones, and Compose runs the compose file it last ran
         successfully, which vhd apply has not touched. After a first apply there is no such file:
         the containers this run created are removed instead, since one whose start failed keeps no
@@ -301,7 +301,8 @@ class Apply:
             self.docker.stream(["compose", "-p", host.project, "-f", str(self._applied), "stop", *stopping])
 
     def _stage(self, state: State, generation: Generation, confirmed: set[str]) -> set[str]:
-        """Hand each runtime what it may read now, and return the worlds moving to a new port.
+        """Hand each runtime what it may read now, and each service its documents, and return the
+        worlds moving to a new port.
         Those get their documents in the directory for the new port, which only the container
         Compose creates for it mounts, so the running one never reads a port it does not publish.
         A world whose restart the server manager confirmed gets its documents again, saying so,

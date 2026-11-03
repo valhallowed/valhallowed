@@ -1,4 +1,4 @@
-"""The running control plane: reload the settings, reconcile, and hand each runtime what it may have.
+"""The running control plane: reload the settings, reconcile, and hand each child what it may have.
 
 What a runtime may have depends on what the change costs it (Change cost):
 - documents equal but for their number: always, since the runtime adopts them in place;
@@ -6,7 +6,7 @@ What a runtime may have depends on what the change costs it (Change cost):
 - a new world or a new port changes its container, so it waits for vhd apply.
 A data-layer service takes every generation at once: it faces no players, and adopts its
 documents in place. Only a service vhd apply has not yet created a container for waits for it.
-vhd apply hands every runtime its documents itself, once the server manager has confirmed
+vhd apply hands every child its documents itself, once the server manager has confirmed
 any restart, so it is also how a waiting change is applied now.
 """
 

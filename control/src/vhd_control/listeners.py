@@ -34,7 +34,7 @@ SERVICE_STATUS_SCHEMA = "contracts/service.status.schema.json"
 MAX_BODY = 16 * 1024
 # A whole request, from connect to reply, gets this long.
 TIMEOUT_S = 5
-# Requests handled at once, and from one sender. A runtime sends one report every few seconds;
+# Requests handled at once, and from one sender. A child sends one report every few seconds;
 # more than this at once is turned away rather than given a thread each.
 MAX_HANDLERS = 32
 PER_SENDER = 4
