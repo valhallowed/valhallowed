@@ -180,7 +180,12 @@ class Apply:
         the containers this run created are removed instead, since one whose start failed keeps no
         network, and Compose would start it again as it is."""
         ran_before = self._applied.exists()
-        print("vhd apply: failed; bringing back the install as it ran before", file=self.out, flush=True)
+        doing, done = (
+            ("bringing back the install as it ran before", "The install is back as it ran before")
+            if ran_before
+            else ("removing the containers it created", "The containers it created are removed")
+        )
+        print(f"vhd apply: failed; {doing}", file=self.out, flush=True)
         with self.store.locked():
             state = self.store.load()
             for cid, handed in before.handed.items():
@@ -195,10 +200,10 @@ class Apply:
             else:
                 self.docker.stream(["compose", "-p", host.project, "-f", str(rendered), "rm", "--force", "--stop"])
         except DockerError as again:
-            raise DockerError(f"{error}; bringing back the previous install failed too: {again}") from again
+            raise DockerError(f"{error}; {doing} failed too: {again}") from again
         raise Refused(
-            f"vhd apply could not apply generation {generation.number} ({error}). The install is back as "
-            "it ran before; fix the cause, then run vhd apply again."
+            f"vhd apply could not apply generation {generation.number} ({error}). {done}; fix the cause, "
+            "then run vhd apply again."
         ) from error
 
     def _check_engine(self) -> None:
