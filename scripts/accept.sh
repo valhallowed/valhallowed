@@ -3,7 +3,8 @@
 # does, with vhd from the control plane's image, and check that the install
 # runs the expected commit and that the plugin reports its loaded world: the
 # runtime downloads the newest dedicated server, and the server, BepInEx,
-# UnityDoorstop and the plugin all load. On a clean host it pulls from the
+# UnityDoorstop and the plugin all load. Then a synthetic telemetry batch,
+# sent from the world's container, must land in the database through intake. On a clean host it pulls from the
 # registry by default, so an image that was never pushed, or is not public,
 # cannot pass. VHD_PULL=never accepts a local build. The install uses ports
 # away from the defaults, so it never meets a real install on the same host.
@@ -84,9 +85,26 @@ if [[ -z $control ]]; then
   echo "accept: no control plane container is running" >&2
   exit 1
 fi
+
+# The data layer's services run as VHD's unprivileged user with every
+# capability dropped, on the install network alone.
+declare -A services
+for service in database intake; do
+  services[$service]=$(docker ps -q --filter "$label" --filter "label=com.docker.compose.service=$service")
+  if [[ -z ${services[$service]} ]]; then
+    echo "accept: no $service container is running" >&2
+    exit 1
+  fi
+  read -r user caps ports < <(docker inspect \
+    --format '{{.Config.User}} {{json .HostConfig.CapDrop}} {{json .HostConfig.PortBindings}}' "${services[$service]}")
+  if [[ $user != vhd || $caps != '["ALL"]' || $ports != '{}' ]]; then
+    echo "accept: $service runs as '$user' dropping $caps publishing $ports; expected vhd dropping [\"ALL\"] publishing {}" >&2
+    exit 1
+  fi
+done
 status='' state='' seen='' outcome=''
 while ((SECONDS - applied < wait_s)); do
-  for container in "$world" "$control"; do
+  for container in "$world" "$control" "${services[@]}"; do
     read -r run restarts < <(docker inspect --format '{{.State.Status}} {{.RestartCount}}' "$container" 2>/dev/null || echo gone 0)
     if [[ $run != running || $restarts != 0 ]]; then
       outcome="container $container is $run after $restarts restart(s)"
@@ -113,3 +131,48 @@ if [[ $state != running ]]; then
   [[ -z $control ]] || docker logs --tail 20 "$control" >&2 || true
   exit 1
 fi
+
+# The data layer, once the world runs: both services running, then a batch
+# from the world's own container, which intake attributes to the world by its
+# address, found in the database.
+for service in database intake; do
+  if ! grep -q "^$service service: running" <<< "$status"; then
+    echo "accept: vhd status does not show the $service service running:" >&2
+    echo "$status" >&2
+    docker logs --tail 40 "${services[$service]}" >&2 || true
+    exit 1
+  fi
+done
+session=$(cat /proc/sys/kernel/random/uuid)
+answer=$(docker exec -i "$world" python3 - "$session" <<'PY'
+import json, sys, urllib.error, urllib.request
+at = "2026-01-01T00:00:00Z"
+player = {"id": "Steam_accept"}
+events = [
+    {"kind": "player.join", "at": at, "player": {**player, "name": "Accept"}},
+    {"kind": "player.position", "at": at, "player": player, "x": 1.5, "y": 30.0, "z": -2.5},
+]
+body = json.dumps({"contract": 1, "session": sys.argv[1], "sent_at": at, "events": events}).encode()
+request = urllib.request.Request("http://intake:9458/events", data=body, method="POST",
+                                 headers={"Content-Type": "application/json"})
+try:
+    with urllib.request.urlopen(request, timeout=10) as response:
+        print(response.status, response.read().decode())
+except urllib.error.HTTPError as error:
+    print(error.code, error.read().decode())
+PY
+)
+if [[ $answer != '202 {"accepted": 2, "dropped": 0}' ]]; then
+  echo "accept: intake answered the world's batch with: $answer" >&2
+  docker logs --tail 40 "${services[intake]}" >&2 || true
+  exit 1
+fi
+stored=$(docker exec "${services[database]}" psql -h /run/postgresql -d vhd -tAc \
+  "SELECT w.name, p.x, p.z FROM position p JOIN session s ON s.id = p.session_id
+   JOIN world w ON w.id = s.world_id WHERE p.session_id = '$session'")
+if [[ $stored != "$world_name|1.5|-2.5" ]]; then
+  echo "accept: the database holds '$stored' for the world's batch, not $world_name at 1.5, -2.5" >&2
+  exit 1
+fi
+echo "accept: a batch from the world's container reached the database through intake"
+
