@@ -68,7 +68,7 @@ class Database:
         try:
             self._init()
             self._start()
-        except (OSError, subprocess.CalledProcessError, TimeoutError) as error:
+        except (OSError, subprocess.CalledProcessError, TimeoutError, psycopg.Error) as error:
             _log.error("the database cannot start: %s", error)
             self.state.set("failing", f"cannot start PostgreSQL: {error}")
             self._report(documents)
