@@ -10,13 +10,32 @@ from pathlib import Path
 
 from vhd_runtime.generation import Generation
 
+# The plugin's config (B12): contracts/plugin.config.schema.json states every key.
+PluginConfig = Mapping[str, Mapping[str, str | int]]
+
 EXECUTABLE = "valheim_server.x86_64"
 GAME_APP_ID = "892970"
 PLUGIN_GUID = "com.valhallowed.plugin"
 PLUGIN_FILE = "Valhallowed.Plugin.dll"
 
 
-def install_mods(pack: Path, plugin: Path, server_dir: Path, status_file: Path, interval_s: int) -> None:
+def plugin_config(generation: Generation, status_file: Path) -> PluginConfig:
+    """The plugin's config for a generation, as the B12 contract states its keys."""
+    return {
+        "Status": {"Path": str(status_file), "IntervalSeconds": generation.status_interval_s},
+        "Intake": {"Url": generation.intake_url},
+    }
+
+
+def render_config(config: PluginConfig) -> str:
+    """The config as BepInEx reads it: a [Section] each, then one Key = value line per key."""
+    return "\n".join(
+        f"[{section}]\n" + "".join(f"{key} = {value}\n" for key, value in keys.items())
+        for section, keys in config.items()
+    )
+
+
+def install_mods(pack: Path, plugin: Path, server_dir: Path, config: PluginConfig) -> None:
     """Lay BepInEx, the plugin and the plugin's config into the server directory."""
     bepinex = server_dir / "BepInEx"
     # Only VHD's code loads: a plugin or preloader patcher left behind by hand
@@ -29,9 +48,9 @@ def install_mods(pack: Path, plugin: Path, server_dir: Path, status_file: Path, 
     plugins = bepinex / "plugins" / "Valhallowed"
     plugins.mkdir(parents=True)
     shutil.copy2(plugin, plugins / PLUGIN_FILE)
-    config = bepinex / "config" / f"{PLUGIN_GUID}.cfg"
-    config.parent.mkdir(exist_ok=True)
-    config.write_text(f"[Status]\nPath = {status_file}\nIntervalSeconds = {interval_s}\n")
+    path = bepinex / "config" / f"{PLUGIN_GUID}.cfg"
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(render_config(config))
 
 
 def command(server_dir: Path, saves_dir: Path, generation: Generation) -> list[str]:

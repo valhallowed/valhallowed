@@ -136,9 +136,8 @@ class Supervisor:
         # The control plane may have handed a newer generation while the server installed.
         generation = self._read_generation() or generation
         reporter = status.Reporter(generation.status_url, self.post)
-        server.install_mods(
-            self.paths.pack, self.paths.plugin, self.paths.server, self.paths.world_status, generation.status_interval_s
-        )
+        config = server.plugin_config(generation, self.paths.world_status)
+        server.install_mods(self.paths.pack, self.paths.plugin, self.paths.server, config)
         save_existed = server.save_exists(self.paths.saves, generation.world)
         # A report from an earlier run of this container must not pass for this one.
         self.paths.world_status.unlink(missing_ok=True)

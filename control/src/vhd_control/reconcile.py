@@ -20,6 +20,8 @@ from vhd_control.manifest import InvalidSettings, Settings, World
 from vhd_control.naming import child_id
 
 STATUS_URL = f"http://{layout.CONTROL_PLANE}:{layout.STATUS_PORT}/status"
+# Where each world's plugin posts telemetry (B2).
+INTAKE_URL = f"http://{layout.INTAKE}:{layout.INTAKE_PORT}/events"
 STATUS_INTERVAL_S = 5
 # A world reserves its port through port+2 (Game facts).
 WORLD_PORTS = 3
@@ -107,9 +109,9 @@ def _child(world: World) -> Child:
         world=world.name,
         port=world.port,
         generation={
-            "contract": 2,
+            "contract": 3,
             "world": {"name": world.name, "port": world.port},
-            "plugin": {"status_interval_s": STATUS_INTERVAL_S},
+            "plugin": {"status_interval_s": STATUS_INTERVAL_S, "intake_url": INTAKE_URL},
             "status_url": STATUS_URL,
         },
         secrets=secrets,

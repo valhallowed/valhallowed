@@ -1,10 +1,19 @@
+import json
+import re
 from dataclasses import replace
 from pathlib import Path
 
 from vhd_runtime import server
-from vhd_runtime.generation import Generation
+from vhd_runtime.generation import Generation, validator
 
-GENERATION = Generation(number=1, world="Meadowfold", port=2456, status_interval_s=5, status_url=None, password=None)
+REPO = Path(__file__).resolve().parents[3]
+INTAKE = "http://intake:9458/events"
+GENERATION = Generation(
+    number=1, world="Meadowfold", port=2456, status_interval_s=5, status_url=None, intake_url=INTAKE, password=None
+)
+CONFIG_SCHEMA = REPO / "contracts" / "plugin.config.schema.json"
+# A key the plugin binds: Config.Bind("Section", "Key", default, ...).
+BIND = re.compile(r'Config\.Bind\(\s*"(\w+)",\s*"(\w+)",\s*("[^"]*"|-?\d+)\s*,')
 
 
 def make_pack(root: Path) -> Path:
@@ -27,15 +36,16 @@ def test_install_mods_lays_in_bepinex_the_plugin_and_its_config(tmp_path: Path) 
     patcher.parent.mkdir(parents=True)
     patcher.write_bytes(b"MZ")
 
-    server.install_mods(make_pack(tmp_path), plugin, server_dir, Path("/run/vhd/world.json"), 7)
+    config = server.plugin_config(replace(GENERATION, status_interval_s=7), Path("/run/vhd/world.json"))
+    server.install_mods(make_pack(tmp_path), plugin, server_dir, config)
 
     assert (server_dir / "BepInEx" / "core" / "BepInEx.Preloader.dll").exists()
     assert (server_dir / "doorstop_libs" / "libdoorstop_x64.so").exists()
     assert (server_dir / "BepInEx" / "plugins" / "Valhallowed" / "Valhallowed.Plugin.dll").exists()
     assert not stray.exists()
     assert not patcher.exists()
-    config = (server_dir / "BepInEx" / "config" / "com.valhallowed.plugin.cfg").read_text()
-    assert config == "[Status]\nPath = /run/vhd/world.json\nIntervalSeconds = 7\n"
+    written = (server_dir / "BepInEx" / "config" / "com.valhallowed.plugin.cfg").read_text()
+    assert written == f"[Status]\nPath = /run/vhd/world.json\nIntervalSeconds = 7\n\n[Intake]\nUrl = {INTAKE}\n"
 
 
 def test_command_keeps_the_world_unlisted() -> None:
@@ -72,3 +82,24 @@ def test_save_exists_in_either_format(tmp_path: Path) -> None:
     assert server.save_exists(tmp_path, "Meadowfold")
     (worlds / "Ashwake.db").write_bytes(b"")
     assert server.save_exists(tmp_path, "Ashwake")
+
+
+def test_the_generated_plugin_config_meets_its_contract() -> None:
+    config = server.plugin_config(GENERATION, Path("/run/vhd/world.json"))
+    assert not list(validator(CONFIG_SCHEMA).iter_errors(config))
+
+
+def test_the_plugin_binds_exactly_the_keys_its_contract_states() -> None:
+    """B12's other side: the plugin's source binds each key the supervisor writes, with its type."""
+    source = "".join(path.read_text() for path in sorted((REPO / "plugin" / "src").rglob("*.cs")))
+    bound = {
+        (section, key): "string" if default.startswith('"') else "integer"
+        for section, key, default in BIND.findall(source)
+    }
+    contract = json.loads(CONFIG_SCHEMA.read_text())
+    stated = {
+        (section, key): spec["type"]
+        for section, keys in contract["properties"].items()
+        for key, spec in keys["properties"].items()
+    }
+    assert bound == stated
