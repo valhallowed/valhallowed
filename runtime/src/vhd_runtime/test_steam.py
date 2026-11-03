@@ -144,6 +144,13 @@ def test_gives_up_after_the_last_attempt(tmp_path: Path) -> None:
     assert len(calls) == steam.INSTALL_ATTEMPTS
 
 
+def test_a_steamcmd_that_cannot_start_fails_the_install(tmp_path: Path) -> None:
+    script = tmp_path / "steamcmd.sh"
+    script.write_text("#!/bin/sh\n")
+    with pytest.raises(steam.InstallFailed, match="could not start"):
+        steam.run([str(script)], 5, lambda: False)
+
+
 def test_a_stop_ends_steamcmd() -> None:
     started = time.monotonic()
     with pytest.raises(steam.Stopped):

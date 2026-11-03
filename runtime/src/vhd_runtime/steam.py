@@ -61,7 +61,10 @@ def run(command: list[str], timeout: float, stopping: Stopping) -> None:
     """Run SteamCMD until it exits, the timeout passes or a stop is requested. Its exit code
     is unreliable on a first run, so the caller checks the files it wrote instead."""
     # A session of its own, so a stop reaches the SteamCMD binary the script starts.
-    process = subprocess.Popen(command, start_new_session=True)  # noqa: S603
+    try:
+        process = subprocess.Popen(command, start_new_session=True)  # noqa: S603
+    except OSError as error:
+        raise InstallFailed(f"SteamCMD could not start: {error}") from error
     deadline = time.monotonic() + timeout
     while process.poll() is None:
         if stopping():
