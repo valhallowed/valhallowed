@@ -157,7 +157,7 @@
           <tr data-k="b9"><td>B9</td><td>Web map ↔ Steam</td><td>OpenID; server-side sessions</td><td>Web map stays public and read-only</td></tr>
           <tr data-k="b10"><td>B10</td><td>Players → game runtime</td><td>Game protocol; chat commands parsed and rate-limited</td><td>Command refused and audited</td></tr>
           <tr data-k="b11"><td>B11</td><td>Players → web map</td><td>Web map API schema; identity from the session</td><td>Request rejected</td></tr>
-          <tr data-k="b12"><td>B12</td><td>Supervisor ↔ plugin</td><td>Config keys, world status schema</td><td>The report counts as absent; world truth decides</td></tr>
+          <tr data-k="b12"><td>B12</td><td>Supervisor ↔ plugin</td><td>Plugin config schema, world status schema</td><td>The report counts as absent; world truth decides</td></tr>
         </tbody>
       </table>
     </div>
@@ -262,7 +262,8 @@
     ]),
     b12: B('B12 · Supervisor ↔ plugin', [
       ['Crosses', 'the plugin’s generated config down; the world status file back'],
-      ['Contract', 'the config keys the plugin binds; world status schema, versioned with the image that ships both'],
+      ['Contract', 'contracts/plugin.config.schema.json, every key the plugin binds, stated once; the world status schema; both versioned with the image that ships the supervisor and the plugin'],
+      ['Checked by', 'the runtime’s tests: the config the supervisor generates, and the keys the plugin’s source binds'],
       ['Validated by', 'the supervisor, on every read of the file'],
       ['On failure', 'the report counts as absent, and world truth decides what that means for the world'],
       ['Owner', 'game runtime'],

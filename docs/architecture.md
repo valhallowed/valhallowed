@@ -241,7 +241,7 @@ boundary, and every boundary follows one standard. Each contract lives in
 | B9 | Web map ↔ Steam | Sign-in | OpenID; server-side sessions | The web map stays public and read-only |
 | B10 | Players → game runtime | Game traffic and chat lines | Game protocol (not ours); chat commands parsed and rate-limited by the plugin, issued through the broker | The command is refused and audited |
 | B11 | Players → web map | Web requests | Web map API schema; identity from the session only | The request is rejected |
-| B12 | Supervisor ↔ plugin | The plugin's generated config; the world status file back | Config keys, world status schema | The report counts as absent, and world truth decides what that means for the world |
+| B12 | Supervisor ↔ plugin | The plugin's generated config; the world status file back | Plugin config schema, world status schema | The report counts as absent, and world truth decides what that means for the world |
 
 ### Exposure
 
