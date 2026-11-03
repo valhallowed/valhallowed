@@ -278,9 +278,9 @@
 
   const scenarios = {
     start: { label: 'First start', cap: 'The data layer starts before any game runtime, and a world counts as up only once it matches its save.', steps: [
-      { f: 'sm', t: 'cp', l: 'vhd apply', d: 'The server manager writes a manifest and, optionally, secrets, and runs vhd apply on the host. Compose starts every child from the compose file it renders.' },
+      { f: 'sm', t: 'cp', l: 'vhd apply', d: 'The server manager writes a manifest and, optionally, secrets, and runs vhd apply on the host. Compose starts every child from the compose file it renders. A port already taken on the host fails this step, and Compose names the port.' },
       { f: 'cp', t: 'cp', l: 'validate', d: 'Manifest against its schema; secrets against the key list.' },
-      { f: 'cp', t: 'cp', l: 'host check: ports, memory, CPU, disk', d: 'What the manifest asks for, against what the host has. A shortfall becomes a warning in status; a port already taken stops only the world that needs it.' },
+      { f: 'cp', t: 'cp', l: 'host check: memory, CPU, disk', d: 'What the manifest asks for, against what the host has. A shortfall becomes a warning in status.' },
       { f: 'cp', t: 'cp', l: 'reconcile: generation 1', d: 'Defaults fill every unset setting, and reconcile records what each implies.' },
       { f: 'cp', t: 'dl', l: 'generation 1 + scoped secrets', d: 'The data layer starts first: it applies the database schema and opens intake and the broker.' },
       { f: 'dl', t: 'cp', l: 'ready', dash: true, d: 'Schema applied, intake listening.' },

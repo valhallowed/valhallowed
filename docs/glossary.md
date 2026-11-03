@@ -107,8 +107,9 @@ the world failed world truth, or so its files can be replaced without a
 Docker socket (G13).
 
 **Host check** — The control plane's comparison of what the manifest asks for
-(ports, memory and CPU per world, disk) with what the host has. A shortfall is
-a warning in status, never a silent failure.
+(memory and CPU per world, disk) with what the host has. A shortfall is a
+warning in status, never a silent failure. A port already taken shows at
+`vhd apply`, which is what publishes ports.
 
 **Ingress** — Where settings, secrets and operator actions enter VHD from
 outside. There is exactly one, and the control plane owns it.

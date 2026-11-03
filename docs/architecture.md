@@ -13,7 +13,8 @@ Someone with only Docker installs a Valheim dedicated server that carries the
 VHD plugin, telemetry, governed in-game commands and the web map. They write one
 manifest and, optionally, a secrets file. Everything else is defaulted, derived
 or generated. The host is x86-64 (§ Game facts): a Linux machine, or Docker
-Desktop on Windows or macOS with an Intel or AMD processor.
+Desktop on Windows or macOS with an Intel or AMD processor. Acceptance runs on
+Linux, so Docker Desktop and rootless Docker are goals no check covers.
 
 ## Ground rules
 
@@ -129,10 +130,12 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   `vhd apply` reads from the folder, so the secrets file can stay readable by
   its owner alone. Every other child runs as VHD's own unprivileged user.
 - **Host check.** At first start and on every reconcile, the control plane
-  compares what the manifest asks for with what the host has: ports, memory
-  and CPU per world, disk for worlds and backups. A shortfall is a warning in
-  status, never a silent failure. A port already taken on the host stops only
-  the world that needs it.
+  compares what the manifest asks for with what the host has: memory and CPU
+  per world, disk for worlds and backups. A shortfall is a warning in status,
+  never a silent failure. Ports show where they are published: a port already
+  taken on the host fails that `vhd apply`, and Compose names it. An install
+  that has run comes back as it ran: a world added on that port never starts
+  and the rest keep running, and a world moved to it restarts on its old port.
 - **Interfaces.** One control API. The TUI, the admin console and the CLI,
   `vhd`, are its clients, and cover manifest errors, hot reload, status, world
   import and export, backups and logs. The CLI runs from the control plane's
@@ -219,6 +222,7 @@ boundary, and every boundary follows one standard. Each contract lives in
 | B9 | Web map ↔ Steam | Sign-in | OpenID; server-side sessions | The web map stays public and read-only |
 | B10 | Players → game runtime | Game traffic and chat lines | Game protocol (not ours); chat commands parsed and rate-limited by the plugin, issued through the broker | The command is refused and audited |
 | B11 | Players → web map | Web requests | Web map API schema; identity from the session only | The request is rejected |
+| B12 | Supervisor ↔ plugin | The plugin's generated config; the world status file back | Config keys, world status schema | The report counts as absent, and world truth decides what that means for the world |
 
 ### Exposure
 
@@ -233,7 +237,7 @@ address in a profile is a default (G9).
 | Game only | Reachable | Off | Off |
 
 In every profile the admin console stays on loopback unless the manifest opens
-it, and no data-layer service or database gets a host port.
+it, and no database or data-layer service but the web map gets a host port.
 
 Whether what a profile opens reaches the internet is up to the host's network:
 behind a home router it takes a port forward, and on a server with its own
@@ -300,6 +304,11 @@ Follows from G4 and G12.
    every capability must keep, synthesized or anonymized.
 4. **Capabilities, one release at a time,** each passing its acceptance
    material and each shipping with its bring-your-own settings (G3).
+5. **Control-plane work, one release at a time, beside the capabilities:**
+   operator actions (world import and export, backups, logs), the update policy,
+   the host check, exposure profiles, each world's resource limits, the TUI and
+   the admin console. Backups and world import lead it, since a world with a
+   history cannot move onto an install without them.
 
 ## Game facts
 
@@ -312,7 +321,9 @@ What any design here must respect about the game.
 - The server loads the save its world setting names. When no save has that
   name, or the save fails to load, the server creates a new, empty world under
   the name, and writes that world's small `_main.0.fwl2` into the save's
-  directory before any plugin loads; recovering a held world removes it.
+  directory before any plugin loads. A new world stopped at that moment leaves
+  only this file, which looks like a save. A complete save restored beside it
+  still loads, and the server's next save removes it.
 - A new world counts no objects when it first loads, and its real count about
   30 seconds later. A world loaded from a save counts its objects at once.
 - A world's server uses its port and the next one, over UDP; the server's own
@@ -323,8 +334,12 @@ What any design here must respect about the game.
   the world's name or seed.
 - Harmony binds patches by name. After a game patch, a patch can apply and then
   throw, so a healthy container does not mean a loaded world.
-- Player names are client-supplied and not unique. Identity comes only from
-  same-object pairs (beds, tombstones, wards).
+- Player names are client-supplied and not unique, so a name is never a key. A
+  person is their Steam account, which the server reads from the peer's
+  connection. A character is its `playerID`, which the client mints once per
+  character and the server reads from the character's object. One connected
+  peer showing both links the character to its person; a character seen only in
+  a save stays unlinked.
 - Prefab names must be verified against live world data, never assumed.
 - A save parser fails closed outside the version range it was validated
   against.
@@ -338,7 +353,7 @@ What any design here must respect about the game.
 ## Open decisions
 
 A number missing from this table was settled as a ground rule, which names it,
-or withdrawn.
+withdrawn, or found to be no decision about the product.
 
 | # | Question | Options | Lean |
 |---|---|---|---|

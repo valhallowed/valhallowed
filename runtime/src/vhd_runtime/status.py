@@ -51,7 +51,8 @@ def read_world(path: Path, world: str) -> WorldStatus | None:
     if not isinstance(data, dict) or data.get("world") != world:
         return None
     objects, players = data.get("objects"), data.get("players")
-    if not isinstance(objects, int) or not isinstance(players, int) or objects < 0 or players < 0:
+    # type(), not isinstance(): a JSON true is a Python int, and not an integer in the contract.
+    if type(objects) is not int or type(players) is not int or objects < 0 or players < 0:
         return None
     return WorldStatus(objects=objects, players=players, stamp=(info.st_ino, info.st_mtime_ns))
 

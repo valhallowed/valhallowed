@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Plugin world status",
+  "description": "B12, status up: the file the plugin rewrites on the runtime's own disk, which the supervisor reads for world truth. The plugin and the supervisor ship in one image, so this document carries no contract version. A file that breaks this contract counts as no report. The supervisor ignores other keys.",
+  "type": "object",
+  "required": ["world", "objects", "players"],
+  "properties": {
+    "world": {
+      "description": "The loaded world's save name. A report for another world counts as no report.",
+      "$ref": "../schema/manifest.schema.json#/$defs/save_name"
+    },
+    "objects": {
+      "description": "The loaded world's object count.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "players": {
+      "description": "Players connected.",
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}
