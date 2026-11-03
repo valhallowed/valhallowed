@@ -196,6 +196,22 @@ and the database, each service a child in its own container (G14). Three rules
 hold: only the broker creates a command, only the plugin executes one, and
 markers and journal entries are records, never commands.
 
+- **The bundled database is VHD's own build** of PostgreSQL, from the pinned
+  Debian snapshot the other images use, so its major version follows Debian's.
+  It reads its generation like every child, and nothing configures it outside B1.
+- **One image, a container per service.** The `data-layer` image runs both the
+  database and intake, each as its own child.
+- **Intake knows a world by its address.** It attributes a batch to the world
+  whose container sent it, as the control plane's status listener does. No
+  child can forge its address on the install network, so worlds hold no token.
+- **The database applies the schema.** At each start it applies the schema,
+  roles and grants in one transaction, then sets every role's password from its
+  secrets, before it reports `running`. No other service holds owner rights,
+  and a failure leaves the schema as it was.
+- **Services reach each other by name** on the install network and publish no
+  host port (G9). A service that starts before the one it needs retries with
+  capped backoff and reports `starting`. Worlds never wait for the data layer.
+
 ### Internal boundaries
 
 The ingress is the one way in from outside. Every crossing inside VHD is a
@@ -361,3 +377,4 @@ withdrawn, or found to be no decision about the product.
 | O12 | TLS for a public web map | Plain HTTP with warnings · bundled TLS with automatic certificates, for a hostname or a bare public IP · the server manager's own reverse proxy | Offer all three. Bundled TLS is the recommended public profile: Let's Encrypt has issued six-day certificates for bare IP addresses since January 2026, so it needs no domain, only port 80 or 443 reachable for the challenge. |
 | O13 | Default resources per world | Fixed defaults · sized from the host at first start | Fixed defaults, set from a measurement under player load. One idle-hours reading put a game server at 1.9–2.8 GiB of memory. The host check warns when the host falls short. |
 | O14 | Authenticating the admin console to the control API | A generated token the console asks for · Steam sign-in limited to the server manager · loopback with no authentication | A generated token, kept in the control plane's volume and printed by `vhd`. Loopback alone lets any user on the host act as the server manager. |
+| O15 | Who applies the schema to your own database, where there is no `database` service | A `vhd` step with owner credentials the server manager supplies · intake, holding owner rights only while it applies · the server manager, from SQL VHD ships | A `vhd` step, so no service holds owner rights. Settle it with the persistence capability. |
