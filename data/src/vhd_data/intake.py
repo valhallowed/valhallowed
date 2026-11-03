@@ -94,8 +94,6 @@ class Telemetry:
             try:
                 with connection.transaction():
                     self._write(connection, world, session, events)
-            except ForeignSession:
-                raise
             except psycopg.Error as error:
                 if connection.closed or isinstance(error, psycopg.OperationalError):
                     self._connection = None
