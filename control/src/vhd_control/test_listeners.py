@@ -157,7 +157,7 @@ def test_the_control_api_serves_status_over_its_socket(tmp_path: Path) -> None:
     server = control_server(install.daemon, socket_path)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        document = client.status(socket_path)
+        document = client.status(socket_path, SCHEMAS)
     finally:
         server.shutdown()
         server.server_close()
@@ -170,9 +170,24 @@ def test_the_control_api_serves_status_over_its_socket(tmp_path: Path) -> None:
     assert socket_path.stat().st_mode & 0o777 == 0o600
 
 
+def test_the_client_refuses_a_status_that_breaks_its_contract(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    install = Install(tmp_path)
+    broken = {"generation": 1, "worlds": {"Meadowfold": {"state": "fine"}}}
+    monkeypatch.setattr(install.daemon, "status", lambda: broken)
+    socket_path = tmp_path / "control.sock"
+    server = control_server(install.daemon, socket_path)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        with pytest.raises(client.Unreachable, match="breaks its contract"):
+            client.status(socket_path, SCHEMAS)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_the_client_says_when_the_control_plane_is_not_running(tmp_path: Path) -> None:
     with pytest.raises(client.Unreachable, match="does not answer"):
-        client.status(tmp_path / "control.sock")
+        client.status(tmp_path / "control.sock", SCHEMAS)
 
 
 def test_a_sender_that_trickles_its_request_is_cut_off(monkeypatch: pytest.MonkeyPatch) -> None:
