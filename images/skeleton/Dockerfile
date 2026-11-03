@@ -1,6 +1,6 @@
 # Stand-in that proves the release pipeline end to end: it serves the commit it
 # was built from on 8456, which vhd apply publishes on the web map's port.
-FROM busybox:1.38.0@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e
+FROM busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
 
 ARG VHD_BUILD=dev
 RUN mkdir -p /srv && echo "$VHD_BUILD" > /srv/build

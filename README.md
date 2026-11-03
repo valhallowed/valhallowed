@@ -83,7 +83,8 @@ make accept
 Builds the images with the definition CI uses, installs them through the
 release compose file and runs acceptance against them: the install's world
 downloads the dedicated server from Steam and must load with the plugin, which
-can take up to 20 minutes. It uses ports away from the defaults, so it never
+can take up to 20 minutes, and a telemetry batch sent from the world's container
+must reach the database. It uses ports away from the defaults, so it never
 meets an install on them.
 
 ```bash

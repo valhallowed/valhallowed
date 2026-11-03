@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-# The control plane's Compose service, which runtimes reach on the install network.
+# The control plane's Compose service, which every child reaches on the install network.
 CONTROL_PLANE = "control-plane"
-# Where runtimes send status (B1). Internal to the install network.
+# Where every child sends status (B1). Internal to the install network.
 STATUS_PORT = 9457
 # The data layer's services (G14), by their Compose service names, which Docker's DNS answers to.
 DATABASE = "database"
@@ -27,7 +27,7 @@ CONTROL_SOCKET = CONTROL_DIR / "control.sock"
 SCHEMAS = Path("/opt/vhd")
 # Where Docker's socket appears in vhd, and only there.
 DOCKER_SOCKET = "/var/run/docker.sock"
-# The install's private network: runtimes and the control plane's status listener.
+# The install's private network: every child and the control plane's status listener.
 INSTALL_NETWORK = "install"
 # Named volumes, which Compose prefixes with the project name.
 GENERATIONS_VOLUME = "generations"

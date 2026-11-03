@@ -199,7 +199,7 @@
     gr: N('Game runtime', 'Game runtime × worlds', [['Listens', 'three udp world ports per world, on all interfaces; defaults, set per world'], ['Outbound', 'Steam CDN for the server download and updates']]),
     wm: N('Data layer', 'Web map', [['LAN', 'tcp 8456 on all interfaces, plain HTTP'], ['Public, direct', 'the same port, open to the internet'], ['Public with TLS', '127.0.0.1:8456 behind TLS'], ['Game only', 'off']]),
     cp: N('Control plane', 'Control plane', [['Listens', 'status from the children, on the install network only; the control API on a socket only vhd shares; the admin console on 127.0.0.1:9456 by default, once it exists'], ['Outbound', 'Steam, for the game update check']]),
-    ib: N('Data layer', 'Intake · broker', [['Listens', 'install network only'], ['Callers', 'the plugin; the web map and chat relay through the broker']]),
+    ib: N('Data layer', 'Intake · broker', [['Listens', 'install network only; intake on tcp 9458'], ['Callers', 'the plugin; the web map and chat relay through the broker']]),
     wr: N('Data layer', 'World render', [['Listens', 'nowhere; reads the map export from a shared volume']]),
     cr: N('Data layer', 'Chat relay', [['Outbound', 'the chat service, only while its secret is set']]),
     as: N('Data layer', 'Assistant', [['Outbound', 'the LLM provider, only while its secret is set']]),

@@ -117,7 +117,8 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   generation, and the secrets scoped to it, into that child's own directory of
   one generations volume. The directory, like the child's Compose service, is
   named for it: a world's save name in lower case with a short hash, since
-  save names allow characters Compose names do not. Each child mounts only its
+  save names allow characters Compose names do not, and a data-layer
+  service's own name. Each child mounts only its
   own directory, read-only (a volume subpath, which needs Docker Engine 26), so
   it can read no other child's secrets. The secrets go first and the generation
   second, and a child acts on neither until both carry the same generation
@@ -144,7 +145,7 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   in a volume only the control plane and `vhd` mount, so no child and no network
   reaches it. Children report status to a separate listener on the install
   network that accepts status and nothing else, and only from the reporting
-  world's own container: it trusts source addresses, which holds because no
+  child's own container: it trusts source addresses, which holds because no
   child has the capability to forge one. The admin console will put the control
   API on the host's loopback unless the manifest opens it, once its
   authentication is settled (O14).
@@ -154,7 +155,8 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
 - **Status reports world truth, not container health:** whether the world
   loaded, and its object count against the save. A world whose runtime has not
   reported for three of its reporting intervals shows as unknown, never as its
-  last state.
+  last state. A data-layer service reports starting, running or failing, with
+  the reason, and intake its counts of events taken and dropped.
 
 ### Game runtimes
 

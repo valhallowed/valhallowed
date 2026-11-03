@@ -44,7 +44,7 @@ RUN if [[ ! $GAME_BUILD =~ ^[0-9]+$ ]]; then \
     fi \
  && rm -rf /server /steamcmd /root/Steam /root/.steam /root/.local/share/Steam
 
-FROM busybox:1.38.0@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e AS bepinex
+FROM busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4 AS bepinex
 # scripts/check-upstream.sh reports a newer pack.
 ARG BEPINEX_PACK_VERSION=5.4.2360
 ADD --checksum=sha256:6bca77b1016acfe0ffaebb6534c84b12ae8d12e5a96abbf59ec6e4526204fc6f \
