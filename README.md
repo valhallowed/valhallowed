@@ -35,7 +35,8 @@ of its own:
 3. For a world password, write `secrets.toml` beside it, readable by you
    alone.
 4. Run `docker compose run --rm vhd apply`, and
-   `docker compose run --rm vhd status` to see each world.
+   `docker compose run --rm vhd status` to see each world and the data
+   layer's services.
 
 `vhd apply` adds `COMPOSE_IGNORE_ORPHANS=true` to the folder's `.env`: the
 host's Compose would otherwise call the install's own containers orphans of
