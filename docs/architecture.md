@@ -136,6 +136,7 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   taken on the host fails that `vhd apply`, and Compose names it. An install
   that has run comes back as it ran: a world added on that port never starts
   and the rest keep running, and a world moved to it restarts on its old port.
+  A first `vhd apply` that fails removes the containers it created.
 - **Interfaces.** One control API. The TUI, the admin console and the CLI,
   `vhd`, are its clients, and cover manifest errors, hot reload, status, world
   import and export, backups and logs. The CLI runs from the control plane's
