@@ -74,6 +74,35 @@ def test_a_valid_report_is_recorded(status_url: tuple[str, StatusBook]) -> None:
     assert view.report == REPORT
 
 
+SERVICE_REPORT = {"contract": 1, "generation": 1, "service": "intake", "state": "running", "accepted": 3, "dropped": 0}
+
+
+def test_a_service_report_is_recorded_only_from_its_own_container(status_url: tuple[str, StatusBook]) -> None:
+    url, book = status_url
+    # The resolver gives intake no address of this test's: another container claims its name.
+    assert post(url, json.dumps(SERVICE_REPORT).encode()) == 403
+    assert book.service("intake").report is None
+
+
+def test_a_service_report_that_breaks_its_contract_is_dropped(status_url: tuple[str, StatusBook]) -> None:
+    url, book = status_url
+    assert post(url, json.dumps({**SERVICE_REPORT, "service": "broker"}).encode()) == 400
+    assert post(url, json.dumps({**SERVICE_REPORT, "world": "Meadowfold"}).encode()) == 400
+    assert book.view("Meadowfold").report is None
+
+
+def test_a_service_report_from_its_container_is_recorded() -> None:
+    resolver = Resolver()
+    resolver.addresses["intake"] = {"127.0.0.1"}
+    listener = Listener(resolver)
+    try:
+        assert post(listener.url, json.dumps(SERVICE_REPORT).encode()) == 204
+        assert listener.book.service("intake").report == SERVICE_REPORT
+        assert listener.book.view("Meadowfold").report is None
+    finally:
+        listener.close()
+
+
 def test_a_report_that_breaks_the_contract_is_dropped(status_url: tuple[str, StatusBook]) -> None:
     url, book = status_url
     assert post(url, json.dumps({**REPORT, "state": "healthy"}).encode()) == 400

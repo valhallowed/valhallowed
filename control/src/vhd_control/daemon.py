@@ -4,6 +4,8 @@ What a runtime may have depends on what the change costs it (Change cost):
 - documents equal but for their number: always, since the runtime adopts them in place;
 - anything else restarts its game, so it waits while players may be online (an empty world);
 - a new world or a new port changes its container, so it waits for vhd apply.
+A data-layer service takes every generation at once: it faces no players, and adopts its
+documents in place. Only a service vhd apply has not yet created a container for waits for it.
 vhd apply hands every runtime its documents itself, once the server manager has confirmed
 any restart, so it is also how a waiting change is applied now.
 """
@@ -16,9 +18,9 @@ from typing import Any
 
 from vhd_control import manifest
 from vhd_control.manifest import InvalidSettings, Settings
-from vhd_control.reconcile import Child, reconcile
+from vhd_control.reconcile import Child, Generation, reconcile
 from vhd_control.schemas import Schemas
-from vhd_control.status import StatusBook
+from vhd_control.status import ServiceView, StatusBook, WorldView
 from vhd_control.store import State, Store
 
 POLL_S = 2.0
@@ -40,6 +42,8 @@ class Daemon:
     _unreadable: str | None = field(default=None, init=False)
     _refused: str | None = field(default=None, init=False)
     _pending: dict[str, tuple[int, str]] = field(default_factory=dict, init=False)
+    # The generation each service waits for vhd apply with, by service name.
+    _pending_services: dict[str, int] = field(default_factory=dict, init=False)
     _worlds: frozenset[str] = field(default=frozenset(), init=False)
     _failing: str | None = field(default=None, init=False)
 
@@ -87,6 +91,8 @@ class Daemon:
                 elif state.handed[cid].number != generation.number:
                     self.store.hand(state, cid, child, generation.number)
                     changed = True
+            pending_services, served = self._serve(state, generation)
+            changed = changed or served
             state.generation = generation
             if changed:
                 self.store.save(state)
@@ -94,7 +100,24 @@ class Daemon:
         for cid, (number, waits) in pending.items():
             if self._pending.get(cid) != (number, waits):
                 _log.info("generation %d for %s waits for %s", number, generation.children[cid].world, waits)
+        for name, number in pending_services.items():
+            if self._pending_services.get(name) != number:
+                _log.info("generation %d for the %s service waits for %s", number, name, WAITS_FOR_APPLY)
         self._pending = pending
+        self._pending_services = pending_services
+
+    def _serve(self, state: State, generation: Generation) -> tuple[dict[str, int], bool]:
+        """Hand each service the generation, unless vhd apply has not created its container yet.
+        Returns the generation each such service waits for, and whether any was handed one."""
+        pending: dict[str, int] = {}
+        served = False
+        for name, service in generation.services.items():
+            if name not in (state.services_applied or ()):
+                pending[name] = generation.number
+            elif name not in state.services or state.services[name].number != generation.number:
+                self.store.serve(state, service, generation.number)
+                served = True
+        return pending, served
 
     def status(self) -> dict[str, Any] | None:
         """What GET /status returns (contracts/control.status.schema.json), or None before the
@@ -104,7 +127,7 @@ class Daemon:
             return None
         worlds: dict[str, object] = {}
         for cid, child in state.generation.children.items():
-            entry = self._entry(child.world)
+            entry = self._entry(self.book.view(child.world))
             handed = state.handed.get(cid)
             if handed is not None:
                 entry["published"] = handed.number
@@ -115,23 +138,37 @@ class Daemon:
         for cid, handed in state.handed.items():
             if cid in state.generation.children:
                 continue
-            removed = self._entry(handed.child.world)
+            removed = self._entry(self.book.view(handed.child.world))
             removed.update(
                 published=handed.number,
                 removed=True,
                 pending={"generation": state.generation.number, "waits_for": WAITS_FOR_APPLY},
             )
             worlds[handed.child.world] = removed
-        document: dict[str, Any] = {"contract": 1, "generation": state.generation.number, "worlds": worlds}
+        services: dict[str, object] = {}
+        for name in state.generation.services:
+            entry = self._entry(self.book.service(name))
+            served = state.services.get(name)
+            if served is not None:
+                entry["published"] = served.number
+            if name in self._pending_services:
+                entry["pending"] = {"generation": self._pending_services[name], "waits_for": WAITS_FOR_APPLY}
+            services[name] = entry
+        document: dict[str, Any] = {
+            "contract": 2,
+            "generation": state.generation.number,
+            "worlds": worlds,
+            "services": services,
+        }
         if self.refused is not None:
             document["refused"] = self.refused
         if state.override is not None:
             document["override"] = state.override
         return document
 
-    def _entry(self, world: str) -> dict[str, Any]:
-        """A world's state, with its runtime's last report and its age when there is one."""
-        view = self.book.view(world)
+    @staticmethod
+    def _entry(view: WorldView | ServiceView) -> dict[str, Any]:
+        """A child's state, with its last report and that report's age when there is one."""
         entry: dict[str, Any] = {"state": view.state}
         if view.report is not None and view.age_s is not None:
             entry["report"] = view.report

@@ -187,6 +187,14 @@ format, change cost and what applies it.
 **Server manager** — The person who operates an install through the control
 plane. Not a player.
 
+**Service** — One part of the data layer, run as its own child (G14): intake
+and the database, later the broker, the chat relay and the web map. A system
+outside VHD, such as a chat service or your own database, is an outside service.
+
+**Session** — One load of a world. The plugin names it at each load, and
+telemetry carries its id, so players left over from an earlier run are fenced
+off.
+
 **Settings reference** — The user-facing list of every setting with its
 default, change cost, what applies it and its effect. The manifest and
 secrets schemas are its source, so it cannot disagree with them.

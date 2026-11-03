@@ -13,11 +13,15 @@ from vhd_control.reconcile import Generation, last_port
 CONTROL_PLANE_IMAGE = "control-plane"
 GAME_RUNTIME_IMAGE = "game-runtime"
 SKELETON_IMAGE = "skeleton"
-IMAGES = (CONTROL_PLANE_IMAGE, GAME_RUNTIME_IMAGE, SKELETON_IMAGE)
+DATA_LAYER_IMAGE = "data-layer"
+IMAGES = (CONTROL_PLANE_IMAGE, GAME_RUNTIME_IMAGE, SKELETON_IMAGE, DATA_LAYER_IMAGE)
 # Where the skeleton listens inside its container; the host port is the web map's.
 SKELETON_PORT = 8456
 STOP_GRACE = "150s"
-# Neither the control plane nor a runtime needs a Linux capability or a way to gain one.
+# Long enough for the database to stop cleanly, so its next start needs no recovery.
+DATABASE_STOP_GRACE = "60s"
+DATABASE_VOLUME = "database-data"
+# No container VHD runs needs a Linux capability or a way to gain one.
 LOCKED_DOWN = {"cap_drop": ["ALL"], "security_opt": ["no-new-privileges:true"]}
 # Docker's local driver rotates by default, so no container's log can fill the host's disk.
 LOGGING = {"logging": {"driver": "local"}}
@@ -87,6 +91,25 @@ def render(generation: Generation, host: Host, web_map_port: int) -> dict[str, o
             ],
         }
         volumes[f"{cid}-data"] = {}
+    # The data layer's services: on the install network only, with no host port (G9).
+    for name in sorted(generation.services):
+        mounts: list[dict[str, object]] = [
+            {**generations, "target": "/generation", "read_only": True, "volume": {"subpath": name}},
+        ]
+        service: dict[str, object] = {
+            "image": host.images[DATA_LAYER_IMAGE],
+            "command": [name],
+            "restart": "unless-stopped",
+            **LOCKED_DOWN,
+            **LOGGING,
+            "networks": [layout.INSTALL_NETWORK],
+            "volumes": mounts,
+        }
+        if name == layout.DATABASE:
+            service["stop_grace_period"] = DATABASE_STOP_GRACE
+            mounts.append({"type": "volume", "source": DATABASE_VOLUME, "target": "/data"})
+            volumes[DATABASE_VOLUME] = {}
+        services[name] = service
     return {
         "name": host.project,
         "x-vhd-generated": NOTE,

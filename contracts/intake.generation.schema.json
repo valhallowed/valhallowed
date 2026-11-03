@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Intake generation",
+  "description": "B1: the effective configuration of the intake service, as generation.json in its own directory of the generations volume. Intake adopts a new generation in place.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "generation", "status_url", "status_interval_s", "database", "worlds"],
+  "properties": {
+    "contract": {
+      "description": "The version of this contract.",
+      "const": 1
+    },
+    "generation": {
+      "description": "The generation number. A higher number replaces a lower one.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "status_url": {
+      "description": "Where the service reports its status to the control plane.",
+      "type": "string",
+      "pattern": "^http://[A-Za-z0-9.-]+(:[0-9]{1,5})?/"
+    },
+    "status_interval_s": {
+      "description": "How often the service reports its status, in seconds.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 60
+    },
+    "database": {
+      "description": "Where intake signs in to the database, as its own role.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "port", "name", "user"],
+      "properties": {
+        "host": { "type": "string", "pattern": "^[A-Za-z0-9.-]{1,253}$" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "name": { "type": "string", "pattern": "^[a-z_][a-z0-9_]{0,62}$" },
+        "user": { "type": "string", "pattern": "^[a-z_][a-z0-9_]{0,62}$" }
+      }
+    },
+    "worlds": {
+      "description": "The worlds whose telemetry intake takes, by the Compose service name of each world's container: a batch is taken only from the address Docker's DNS gives that name.",
+      "type": "object",
+      "propertyNames": { "pattern": "^world-[a-z0-9-]{1,63}$" },
+      "additionalProperties": { "$ref": "../schema/manifest.schema.json#/$defs/save_name" }
+    }
+  }
+}

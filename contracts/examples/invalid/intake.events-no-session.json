@@ -1,0 +1,1 @@
+{"contract": 1, "sent_at": "2026-11-03T18:00:00Z", "events": [{"kind": "player.position", "at": "2026-11-03T18:04:58Z", "player": {"id": "Steam_1"}, "x": 1, "y": 2, "z": 3}]}

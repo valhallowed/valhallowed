@@ -57,6 +57,7 @@ the reasons.
 | The manifest schema, a contract or their examples | `scripts/check-schema.sh` |
 | `.github/dependabot.yml` | `scripts/check-schema.sh`, then `scripts/check-images.sh` |
 | A Python component | `scripts/check-python.sh <dir>` |
+| The data layer (`data/`, `images/data-layer/`) | `scripts/check-python.sh data`, then `scripts/check-data-layer.sh` |
 | The plugin | `make plugin`, then `make accept` |
 | Images or the install | `scripts/check-images.sh`, then `make accept` |
 | A pinned download's version (an `ARG` in a Dockerfile) | `scripts/check-upstream.sh` |

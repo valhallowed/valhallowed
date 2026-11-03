@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Control API status",
-  "description": "I0: what the control API's GET /status returns: the install's newest generation, why the newest manifest or secrets were refused if they were, and each world's state. A world's state is its runtime's own report (B1), or unknown when the runtime has not reported for three of its reporting intervals.",
+  "description": "I0: what the control API's GET /status returns: the install's newest generation, why the newest manifest or secrets were refused if they were, and the state of each world and each data-layer service. A child's state is its own report (B1), or unknown when it has not reported for three of its reporting intervals.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["contract", "generation", "worlds"],
+  "required": ["contract", "generation", "worlds", "services"],
   "properties": {
     "contract": {
       "description": "The version of this contract.",
-      "const": 1
+      "const": 2
     },
     "generation": {
       "description": "The newest generation reconcile produced.",
@@ -39,6 +39,12 @@
       "type": "object",
       "propertyNames": { "$ref": "../schema/manifest.schema.json#/$defs/save_name" },
       "additionalProperties": { "$ref": "#/$defs/world" }
+    },
+    "services": {
+      "description": "Each data-layer service of the install, keyed by its name.",
+      "type": "object",
+      "propertyNames": { "enum": ["database", "intake"] },
+      "additionalProperties": { "$ref": "#/$defs/service" }
     }
   },
   "$defs": {
@@ -80,6 +86,45 @@
           "description": "The runtime's last report, as contracts/game-runtime.status.schema.json defines it, which the control plane validated on arrival. Its required keys are repeated here, not referenced: check-jsonschema cannot follow a reference that leads on to a third file.",
           "type": "object",
           "required": ["contract", "generation", "world", "state"]
+        },
+        "report_age_s": {
+          "description": "Seconds since that report arrived.",
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "published": {
+          "description": "The generation this service has been handed. Absent until vhd apply first creates its container.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "pending": {
+          "description": "A newer generation this service waits for: vhd apply, since the service has no container yet and only vhd apply creates one. A service never waits for an empty world.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["generation", "waits_for"],
+          "properties": {
+            "generation": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "waits_for": { "const": "vhd apply" }
+          }
+        },
+        "state": {
+          "description": "The service's state as it last reported it, or unknown when it has not reported recently.",
+          "enum": ["starting", "running", "failing", "unknown"]
+        },
+        "report": {
+          "description": "The service's last report, as contracts/service.status.schema.json defines it, which the control plane validated on arrival. Its required keys are repeated here, not referenced: check-jsonschema cannot follow a reference that leads on to a third file.",
+          "type": "object",
+          "required": ["contract", "generation", "service", "state"]
         },
         "report_age_s": {
           "description": "Seconds since that report arrived.",

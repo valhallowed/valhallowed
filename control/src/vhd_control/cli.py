@@ -24,7 +24,7 @@ def main(argv: list[str] | None = None, out: TextIO = sys.stdout) -> int:
     parser = argparse.ArgumentParser(prog="vhd", description="Valhallowed's control plane CLI.")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("validate", help="check manifest.toml and secrets.toml, and show what they reconcile to")
-    commands.add_parser("status", help="show each world as the control plane reports it")
+    commands.add_parser("status", help="show each world and service as the control plane reports it")
     apply = commands.add_parser("apply", help="bring the install's containers in line with its manifest")
     apply.add_argument(
         "--disconnect-players", action="store_true", help="apply even where it restarts a world players may be in"
@@ -89,6 +89,16 @@ def show_status(status: dict[str, Any], out: TextIO) -> None:
             line += "; removed from the manifest, waits for vhd apply"
         elif "pending" in world:
             line += f"; generation {world['pending']['generation']} waits for {world['pending']['waits_for']}"
+        print(line, file=out)
+    for name, service in sorted(status["services"].items()):
+        line = f"{name} service: {service['state']}"
+        report = service.get("report", {})
+        if "accepted" in report:
+            line += f", {report['accepted']} event(s) taken, {report['dropped']} dropped"
+        if "reason" in report:
+            line += f" ({_printable(report['reason'])})"
+        if "pending" in service:
+            line += f"; generation {service['pending']['generation']} waits for {service['pending']['waits_for']}"
         print(line, file=out)
 
 

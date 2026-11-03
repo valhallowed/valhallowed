@@ -1,8 +1,9 @@
 """The control plane's two listeners.
 
-- Status (B1): runtimes POST their reports on the install network. It accepts status and
-  nothing else, so a runtime, which faces players, can reach no operator action, and it takes
-  a world's report only from that world's own container, so no runtime can speak for another.
+- Status (B1): runtimes and data-layer services POST their reports on the install network. It
+  accepts status and nothing else, so a runtime, which faces players, can reach no operator
+  action, and it takes a child's report only from that child's own container, so no child can
+  speak for another.
   The sender check trusts source addresses, which holds while no child can forge one: every
   child runs without capabilities (render.LOCKED_DOWN), NET_RAW included.
 - The control API (I0): GET /status on a Unix socket in a volume only the control plane
@@ -29,6 +30,7 @@ from vhd_control.schemas import Schemas
 from vhd_control.status import StatusBook
 
 STATUS_SCHEMA = "contracts/game-runtime.status.schema.json"
+SERVICE_STATUS_SCHEMA = "contracts/service.status.schema.json"
 MAX_BODY = 16 * 1024
 # A whole request, from connect to reply, gets this long.
 TIMEOUT_S = 5
@@ -48,12 +50,12 @@ def _resolve(name: str) -> set[str]:
     return {str(info[4][0]) for info in socket.getaddrinfo(name, None, proto=socket.IPPROTO_TCP)}
 
 
-def _sent_from(world: str, address: str, resolve: Resolve) -> bool:
-    """Whether address is the one Docker's DNS gives the world's service on the install
+def _sent_from(name: str, address: str, resolve: Resolve) -> bool:
+    """Whether address is the one Docker's DNS gives the Compose service name on the install
     network, asked on every report. A container Compose recreates gets a new address, and its
-    old one can pass to another world's container, so none is remembered."""
+    old one can pass to another child's container, so none is remembered."""
     try:
-        return address in resolve(child_id(world))
+        return address in resolve(name)
     except OSError:
         return False
 
@@ -199,6 +201,9 @@ def status_server(
             if document is None:
                 return
             sender = self.client_address[0]
+            if isinstance(document, dict) and "service" in document:
+                self.service_report(document, sender)
+                return
             problem = schemas.problem(STATUS_SCHEMA, document)
             if problem is not None:
                 # Observations fail soft: the report is dropped, and the runtime runs on.
@@ -212,10 +217,26 @@ def status_server(
                 drop(sender, f"reports for {world}, which the install does not run")
                 self.reply(HTTPStatus.FORBIDDEN, {"error": "the install runs no such world"})
                 return
-            if not _sent_from(world, sender, resolve):
+            if not _sent_from(child_id(world), sender, resolve):
                 drop(sender, f"reports for {world}, from outside its container")
                 self.reply(HTTPStatus.FORBIDDEN, {"error": "a world reports only from its own container"})
                 return
+            self.record(report, sender)
+
+        def service_report(self, document: dict[str, Any], sender: str) -> None:
+            problem = schemas.problem(SERVICE_STATUS_SCHEMA, document)
+            if problem is not None:
+                drop(sender, f"a service report {problem}")
+                self.reply(HTTPStatus.BAD_REQUEST, {"error": problem})
+                return
+            # The contract names only the install's services, so the name is safe to resolve.
+            if not _sent_from(document["service"], sender, resolve):
+                drop(sender, f"reports for the {document['service']} service, from outside its container")
+                self.reply(HTTPStatus.FORBIDDEN, {"error": "a service reports only from its own container"})
+                return
+            self.record(document, sender)
+
+        def record(self, report: dict[str, Any], sender: str) -> None:
             with lock:
                 dropping.pop(sender, None)
             book.record(report)

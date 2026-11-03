@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Service status",
+  "description": "B1, status up: what a data-layer service reports to the control plane's status listener, from its own container.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "generation", "service", "state"],
+  "properties": {
+    "contract": {
+      "description": "The version of this contract.",
+      "const": 1
+    },
+    "generation": {
+      "description": "The generation the service is running.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "service": {
+      "description": "Which service reports.",
+      "enum": ["database", "intake"]
+    },
+    "state": {
+      "description": "starting: not yet serving, such as the database applying its schema, or intake waiting for the database. running: serving. failing: it cannot serve, and keeps trying; the reason says why.",
+      "enum": ["starting", "running", "failing"]
+    },
+    "reason": {
+      "description": "Why the service is starting or failing, in one line of printable text: vhd status shows it to the server manager.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "accepted": {
+      "description": "Intake only: telemetry events taken into the database since it started.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "dropped": {
+      "description": "Intake only: telemetry events dropped since it started, because they broke the events contract or the database was unavailable.",
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "state": { "const": "failing" } } },
+      "then": { "required": ["reason"] }
+    },
+    {
+      "if": { "properties": { "service": { "const": "database" } } },
+      "then": { "properties": { "accepted": false, "dropped": false } }
+    }
+  ]
+}

@@ -36,6 +36,9 @@ jobs:
         run: |
           scripts/check-python.sh runtime
           scripts/check-python.sh control
+          scripts/check-python.sh data
+      - name: The data layer against its own PostgreSQL
+        run: scripts/check-data-layer.sh
 
   # No build cache is kept between runs: the game stage holds Valve's and Iron
   # Gate's assemblies, and a cache main writes, a pull request from a fork could

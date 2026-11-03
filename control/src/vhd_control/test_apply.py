@@ -21,6 +21,7 @@ IMAGES = {
     "control-plane": "ghcr.io/valhallowed/control-plane:0.1.0@sha256:" + "a" * 64,
     "game-runtime": "ghcr.io/valhallowed/game-runtime:0.1.0@sha256:" + "b" * 64,
     "skeleton": "ghcr.io/valhallowed/skeleton:0.1.0@sha256:" + "e" * 64,
+    "data-layer": "ghcr.io/valhallowed/data-layer:0.1.0@sha256:" + "f" * 64,
 }
 
 
@@ -84,7 +85,7 @@ class Setup:
     def status(self) -> dict[str, Any]:
         if self.worlds is None:
             raise client.Unreachable("the control plane does not answer")
-        return {"contract": 1, "generation": 1, "worlds": self.worlds}
+        return {"contract": 2, "generation": 1, "worlds": self.worlds, "services": {}}
 
     def players(self, world: str, players: int) -> None:
         assert self.worlds is not None
@@ -189,6 +190,32 @@ def test_the_rendered_install_mounts_each_world_only_its_own_generation(setup: S
     assert "ports" not in control_plane
     assert services["vhd"] == {"image": IMAGES["control-plane"], "profiles": ["tools"]}
     assert services["skeleton"]["ports"] == ["8456:8456"]
+
+
+def test_the_data_layer_runs_on_the_install_network_alone_with_its_own_documents(setup: Setup) -> None:
+    setup.apply()
+    services = setup.rendered()["services"]
+    for name in ("database", "intake"):
+        service = services[name]
+        assert service["image"] == IMAGES["data-layer"]
+        assert service["command"] == [name]
+        assert service["networks"] == [layout.INSTALL_NETWORK]
+        assert "ports" not in service
+        assert {
+            "type": "volume", "source": "generations", "target": "/generation",
+            "read_only": True, "volume": {"subpath": name},
+        } in service["volumes"]  # fmt: skip
+    assert {"type": "volume", "source": "database-data", "target": "/data"} in services["database"]["volumes"]
+    assert "database-data" in setup.rendered()["volumes"]
+
+    state = Store(setup.volume).load()
+    assert state.services_applied == ["database", "intake"]
+    for name in ("database", "intake"):
+        assert state.services[name].number == state.generation.number  # type: ignore[union-attr]
+        secrets = json.loads((setup.volume / name / "secrets.json").read_text())
+        assert SCHEMAS.problem(f"contracts/{name}.secrets.schema.json", secrets, secret=True) is None
+    intake = json.loads((setup.volume / "intake" / "generation.json").read_text())
+    assert set(intake["worlds"]) == {MEADOWFOLD, ASHWAKE}
 
 
 def test_the_skeleton_takes_the_web_maps_port_from_the_manifest(setup: Setup) -> None:
@@ -334,10 +361,10 @@ def test_a_removed_world_loses_its_directory_once_compose_removes_it(setup: Setu
 
 
 def test_a_directory_vhd_never_handed_is_left_alone(setup: Setup) -> None:
-    (setup.volume / "intake").mkdir()
+    (setup.volume / "broker").mkdir()
     setup.apply()
     setup.apply()
-    assert (setup.volume / "intake").is_dir()
+    assert (setup.volume / "broker").is_dir()
 
 
 def test_every_service_on_the_install_network_runs_without_capabilities(setup: Setup) -> None:
@@ -346,7 +373,7 @@ def test_every_service_on_the_install_network_runs_without_capabilities(setup: S
     setup.apply()
     services = setup.rendered()["services"]
     on_network = [name for name, service in services.items() if layout.INSTALL_NETWORK in service.get("networks", [])]
-    assert len(on_network) == 3
+    assert len(on_network) == 5
     for name in [*on_network, "skeleton"]:
         assert services[name]["cap_drop"] == ["ALL"], name
         assert services[name]["security_opt"] == ["no-new-privileges:true"], name
@@ -386,8 +413,9 @@ def test_a_first_apply_that_fails_removes_what_it_created(setup: Setup) -> None:
     assert not (setup.install / layout.NEXT).exists()
     assert not (setup.install / layout.RENDERED).exists()
     state = Store(setup.volume).load()
-    assert state.generation is None and state.handed == {}
+    assert state.generation is None and state.handed == {} and state.services == {}
     assert not (setup.volume / MEADOWFOLD).exists()
+    assert not (setup.volume / "intake").exists()
 
 
 def test_a_first_apply_whose_cleanup_fails_says_both_failed(setup: Setup) -> None:

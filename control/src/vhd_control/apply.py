@@ -18,7 +18,7 @@ from typing import Any, NoReturn, TextIO
 from vhd_control import client, layout, manifest
 from vhd_control.docker import Docker, DockerError
 from vhd_control.manifest import Settings
-from vhd_control.reconcile import Generation, reconcile
+from vhd_control.reconcile import Child, Generation, Service, reconcile
 from vhd_control.render import IMAGES, Host, render
 from vhd_control.schemas import Schemas
 from vhd_control.status import WorldView
@@ -52,8 +52,9 @@ class _Before:
     """What the install ran before this apply, to bring back if it fails."""
 
     generation: Generation | None
-    handed: dict[str, Handed]
+    handed: dict[str, Handed[Child]]
     applied: dict[str, int]
+    services: dict[str, Handed[Service]]
 
 
 @dataclass
@@ -102,7 +103,7 @@ class Apply:
         failure: Exception | None = None
         with self.store.locked():
             state = self.store.load()
-            before = _Before(state.generation, dict(state.handed), dict(state.applied or {}))
+            before = _Before(state.generation, dict(state.handed), dict(state.applied or {}), dict(state.services))
             generation = reconcile(settings, state.generation)
             rendered = render(generation, host, settings.web_map_port)
             recreated = _recreated(rendered, previous)
@@ -191,9 +192,14 @@ class Apply:
             for cid, handed in before.handed.items():
                 if before.applied.get(cid) == handed.child.port:
                     self.store.publish(cid, handed.child, handed.number)
+            for served in before.services.values():
+                self.store.serve(state, served.child, served.number)
             state.generation, state.handed = before.generation, dict(before.handed)
+            state.services = dict(before.services)
             self.store.save(state)
-            self.store.prune(before.applied, set(generation.children) - set(before.handed))
+            created = set(generation.children) - set(before.handed)
+            created |= set(generation.services) - set(before.services)
+            self.store.prune(before.applied, created)
         try:
             if ran_before:
                 self.docker.stream(self._up(host, self._applied))
@@ -318,6 +324,11 @@ class Apply:
                 or not self.store.holds(cid, child.port)
             ):
                 self.store.hand(state, cid, child, generation.number, cid in confirmed)
+        # A service faces no players, so it is handed its documents whatever they change.
+        for name, service in generation.services.items():
+            served = state.services.get(name)
+            if served is None or served.number != generation.number or not self.store.serves(name):
+                self.store.serve(state, service, generation.number)
         state.generation = generation
         self.store.save(state)
         return moving
@@ -335,6 +346,7 @@ class Apply:
         for cid in removed:
             del state.handed[cid]
         state.applied = {cid: child.port for cid, child in generation.children.items()}
+        state.services_applied = sorted(generation.services)
         self.store.save(state)
         self.store.prune(state.applied, removed)
 

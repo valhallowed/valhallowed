@@ -22,9 +22,12 @@ def test_validate_shows_what_the_manifest_reconciles_to(tmp_path: Path, monkeypa
     ]
 
 
+INTAKE_REPORT = {"contract": 1, "generation": 5, "service": "intake", "state": "running", "accepted": 40, "dropped": 2}
+
+
 def test_status_names_each_world_its_players_and_what_waits() -> None:
     status = {
-        "contract": 1,
+        "contract": 2,
         "generation": 5,
         "worlds": {
             "Meadowfold": {
@@ -36,6 +39,15 @@ def test_status_names_each_world_its_players_and_what_waits() -> None:
             },
             "Ashwake": {"state": "unknown"},
         },
+        "services": {
+            "intake": {
+                "published": 5,
+                "state": "running",
+                "report": INTAKE_REPORT,
+                "report_age_s": 1,
+            },
+            "database": {"state": "unknown", "pending": {"generation": 5, "waits_for": "vhd apply"}},
+        },
     }
     out = io.StringIO()
     cli.show_status(status, out)
@@ -43,6 +55,8 @@ def test_status_names_each_world_its_players_and_what_waits() -> None:
         "generation 5",
         "Ashwake: unknown",
         "Meadowfold: running, 2 player(s); generation 5 waits for an empty world",
+        "database service: unknown; generation 5 waits for vhd apply",
+        "intake service: running, 40 event(s) taken, 2 dropped",
     ]
 
 
@@ -56,10 +70,11 @@ def test_a_refused_manifest_is_reported_with_a_failing_exit(tmp_path: Path, monk
 def test_status_shows_an_override_and_only_printable_reasons() -> None:
     held = {"contract": 1, "generation": 3, "world": "Ashwake", "state": "held", "reason": "loaded empty\x1b[2J"}
     status = {
-        "contract": 1,
+        "contract": 2,
         "generation": 3,
         "override": {"generation": 3, "worlds": {"Meadowfold": 2, "Ashwake": None}},
         "worlds": {"Ashwake": {"state": "held", "report": held, "report_age_s": 1}},
+        "services": {},
     }
     out = io.StringIO()
     cli.show_status(status, out)

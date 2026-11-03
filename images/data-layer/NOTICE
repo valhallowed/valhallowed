@@ -1,0 +1,11 @@
+The Valhallowed data-layer image carries this third-party software, unmodified:
+
+PostgreSQL 17 (/usr/lib/postgresql/17), the Debian package postgresql-17
+  PostgreSQL License. License: /usr/share/doc/postgresql-17/copyright.
+
+psycopg 3 (python3-psycopg), the Debian package
+  LGPL-3.0-only, used as a library, unmodified. License:
+  /usr/share/doc/python3-psycopg/copyright.
+
+Debian packages, each under the license in /usr/share/doc/<package>/copyright.
+  Source: snapshot.debian.org, at the snapshot images/debian's base image names.

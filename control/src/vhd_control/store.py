@@ -1,13 +1,15 @@
 """The generations volume: what each child was handed, and the install's state beside it.
 
     <root>/state.json                           the newest generation, what each child holds, what vhd apply applied
-    <root>/<child id>/<port>/secrets.json       what that child reads (B1), secrets first
+    <root>/<child id>/<port>/secrets.json       what that world's runtime reads (B1), secrets first
     <root>/<child id>/<port>/generation.json
+    <root>/<service>/secrets.json               what that data-layer service reads (B1), secrets first
+    <root>/<service>/generation.json
     <root>/.lock                                held by whichever writes: the control plane or vhd apply
     <root>/.apply.lock                          held by vhd apply for its whole run
 
-A child's container mounts only the directory for its own port, so the root, state.json
-included, is the control plane's and vhd's alone, and a world whose port changes reads its new
+A world's container mounts only the directory for its own port, and a service's only its own,
+so the root, state.json included, is the control plane's and vhd's alone, and a world whose port changes reads its new
 documents only in the container vhd apply creates for that port.
 """
 
@@ -21,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-from vhd_control.reconcile import Child, Generation
+from vhd_control.reconcile import Child, Generation, Service
 
 STATE_FILE = "state.json"
 GENERATION_FILE = "generation.json"
@@ -29,22 +31,26 @@ SECRETS_FILE = "secrets.json"
 
 
 @dataclass(frozen=True)
-class Handed:
+class Handed[T: (Child, Service)]:
     """The documents a child holds, and the generation they were published under."""
 
     number: int
-    child: Child
+    child: T
 
 
 @dataclass
 class State:
     generation: Generation | None = None
-    handed: dict[str, Handed] = field(default_factory=dict)
+    handed: dict[str, Handed[Child]] = field(default_factory=dict)
+    # What each data-layer service holds, by its name.
+    services: dict[str, Handed[Service]] = field(default_factory=dict)
     # The port each world's container was created with, by child id. None until vhd apply has run.
     applied: dict[str, int] | None = None
     # The last time vhd apply restarted worlds that may have had players online, as the server
     # manager confirmed: the generation, and each such world's player count, or None if unknown.
     override: dict[str, object] | None = None
+    # The services vhd apply has created containers for. None until vhd apply has run with them.
+    services_applied: list[str] | None = None
 
 
 class Store:
@@ -76,16 +82,24 @@ class Store:
         return State(
             generation=None if generation is None else _generation(generation),
             handed={cid: Handed(h["number"], _child(h["child"])) for cid, h in document["handed"].items()},
+            services={
+                name: Handed(h["number"], _service(h["service"])) for name, h in document.get("services", {}).items()
+            },
             applied=document.get("applied"),
             override=document.get("override"),
+            services_applied=document.get("services_applied"),
         )
 
     def save(self, state: State) -> None:
         document = {
             "generation": None if state.generation is None else _generation_document(state.generation),
             "handed": {cid: {"number": h.number, "child": _child_document(h.child)} for cid, h in state.handed.items()},
+            "services": {
+                name: {"number": h.number, "service": _service_document(h.child)} for name, h in state.services.items()
+            },
             "applied": state.applied,
             "override": state.override,
+            "services_applied": state.services_applied,
         }
         # It holds every world's secrets, so only its owner reads it.
         self._write(self.root / STATE_FILE, document, 0o600)
@@ -108,6 +122,24 @@ class Store:
         generation, secrets = child.numbered(number, disconnect_players)
         self._write(directory / SECRETS_FILE, secrets, 0o644)
         self._write(directory / GENERATION_FILE, generation, 0o644)
+
+    def serve(self, state: State, service: Service, number: int) -> None:
+        """Publish a service's documents under number, secrets first, and note in state that the
+        service holds them."""
+        directory = self.root / service.name
+        directory.mkdir(exist_ok=True)
+        directory.chmod(0o755)
+        if self.owner is not None:
+            os.chown(directory, *self.owner)
+        generation, secrets = service.numbered(number)
+        self._write(directory / SECRETS_FILE, secrets, 0o644)
+        self._write(directory / GENERATION_FILE, generation, 0o644)
+        state.services[service.name] = Handed(number, service)
+
+    def serves(self, name: str) -> bool:
+        """Whether the service's directory has both of its files."""
+        directory = self.root / name
+        return (directory / SECRETS_FILE).exists() and (directory / GENERATION_FILE).exists()
 
     def holds(self, child_id: str, port: int) -> bool:
         """Whether the directory for port has both of the child's files."""
@@ -169,12 +201,31 @@ def _child(document: Mapping[str, Any]) -> Child:
     )
 
 
+def _service_document(service: Service) -> dict[str, object]:
+    return {"name": service.name, "generation": service.generation, "secrets": service.secrets}
+
+
+def _service(document: Mapping[str, Any]) -> Service:
+    return Service(
+        name=cast(str, document["name"]),
+        generation=cast(dict[str, object], document["generation"]),
+        secrets=cast(dict[str, object], document["secrets"]),
+    )
+
+
 def _generation_document(generation: Generation) -> dict[str, object]:
-    return {"number": generation.number, "children": {c: _child_document(d) for c, d in generation.children.items()}}
+    return {
+        "number": generation.number,
+        "children": {c: _child_document(d) for c, d in generation.children.items()},
+        "services": {s: _service_document(d) for s, d in generation.services.items()},
+    }
 
 
 def _generation(document: Mapping[str, Any]) -> Generation:
+    """A state.json from a release before the data layer has no services; the next pass
+    reconciles them, with new passwords."""
     return Generation(
         number=cast(int, document["number"]),
         children={c: _child(d) for c, d in cast(dict[str, Any], document["children"]).items()},
+        services={s: _service(d) for s, d in cast(dict[str, Any], document.get("services", {})).items()},
     )

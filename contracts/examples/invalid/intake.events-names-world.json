@@ -1,0 +1,1 @@
+{"contract": 1, "session": "3f2a9c1e-7b4d-4e8a-9c2f-1a6b5d0e8f47", "sent_at": "2026-11-03T18:00:00Z", "world": "Meadowfold", "events": [{"kind": "player.position", "at": "2026-11-03T18:04:58Z", "player": {"id": "Steam_1"}, "x": 1, "y": 2, "z": 3}]}

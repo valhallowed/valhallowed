@@ -1,0 +1,1 @@
+{"contract": 2, "generation": 2, "worlds": {}, "services": {"intake": {"published": 1, "pending": {"generation": 2, "waits_for": "an empty world"}, "state": "running"}}}

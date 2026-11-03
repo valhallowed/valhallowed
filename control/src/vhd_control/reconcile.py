@@ -3,11 +3,17 @@
 One number counts generations for the whole install. It moves only when some child's
 documents change, and a runtime adopts a new number for unchanged documents without a
 restart, so a change to one world never restarts another.
+
+The data layer's internal passwords are generated here, never asked for (Secrets), and each
+generation carries on the one before's, so they change only when the install's state is lost.
+The database then sets every role's password again at its next start.
 """
 
-from collections.abc import Mapping
+import secrets
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from itertools import pairwise
+from typing import cast
 
 from vhd_control import layout
 from vhd_control.manifest import InvalidSettings, Settings, World
@@ -17,6 +23,15 @@ STATUS_URL = f"http://{layout.CONTROL_PLANE}:{layout.STATUS_PORT}/status"
 STATUS_INTERVAL_S = 5
 # A world reserves its port through port+2 (Game facts).
 WORLD_PORTS = 3
+# The database roles the services sign in as, each with a generated password.
+ROLES = (layout.INTAKE_ROLE,)
+
+Token = Callable[[], str]
+
+
+def _token() -> str:
+    """A new password: 32 characters of URL-safe base64."""
+    return secrets.token_urlsafe(24)
 
 
 def last_port(port: int) -> int:
@@ -46,12 +61,28 @@ class Child:
 
 
 @dataclass(frozen=True)
+class Service:
+    """What reconcile hands one data-layer service: its documents, without the generation number
+    they are published under."""
+
+    name: str
+    generation: Mapping[str, object]
+    # Never in a repr, so no log line or test diff can carry a password.
+    secrets: Mapping[str, object] = field(repr=False)
+
+    def numbered(self, number: int) -> tuple[dict[str, object], dict[str, object]]:
+        """The generation and secrets documents as the service reads them."""
+        return {**self.generation, "generation": number}, {**self.secrets, "generation": number}
+
+
+@dataclass(frozen=True)
 class Generation:
     number: int
     children: Mapping[str, Child]
+    services: Mapping[str, Service] = field(default_factory=dict)
 
 
-def reconcile(settings: Settings, previous: Generation | None) -> Generation:
+def reconcile(settings: Settings, previous: Generation | None, token: Token = _token) -> Generation:
     """The generation for settings: previous itself when no child's documents changed."""
     _check_ports(settings.worlds)
     children: dict[str, Child] = {}
@@ -62,9 +93,10 @@ def reconcile(settings: Settings, previous: Generation | None) -> Generation:
                 f"worlds {children[cid].world!r} and {world.name!r} would share the service name {cid}; rename one"
             )
         children[cid] = _child(world)
-    if previous is not None and dict(previous.children) == children:
+    services = _services(children, _passwords(previous, token))
+    if previous is not None and dict(previous.children) == children and dict(previous.services) == services:
         return previous
-    return Generation(number=1 if previous is None else previous.number + 1, children=children)
+    return Generation(number=1 if previous is None else previous.number + 1, children=children, services=services)
 
 
 def _child(world: World) -> Child:
@@ -82,6 +114,41 @@ def _child(world: World) -> Child:
         },
         secrets=secrets,
     )
+
+
+def _passwords(previous: Generation | None, token: Token) -> dict[str, str]:
+    """Each role's password: the one the generation before held, or a new one."""
+    database = None if previous is None else previous.services.get(layout.DATABASE)
+    held = cast(Mapping[str, str], database.secrets["passwords"]) if database is not None else {}
+    return {role: held.get(role) or token() for role in ROLES}
+
+
+def _services(children: Mapping[str, Child], passwords: Mapping[str, str]) -> dict[str, Service]:
+    """The data layer's documents. Intake takes telemetry from the worlds the generation runs,
+    each known by its Compose service name, so a world the manifest dropped is refused from now on."""
+    reporting = {"status_url": STATUS_URL, "status_interval_s": STATUS_INTERVAL_S}
+    return {
+        layout.DATABASE: Service(
+            name=layout.DATABASE,
+            generation={"contract": 1, **reporting},
+            secrets={"contract": 1, "passwords": dict(passwords)},
+        ),
+        layout.INTAKE: Service(
+            name=layout.INTAKE,
+            generation={
+                "contract": 1,
+                **reporting,
+                "database": {
+                    "host": layout.DATABASE,
+                    "port": layout.DATABASE_PORT,
+                    "name": layout.DATABASE_NAME,
+                    "user": layout.INTAKE_ROLE,
+                },
+                "worlds": {cid: child.world for cid, child in sorted(children.items())},
+            },
+            secrets={"contract": 1, "password": passwords[layout.INTAKE_ROLE]},
+        ),
+    }
 
 
 def _check_ports(worlds: tuple[World, ...]) -> None:

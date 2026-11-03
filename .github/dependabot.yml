@@ -14,6 +14,7 @@ updates:
   - package-ecosystem: docker
     directories:
       - /images/control-plane
+      - /images/data-layer
       - /images/game-runtime
       - /images/skeleton
       - /images/tools
@@ -37,11 +38,13 @@ updates:
   - package-ecosystem: pip
     directories:
       - /control
+      - /data
       - /runtime
     patterns: ["*"]
     multi-ecosystem-group: weekly
     # These mirror the Debian packages the images install, and move with the
     # base image instead. types-jsonschema's stubs must match that jsonschema.
+    # psycopg-binary is psycopg with libpq bundled, for the checks alone.
     ignore:
       - dependency-name: jsonschema
       - dependency-name: jsonschema-specifications
@@ -49,6 +52,8 @@ updates:
       - dependency-name: rpds-py
       - dependency-name: attrs
       - dependency-name: types-jsonschema
+      - dependency-name: psycopg
+      - dependency-name: psycopg-binary
   - package-ecosystem: pip
     directory: /scripts
     patterns: ["*"]

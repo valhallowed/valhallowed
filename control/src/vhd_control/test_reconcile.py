@@ -22,6 +22,10 @@ def test_every_valid_manifest_reconciles_into_documents_runtimes_accept(tmp_path
         document, secrets = child.numbered(generation.number)
         assert SCHEMAS.problem("contracts/game-runtime.generation.schema.json", document) is None
         assert SCHEMAS.problem("contracts/game-runtime.secrets.schema.json", secrets) is None
+    for name, service in generation.services.items():
+        document, secrets = service.numbered(generation.number)
+        assert SCHEMAS.problem(f"contracts/{name}.generation.schema.json", document) is None
+        assert SCHEMAS.problem(f"contracts/{name}.secrets.schema.json", secrets) is None
 
 
 def test_a_password_reaches_only_its_world_secrets() -> None:
@@ -59,3 +63,31 @@ def test_two_worlds_that_would_share_a_service_name_are_refused(monkeypatch: pyt
     monkeypatch.setattr("vhd_control.reconcile.child_id", lambda name: "world-same-000000")
     with pytest.raises(InvalidSettings, match="would share the service name"):
         reconcile(settings(World("Ashwake", 2456, None), World("Meadowfold", 2459, None)), None)
+
+
+def test_the_database_holds_every_role_password_and_intake_only_its_own() -> None:
+    generation = reconcile(settings(World("Meadowfold", 2456, None)), None, token=lambda: "a" * 32)
+    assert generation.services["database"].secrets == {"contract": 1, "passwords": {"intake": "a" * 32}}
+    assert generation.services["intake"].secrets == {"contract": 1, "password": "a" * 32}
+    assert "a" * 32 not in repr(generation)
+
+
+def test_passwords_carry_on_from_the_generation_before() -> None:
+    tokens = iter(["a" * 32, "b" * 32])
+    first = reconcile(settings(World("Meadowfold", 2456, None)), None, token=lambda: next(tokens))
+    second = reconcile(settings(World("Meadowfold", 2457, None)), first, token=lambda: next(tokens))
+    assert second.number == 2
+    assert second.services["intake"].secrets["password"] == "a" * 32
+    # With the state lost, there is no generation before, and a new password.
+    lost = reconcile(settings(World("Meadowfold", 2456, None)), None, token=lambda: next(tokens))
+    assert lost.services["intake"].secrets["password"] == "b" * 32
+
+
+def test_intake_takes_telemetry_from_the_worlds_the_generation_runs() -> None:
+    first = reconcile(settings(World("Ashwake", 2459, None), World("Meadowfold", 2456, None)), None)
+    assert first.services["intake"].generation["worlds"] == {
+        child_id("Ashwake"): "Ashwake",
+        child_id("Meadowfold"): "Meadowfold",
+    }
+    second = reconcile(settings(World("Meadowfold", 2456, None)), first)
+    assert second.services["intake"].generation["worlds"] == {child_id("Meadowfold"): "Meadowfold"}
