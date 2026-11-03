@@ -1,0 +1,26 @@
+# Exact pins for the data layer's checks, transitive dependencies included.
+# jsonschema and the packages it needs, and psycopg, match the Debian trixie
+# packages the data-layer image installs from its base image's snapshot, and
+# types-jsonschema matches that jsonschema, so they move only with the base
+# image.
+jsonschema==4.19.2
+attrs==25.3.0
+jsonschema-specifications==2023.12.1
+referencing==0.36.2
+rpds-py==0.21.0
+pytest==9.1.1
+iniconfig==2.3.1
+packaging==26.3
+pluggy==1.7.0
+Pygments==2.21.0
+ruff==0.17.2
+mypy==2.4.0
+ast-serialize==0.13.1
+librt==0.16.0
+mypy-extensions==1.1.0
+pathspec==1.1.1
+typing-extensions==4.16.0
+types-jsonschema==4.19.0.4
+psycopg==3.2.6
+# libpq, bundled, so the checks can import psycopg without Debian's. The image uses Debian's.
+psycopg-binary==3.2.6

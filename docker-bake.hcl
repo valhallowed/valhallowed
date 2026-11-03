@@ -21,7 +21,7 @@ variable "GAME_BUILD" {
 }
 
 group "default" {
-  targets = ["skeleton", "game-runtime", "control-plane"]
+  targets = ["skeleton", "game-runtime", "control-plane", "data-layer"]
 }
 
 # Debian from its base image's own snapshot, the base of every image built on
@@ -105,4 +105,23 @@ target "control-plane" {
   inherits   = ["_common", "_on_debian"]
   dockerfile = "images/control-plane/Dockerfile"
   tags       = tags("control-plane")
+}
+
+target "data-layer" {
+  inherits   = ["_common", "_on_debian"]
+  dockerfile = "images/data-layer/Dockerfile"
+  target     = "data-layer"
+  tags       = tags("data-layer")
+}
+
+# The data layer's tests, run by scripts/check-data-layer.sh against the
+# image's own PostgreSQL. Never published. The package comes as a context of
+# its own, since the repo's .dockerignore leaves the tests out of every image.
+target "data-layer-test" {
+  inherits   = ["_on_debian"]
+  dockerfile = "images/data-layer/Dockerfile"
+  target     = "test"
+  contexts   = { vhd-debian = "target:debian", data-tests = "data/src/vhd_data" }
+  tags       = ["vhd-data-layer-test:local"]
+  output     = ["type=docker"]
 }
