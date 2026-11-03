@@ -49,12 +49,13 @@ such as a new world or port, waits for the next `vhd apply`.
 
 `vhd status` shows a world as `held`, with the reason, when it fails world truth:
 it loaded empty where it held objects or had a save, or the plugin never reported
-it. The game stops before its first autosave, so nothing empty is saved over the
+a world that held objects before. A world with nothing to lose runs `unverified`
+instead. The game stops before its first autosave, so nothing empty is saved over the
 real world. A restart checks the world again, so fix the cause first. `docker ps`
 names each world's container, and `docker volume ls` its data volume.
 
-- **After a game update the plugin cannot load on:** download the release that
-  fixes it and run `vhd apply`.
+- **After a game update the plugin cannot load on:** download the `compose.yaml`
+  of the release that fixes it over the install's own, and run `vhd apply`.
 - **A missing or damaged save:** run `docker stop` on the world's container, put a
   good save in its data volume under `saves/worlds_local/<save name>/`, and run
   `docker start`.
