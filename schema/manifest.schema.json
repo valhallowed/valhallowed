@@ -23,7 +23,7 @@
       "additionalProperties": false,
       "properties": {
         "port": {
-          "description": "The TCP port the web map listens on.",
+          "description": "The host TCP port the web map is published on.",
           "type": "integer",
           "minimum": 1024,
           "maximum": 65535,
