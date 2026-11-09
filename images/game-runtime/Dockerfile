@@ -61,10 +61,14 @@ RUN dotnet build Valhallowed.Plugin.csproj --nologo -c Release -o /out \
       -p:GameManaged=/refs/game -p:BepInExCore=/refs/bepinex -p:VhdBuild="$VHD_BUILD"
 
 # The plugin may reference only these assemblies. Adding one is a change here.
+# Its telemetry must write the batch the B2 example holds, which
+# scripts/check-schema.sh validates against the contract.
 FROM build AS check
 COPY images/game-runtime/refcheck/ /refcheck/
 RUN dotnet run --project /refcheck -c Release -- /out/Valhallowed.Plugin.dll \
       netstandard BepInEx assembly_valheim UnityEngine UnityEngine.CoreModule
+COPY contracts/examples/valid/intake.events-plugin.json /contract/
+RUN dotnet run --project /src/test -c Release -- /contract/intake.events-plugin.json
 
 # The plugin and the game build it was compiled against: the bake target
 # "plugin" exports these files, and the runtime below carries the DLL.

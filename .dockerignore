@@ -3,11 +3,14 @@
 !plugin/
 plugin/bin/
 plugin/obj/
+plugin/test/bin/
+plugin/test/obj/
 !images/game-runtime/NOTICE
 !images/game-runtime/refcheck/
 images/game-runtime/refcheck/bin/
 images/game-runtime/refcheck/obj/
 !contracts/*.schema.json
+!contracts/examples/valid/intake.events-plugin.json
 !schema/*.schema.json
 !runtime/src/vhd_runtime/
 runtime/src/vhd_runtime/test_*.py
