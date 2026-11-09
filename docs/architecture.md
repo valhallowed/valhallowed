@@ -358,7 +358,11 @@ What any design here must respect about the game.
   connection. A character is its `playerID`, which the client mints once per
   character and the server reads from the character's object. One connected
   peer showing both links the character to its person; a character seen only in
-  a save stays unlinked.
+  a save stays unlinked. The game writes a Steam account's id as `Steam_` and
+  the account number, the form telemetry carries.
+- A player's position has two sources on the server: the character's object,
+  which the server holds as part of the world, and a reference position the
+  client reports on its own. Telemetry takes the object's.
 - Prefab names must be verified against live world data, never assumed.
 - A save parser fails closed outside the version range it was validated
   against.

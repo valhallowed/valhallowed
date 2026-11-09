@@ -15,6 +15,11 @@
     <InformationalVersion>$(VhdBuild)</InformationalVersion>
   </PropertyGroup>
 
+  <!-- test/ is the build's test of the telemetry, its own project. -->
+  <ItemGroup>
+    <Compile Remove="test/**" />
+  </ItemGroup>
+
   <ItemGroup>
     <Reference Include="BepInEx" HintPath="$(BepInExCore)/BepInEx.dll" Private="false" />
     <Reference Include="assembly_valheim" HintPath="$(GameManaged)/assembly_valheim.dll" Private="false" />
