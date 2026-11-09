@@ -39,6 +39,16 @@ def test_state_survives_a_round_trip(tmp_path: Path) -> None:
     assert (tmp_path / "state.json").stat().st_mode & 0o777 == 0o600
 
 
+def test_state_from_before_the_web_map_lists_services_without_ports(tmp_path: Path) -> None:
+    store = Store(tmp_path)
+    store.save(State())
+    document = json.loads((tmp_path / "state.json").read_text())
+    document["services_applied"] = ["database", "intake"]
+    (tmp_path / "state.json").write_text(json.dumps(document))
+
+    assert store.load().services_applied == {"database": None, "intake": None}
+
+
 def test_no_state_yet(tmp_path: Path) -> None:
     assert Store(tmp_path).load() == State()
 

@@ -49,8 +49,9 @@ class State:
     # The last time vhd apply restarted worlds that may have had players online, as the server
     # manager confirmed: the generation, and each such world's player count, or None if unknown.
     override: dict[str, object] | None = None
-    # The services vhd apply has created containers for. None until vhd apply has run with them.
-    services_applied: list[str] | None = None
+    # The services vhd apply has created containers for, each with the host port it published, if
+    # any. None until vhd apply has run with them.
+    services_applied: dict[str, int | None] | None = None
 
 
 class Store:
@@ -87,7 +88,7 @@ class Store:
             },
             applied=document.get("applied"),
             override=document.get("override"),
-            services_applied=document.get("services_applied"),
+            services_applied=_services_applied(document.get("services_applied")),
         )
 
     def save(self, state: State) -> None:
@@ -202,7 +203,7 @@ def _child(document: Mapping[str, Any]) -> Child:
 
 
 def _service_document(service: Service) -> dict[str, object]:
-    return {"name": service.name, "generation": service.generation, "secrets": service.secrets}
+    return {"name": service.name, "generation": service.generation, "secrets": service.secrets, "port": service.port}
 
 
 def _service(document: Mapping[str, Any]) -> Service:
@@ -210,7 +211,16 @@ def _service(document: Mapping[str, Any]) -> Service:
         name=cast(str, document["name"]),
         generation=cast(dict[str, object], document["generation"]),
         secrets=cast(dict[str, object], document["secrets"]),
+        port=cast(int | None, document.get("port")),
     )
+
+
+def _services_applied(document: object) -> dict[str, int | None] | None:
+    """A state.json from a release before the web map lists the services without ports; none of
+    them published one."""
+    if isinstance(document, list):
+        return {name: None for name in cast(list[str], document)}
+    return cast(dict[str, int | None] | None, document)
 
 
 def _generation_document(generation: Generation) -> dict[str, object]:

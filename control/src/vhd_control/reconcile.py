@@ -71,6 +71,9 @@ class Service:
     generation: Mapping[str, object]
     # Never in a repr, so no log line or test diff can carry a password.
     secrets: Mapping[str, object] = field(repr=False)
+    # The host port vhd apply publishes for the service, which no document carries: a change to it
+    # waits for vhd apply (G13). None for a service the host never reaches.
+    port: int | None = None
 
     def numbered(self, number: int) -> tuple[dict[str, object], dict[str, object]]:
         """The generation and secrets documents as the service reads them."""
@@ -95,7 +98,7 @@ def reconcile(settings: Settings, previous: Generation | None, token: Token = _t
                 f"worlds {children[cid].world!r} and {world.name!r} would share the service name {cid}; rename one"
             )
         children[cid] = _child(world)
-    services = _services(children, _passwords(previous, token))
+    services = _services(children, _passwords(previous, token), settings.web_map_port)
     if previous is not None and dict(previous.children) == children and dict(previous.services) == services:
         return previous
     return Generation(number=1 if previous is None else previous.number + 1, children=children, services=services)
@@ -125,7 +128,7 @@ def _passwords(previous: Generation | None, token: Token) -> dict[str, str]:
     return {role: held.get(role) or token() for role in ROLES}
 
 
-def _services(children: Mapping[str, Child], passwords: Mapping[str, str]) -> dict[str, Service]:
+def _services(children: Mapping[str, Child], passwords: Mapping[str, str], web_map_port: int) -> dict[str, Service]:
     """The data layer's documents. Intake takes telemetry from the worlds the generation runs,
     each known by its Compose service name, so a world the manifest dropped is refused from now on."""
     reporting = {"status_url": STATUS_URL, "status_interval_s": STATUS_INTERVAL_S}
@@ -149,6 +152,12 @@ def _services(children: Mapping[str, Child], passwords: Mapping[str, str]) -> di
                 "worlds": {cid: child.world for cid, child in sorted(children.items())},
             },
             secrets={"contract": 1, "password": passwords[layout.INTAKE_ROLE]},
+        ),
+        layout.WEB_MAP: Service(
+            name=layout.WEB_MAP,
+            generation={"contract": 1, **reporting},
+            secrets={"contract": 1},
+            port=web_map_port,
         ),
     }
 

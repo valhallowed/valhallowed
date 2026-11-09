@@ -105,7 +105,7 @@ class Apply:
             state = self.store.load()
             before = _Before(state.generation, dict(state.handed), dict(state.applied or {}), dict(state.services))
             generation = reconcile(settings, state.generation)
-            rendered = render(generation, host, settings.web_map_port)
+            rendered = render(generation, host)
             recreated = _recreated(rendered, previous)
             restarts = _restarts(generation, state, recreated, running, worlds)
             override = self._confirm(restarts, disconnect_players, worlds) if restarts else None
@@ -347,7 +347,7 @@ class Apply:
         for cid in removed:
             del state.handed[cid]
         state.applied = {cid: child.port for cid, child in generation.children.items()}
-        state.services_applied = sorted(generation.services)
+        state.services_applied = {name: service.port for name, service in sorted(generation.services.items())}
         self.store.save(state)
         self.store.prune(state.applied, removed)
 

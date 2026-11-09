@@ -56,7 +56,7 @@ class Install:
             if services:
                 for service in generation.services.values():
                     self.store.serve(state, service, generation.number)
-                state.services_applied = sorted(generation.services)
+                state.services_applied = {name: service.port for name, service in generation.services.items()}
             state.generation = generation
             state.applied = {cid: child.port for cid, child in generation.children.items()}
             self.store.save(state)
@@ -253,11 +253,32 @@ def test_services_wait_for_vhd_apply_on_an_install_from_before_the_data_layer(tm
 
     status = install.daemon.status()
     assert status is not None
-    for name in ("database", "intake"):
+    for name in ("database", "intake", "web-map"):
         pending = {"generation": 1, "waits_for": WAITS_FOR_APPLY}
         assert status["services"][name] == {"state": "unknown", "pending": pending}
         assert not (install.volume / name).exists()
     assert SCHEMAS.problem("contracts/control.status.schema.json", status) is None
+
+
+def test_a_new_web_map_port_waits_for_vhd_apply(install: Install) -> None:
+    install.daemon.step()
+    install.write(TWO_WORLDS + "\n[web_map]\nport = 9100\n")
+    install.daemon.step()
+
+    # The web map's container still publishes the old port, so it keeps the generation it holds;
+    # the services the host never reaches take the new one.
+    status = install.daemon.status()
+    assert status is not None
+    assert status["services"]["web-map"]["pending"] == {"generation": 2, "waits_for": WAITS_FOR_APPLY}
+    assert served(install, "web-map")["generation"] == 1
+    assert served(install, "intake")["generation"] == 2
+
+    install.apply()
+    install.daemon.step()
+    status = install.daemon.status()
+    assert status is not None
+    assert "pending" not in status["services"]["web-map"]
+    assert served(install, "web-map")["generation"] == 2
 
 
 def test_a_service_report_shows_in_status(install: Install) -> None:

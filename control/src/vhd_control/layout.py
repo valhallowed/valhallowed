@@ -9,10 +9,13 @@ STATUS_PORT = 9457
 # The data layer's services (G14), by their Compose service names, which Docker's DNS answers to.
 DATABASE = "database"
 INTAKE = "intake"
-SERVICES = (DATABASE, INTAKE)
-# Where each service listens on the install network. No service publishes a host port.
+WEB_MAP = "web-map"
+SERVICES = (DATABASE, INTAKE, WEB_MAP)
+# Where each service listens on the install network. Only the web map's port is published, on
+# the host port the manifest names (G9).
 DATABASE_PORT = 5432
 INTAKE_PORT = 9458
+WEB_MAP_PORT = 8456
 # The database the services share, and the role intake signs in as.
 DATABASE_NAME = "vhd"
 INTAKE_ROLE = "intake"

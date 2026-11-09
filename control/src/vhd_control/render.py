@@ -12,11 +12,9 @@ from vhd_control.reconcile import Generation, last_port
 # The release's images, by their keys in compose.yaml's x-vhd block.
 CONTROL_PLANE_IMAGE = "control-plane"
 GAME_RUNTIME_IMAGE = "game-runtime"
-SKELETON_IMAGE = "skeleton"
 DATA_LAYER_IMAGE = "data-layer"
-IMAGES = (CONTROL_PLANE_IMAGE, GAME_RUNTIME_IMAGE, SKELETON_IMAGE, DATA_LAYER_IMAGE)
-# Where the skeleton listens inside its container; the host port is the web map's.
-SKELETON_PORT = 8456
+WEB_MAP_IMAGE = "web-map"
+IMAGES = (CONTROL_PLANE_IMAGE, GAME_RUNTIME_IMAGE, DATA_LAYER_IMAGE, WEB_MAP_IMAGE)
 STOP_GRACE = "150s"
 # Long enough for the database to stop cleanly, so its next start needs no recovery.
 DATABASE_STOP_GRACE = "60s"
@@ -38,7 +36,7 @@ class Host:
     images: dict[str, str]
 
 
-def render(generation: Generation, host: Host, web_map_port: int) -> dict[str, object]:
+def render(generation: Generation, host: Host) -> dict[str, object]:
     control_plane = host.images[CONTROL_PLANE_IMAGE]
     install = {"type": "bind", "source": host.install, "target": str(layout.INSTALL)}
     generations = {"type": "volume", "source": layout.GENERATIONS_VOLUME, "target": str(layout.GENERATIONS)}
@@ -58,14 +56,6 @@ def render(generation: Generation, host: Host, web_map_port: int) -> dict[str, o
         # Named, so --remove-orphans never removes the one-shot running this file. Only
         # compose.yaml's definition, with Docker's socket, ever runs.
         "vhd": {"image": control_plane, "profiles": ["tools"]},
-        # The release pipeline's stand-in for the web map, on the web map's port.
-        "skeleton": {
-            "image": host.images[SKELETON_IMAGE],
-            "restart": "unless-stopped",
-            **LOCKED_DOWN,
-            **LOGGING,
-            "ports": [f"{web_map_port}:{SKELETON_PORT}"],
-        },
     }
     volumes: dict[str, object] = {layout.GENERATIONS_VOLUME: {}, layout.CONTROL_VOLUME: {}}
     for cid, child in sorted(generation.children.items()):
@@ -91,8 +81,9 @@ def render(generation: Generation, host: Host, web_map_port: int) -> dict[str, o
             ],
         }
         volumes[f"{cid}-data"] = {}
-    # The data layer's services: on the install network only, with no host port (G9).
-    for name in sorted(generation.services):
+    # The data layer's services, on the install network. Only the web map's port is published, on
+    # the host port its service carries (G9).
+    for name, spec in sorted(generation.services.items()):
         mounts: list[dict[str, object]] = [
             {**generations, "target": "/generation", "read_only": True, "volume": {"subpath": name}},
         ]
@@ -105,6 +96,11 @@ def render(generation: Generation, host: Host, web_map_port: int) -> dict[str, o
             "networks": [layout.INSTALL_NETWORK],
             "volumes": mounts,
         }
+        if name == layout.WEB_MAP:
+            # Its own image, which runs the web map alone (G19).
+            service["image"] = host.images[WEB_MAP_IMAGE]
+            del service["command"]
+            service["ports"] = [f"{spec.port}:{layout.WEB_MAP_PORT}"]
         if name == layout.DATABASE:
             service["stop_grace_period"] = DATABASE_STOP_GRACE
             mounts.append({"type": "volume", "source": DATABASE_VOLUME, "target": "/data"})
