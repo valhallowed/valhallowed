@@ -16,8 +16,8 @@ updates:
       - /images/control-plane
       - /images/data-layer
       - /images/game-runtime
-      - /images/skeleton
       - /images/tools
+      - /images/web-map
     patterns: ["*"]
     multi-ecosystem-group: weekly
     # The checks' Python (images/tools) follows the minor version the Debian
@@ -58,3 +58,12 @@ updates:
     directory: /scripts
     patterns: ["*"]
     multi-ecosystem-group: weekly
+  # The web map's packages. Node's types follow the major version of the Node
+  # the image ships, which moves by hand with NODE_VERSION.
+  - package-ecosystem: npm
+    directory: /web-map
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]

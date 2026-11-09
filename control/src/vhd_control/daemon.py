@@ -107,12 +107,14 @@ class Daemon:
         self._pending_services = pending_services
 
     def _serve(self, state: State, generation: Generation) -> tuple[dict[str, int], bool]:
-        """Hand each service the generation, unless vhd apply has not created its container yet.
-        Returns the generation each such service waits for, and whether any was handed one."""
+        """Hand each service the generation, unless vhd apply has not created its container yet, or
+        created it on another host port. Returns the generation each such service waits for, and
+        whether any was handed one."""
         pending: dict[str, int] = {}
         served = False
+        applied = state.services_applied or {}
         for name, service in generation.services.items():
-            if name not in (state.services_applied or ()):
+            if name not in applied or applied[name] != service.port:
                 pending[name] = generation.number
             elif name not in state.services or state.services[name].number != generation.number:
                 self.store.serve(state, service, generation.number)

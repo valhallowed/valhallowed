@@ -1,0 +1,5 @@
+/* The web map's own styles: every colour and font is a token from design/tokens.css. */
+body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); color: var(--ink); font-family: var(--font-body); }
+main { flex: 1; display: grid; place-items: center; padding: 16px; }
+h1 { font-family: var(--font-display); font-weight: 500; color: var(--hearth-ink); }
+footer { padding: 16px; color: var(--ink-muted); font-size: 0.875rem; }

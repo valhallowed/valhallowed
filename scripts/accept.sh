@@ -61,7 +61,7 @@ for image in $("$root/scripts/install-images.sh" "$install/compose.yaml"); do
 done
 got=$(curl -fsS --max-time 5 "http://127.0.0.1:$web_map_port/build")
 if [[ $got != "$expected" ]]; then
-  echo "accept: the skeleton serves build '$got', not $expected" >&2
+  echo "accept: the web map serves build '$got', not $expected" >&2
   exit 1
 fi
 echo "accept: every image is from build $expected"
@@ -88,18 +88,21 @@ if [[ -z $control ]]; then
 fi
 
 # The data layer's services run as VHD's unprivileged user with every
-# capability dropped, on the install network alone.
+# capability dropped, on the install network. Only the web map publishes a
+# port, the manifest's.
 declare -A services
-for service in database intake; do
+for service in database intake web-map; do
   services[$service]=$(docker ps -q --filter "$label" --filter "label=com.docker.compose.service=$service")
   if [[ -z ${services[$service]} ]]; then
     echo "accept: no $service container is running" >&2
     exit 1
   fi
+  expected_ports='{}'
+  [[ $service != web-map ]] || expected_ports="{\"8456/tcp\":[{\"HostIp\":\"\",\"HostPort\":\"$web_map_port\"}]}"
   read -r user caps ports < <(docker inspect \
     --format '{{.Config.User}} {{json .HostConfig.CapDrop}} {{json .HostConfig.PortBindings}}' "${services[$service]}")
-  if [[ $user != vhd || $caps != '["ALL"]' || $ports != '{}' ]]; then
-    echo "accept: $service runs as '$user' dropping $caps publishing $ports; expected vhd dropping [\"ALL\"] publishing {}" >&2
+  if [[ $user != vhd || $caps != '["ALL"]' || $ports != "$expected_ports" ]]; then
+    echo "accept: $service runs as '$user' dropping $caps publishing $ports; expected vhd dropping [\"ALL\"] publishing $expected_ports" >&2
     exit 1
   fi
 done
@@ -133,10 +136,10 @@ if [[ $state != running ]]; then
   exit 1
 fi
 
-# The data layer, once the world runs: both services running, then a batch
+# The data layer, once the world runs: its services running, then a batch
 # from the world's own container, which intake attributes to the world by its
 # address, found in the database.
-for service in database intake; do
+for service in database intake web-map; do
   if ! grep -q "^$service service: running" <<< "$status"; then
     echo "accept: vhd status does not show the $service service running:" >&2
     echo "$status" >&2

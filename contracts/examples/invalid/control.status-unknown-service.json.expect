@@ -1,1 +1,1 @@
-'broker' is not one of ['database', 'intake']
+'broker' is not one of ['database', 'intake', 'web-map']

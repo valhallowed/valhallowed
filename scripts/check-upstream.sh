@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Fail when a pinned download Dependabot cannot watch has a newer upstream
-# release: the Docker CLI and Compose in the control plane's image, and the
-# BepInEx pack in the game runtime's. Each version is an ARG in its Dockerfile;
+# release: the Docker CLI and Compose in the control plane's image, the BepInEx
+# pack in the game runtime's, and Node.js, at its newest LTS release, in the web
+# map's. Each version is an ARG in its Dockerfile;
 # moving to a newer one changes that ARG and its checksums. nightly.yml runs
 # this beside the game check. GITHUB_TOKEN, when set, lifts GitHub's anonymous
 # rate limit.
@@ -40,4 +41,6 @@ compare "Compose" "$(pinned_version COMPOSE_VERSION images/control-plane/Dockerf
   "$(github repos/docker/compose/releases/latest | jq -r '.tag_name | ltrimstr("v")')"
 compare "BepInEx pack" "$(pinned_version BEPINEX_PACK_VERSION images/game-runtime/Dockerfile)" \
   "$(get https://thunderstore.io/api/experimental/package/denikson/BepInExPack_Valheim/ | jq -r .latest.version_number)"
+compare "Node.js LTS" "$(pinned_version NODE_VERSION images/web-map/Dockerfile)" \
+  "$(get https://nodejs.org/dist/index.json | jq -r '[.[] | select(.lts != false)][0].version | ltrimstr("v")')"
 exit "$failed"

@@ -17,7 +17,7 @@
     },
     "service": {
       "description": "Which service reports.",
-      "enum": ["database", "intake"]
+      "enum": ["database", "intake", "web-map"]
     },
     "state": {
       "description": "starting: not yet serving, such as the database applying its schema, or intake waiting for the database. running: serving. failing: it cannot serve, and keeps trying; the reason says why.",
@@ -47,7 +47,7 @@
       "then": { "required": ["reason"] }
     },
     {
-      "if": { "properties": { "service": { "const": "database" } } },
+      "if": { "properties": { "service": { "enum": ["database", "web-map"] } } },
       "then": { "properties": { "accepted": false, "dropped": false } }
     }
   ]

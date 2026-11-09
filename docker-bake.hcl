@@ -21,7 +21,7 @@ variable "GAME_BUILD" {
 }
 
 group "default" {
-  targets = ["skeleton", "game-runtime", "control-plane", "data-layer"]
+  targets = ["game-runtime", "control-plane", "data-layer", "web-map"]
 }
 
 # Debian from its base image's own snapshot, the base of every image built on
@@ -86,12 +86,6 @@ target "game-runtime" {
   tags     = tags("game-runtime")
 }
 
-target "skeleton" {
-  inherits = ["_common"]
-  context  = "images/skeleton"
-  tags     = tags("skeleton")
-}
-
 # SteamCMD alone, loaded locally for scripts/game-build.sh. Never published.
 target "steamcmd" {
   inherits   = ["_on_debian"]
@@ -124,4 +118,11 @@ target "data-layer-test" {
   contexts   = { vhd-debian = "target:debian", data-tests = "data/src/vhd_data" }
   tags       = ["vhd-data-layer-test:local"]
   output     = ["type=docker"]
+}
+
+target "web-map" {
+  inherits   = ["_common", "_on_debian"]
+  dockerfile = "images/web-map/Dockerfile"
+  target     = "web-map"
+  tags       = tags("web-map")
 }

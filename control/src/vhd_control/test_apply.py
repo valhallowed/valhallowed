@@ -20,7 +20,7 @@ from vhd_control.test_daemon import ASHWAKE, MEADOWFOLD, PASSWORD, SCHEMAS, TWO_
 IMAGES = {
     "control-plane": "ghcr.io/valhallowed/control-plane:0.1.0@sha256:" + "a" * 64,
     "game-runtime": "ghcr.io/valhallowed/game-runtime:0.1.0@sha256:" + "b" * 64,
-    "skeleton": "ghcr.io/valhallowed/skeleton:0.1.0@sha256:" + "e" * 64,
+    "web-map": "ghcr.io/valhallowed/web-map:0.1.0@sha256:" + "e" * 64,
     "data-layer": "ghcr.io/valhallowed/data-layer:0.1.0@sha256:" + "f" * 64,
 }
 
@@ -189,7 +189,7 @@ def test_the_rendered_install_mounts_each_world_only_its_own_generation(setup: S
     assert {"type": "bind", "source": "/srv/vhd", "target": "/install", "read_only": True} in control_plane["volumes"]
     assert "ports" not in control_plane
     assert services["vhd"] == {"image": IMAGES["control-plane"], "profiles": ["tools"]}
-    assert services["skeleton"]["ports"] == ["8456:8456"]
+    assert services["web-map"]["ports"] == ["8456:8456"]
 
 
 def test_the_data_layer_runs_on_the_install_network_alone_with_its_own_documents(setup: Setup) -> None:
@@ -208,9 +208,18 @@ def test_the_data_layer_runs_on_the_install_network_alone_with_its_own_documents
     assert {"type": "volume", "source": "database-data", "target": "/data"} in services["database"]["volumes"]
     assert "database-data" in setup.rendered()["volumes"]
 
+    web_map = services["web-map"]
+    assert web_map["image"] == IMAGES["web-map"]
+    assert "command" not in web_map
+    assert web_map["networks"] == [layout.INSTALL_NETWORK]
+    assert {
+        "type": "volume", "source": "generations", "target": "/generation",
+        "read_only": True, "volume": {"subpath": "web-map"},
+    } in web_map["volumes"]  # fmt: skip
+
     state = Store(setup.volume).load()
-    assert state.services_applied == ["database", "intake"]
-    for name in ("database", "intake"):
+    assert state.services_applied == {"database": None, "intake": None, "web-map": 8456}
+    for name in ("database", "intake", "web-map"):
         assert state.services[name].number == state.generation.number  # type: ignore[union-attr]
         secrets = json.loads((setup.volume / name / "secrets.json").read_text())
         assert SCHEMAS.problem(f"contracts/{name}.secrets.schema.json", secrets, secret=True) is None
@@ -218,10 +227,11 @@ def test_the_data_layer_runs_on_the_install_network_alone_with_its_own_documents
     assert set(intake["worlds"]) == {MEADOWFOLD, ASHWAKE}
 
 
-def test_the_skeleton_takes_the_web_maps_port_from_the_manifest(setup: Setup) -> None:
+def test_the_web_map_takes_its_port_from_the_manifest(setup: Setup) -> None:
     (setup.install / "manifest.toml").write_text(TWO_WORLDS + "\n[web_map]\nport = 9100\n")
     setup.apply()
-    assert setup.rendered()["services"]["skeleton"]["ports"] == ["9100:8456"]
+    assert setup.rendered()["services"]["web-map"]["ports"] == ["9100:8456"]
+    assert Store(setup.volume).load().services_applied["web-map"] == 9100  # type: ignore[index]
 
 
 def test_an_unchanged_apply_restarts_nothing_and_asks_nothing(setup: Setup) -> None:
@@ -373,8 +383,8 @@ def test_every_service_on_the_install_network_runs_without_capabilities(setup: S
     setup.apply()
     services = setup.rendered()["services"]
     on_network = [name for name, service in services.items() if layout.INSTALL_NETWORK in service.get("networks", [])]
-    assert len(on_network) == 5
-    for name in [*on_network, "skeleton"]:
+    assert len(on_network) == 6
+    for name in on_network:
         assert services[name]["cap_drop"] == ["ALL"], name
         assert services[name]["security_opt"] == ["no-new-privileges:true"], name
         assert services[name]["logging"] == {"driver": "local"}, name
