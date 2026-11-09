@@ -43,7 +43,7 @@
     "services": {
       "description": "Each data-layer service of the install, keyed by its name.",
       "type": "object",
-      "propertyNames": { "enum": ["database", "intake"] },
+      "propertyNames": { "enum": ["database", "intake", "web-map"] },
       "additionalProperties": { "$ref": "#/$defs/service" }
     }
   },
