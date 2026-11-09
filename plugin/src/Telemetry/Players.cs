@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Valhallowed.Plugin
 {
     // A player as B2 names them. The id is the string the game's own
@@ -40,7 +42,7 @@ namespace Valhallowed.Plugin
             {
                 return null;
             }
-            var kept = new System.Text.StringBuilder(name.Length);
+            var kept = new StringBuilder(name.Length);
             foreach (char c in name)
             {
                 if (c >= ' ' && c != '\u007f')

@@ -203,7 +203,8 @@ namespace Valhallowed.Plugin
             string id = Players.SteamId(peer.m_socket?.GetHostName());
             if (id == null)
             {
-                Logger.LogWarning($"player {peer.m_playerName} has no platform id telemetry can carry; sending nothing for them");
+                // The name is the client's choice, so it is cleaned before it reaches the log.
+                Logger.LogWarning($"player {Players.Name(peer.m_playerName) ?? "with no name"} has no platform id telemetry can carry; sending nothing for them");
                 return new Connected();
             }
             // A name that cleans to nothing sends no join; intake still learns
