@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Web map generation",
+  "description": "B1: the effective configuration of the web map service, as generation.json in its own directory of the generations volume. The web map adopts a new generation in place. Its host port is no part of it: vhd apply publishes that port when it creates the container (G13).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "generation", "status_url", "status_interval_s"],
+  "properties": {
+    "contract": {
+      "description": "The version of this contract.",
+      "const": 1
+    },
+    "generation": {
+      "description": "The generation number. A higher number replaces a lower one.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "status_url": {
+      "description": "Where the service reports its status to the control plane.",
+      "type": "string",
+      "pattern": "^http://[A-Za-z0-9.-]+(:[0-9]{1,5})?/"
+    },
+    "status_interval_s": {
+      "description": "How often the service reports its status, in seconds.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 60
+    }
+  }
+}
