@@ -14,8 +14,8 @@ x-vhd:
   images:
     control-plane: &control-plane ghcr.io/valhallowed/control-plane:@VHD_VERSION@
     game-runtime: ghcr.io/valhallowed/game-runtime:@VHD_VERSION@
-    skeleton: ghcr.io/valhallowed/skeleton:@VHD_VERSION@
     data-layer: ghcr.io/valhallowed/data-layer:@VHD_VERSION@
+    web-map: ghcr.io/valhallowed/web-map:@VHD_VERSION@
 
 # vhd apply renders every other service from these images into .vhd/.
 services:

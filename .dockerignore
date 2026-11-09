@@ -10,6 +10,11 @@ plugin/test/obj/
 images/game-runtime/refcheck/bin/
 images/game-runtime/refcheck/obj/
 !contracts/*.schema.json
+!web-map/
+web-map/node_modules/
+web-map/dist/
+!design/tokens.css
+!design/fonts/
 !contracts/examples/valid/intake.events-plugin.json
 !schema/*.schema.json
 !runtime/src/vhd_runtime/
@@ -17,6 +22,7 @@ runtime/src/vhd_runtime/test_*.py
 runtime/src/vhd_runtime/__pycache__/
 !images/control-plane/NOTICE
 !images/data-layer/NOTICE
+!images/web-map/NOTICE
 !data/src/vhd_data/
 data/src/vhd_data/test_*.py
 data/src/vhd_data/__pycache__/

@@ -1,0 +1,17 @@
+The Valhallowed web-map image carries this third-party software, unmodified:
+
+Node.js 26.13.0 (/usr/local/bin/node)
+  MIT, with the licenses of what it bundles. License: node-LICENSE.
+  Source: https://github.com/nodejs/node/tree/v26.13.0
+
+npm packages (/opt/vhd/web-map/node_modules), at the versions web-map/package-lock.json
+pins, each with the license file it ships: ajv, MIT, and what it depends on:
+fast-deep-equal, MIT; fast-uri, BSD-3-Clause; json-schema-traverse, MIT;
+require-from-string, MIT.
+
+Alegreya SC, Alegreya Sans and IBM Plex Mono (/opt/vhd/design/fonts), from design/fonts
+  SIL Open Font License 1.1. Licenses: OFL-alegreya-sc.txt, OFL-alegreya-sans.txt,
+  OFL-ibm-plex-mono.txt.
+
+Debian packages, each under the license in /usr/share/doc/<package>/copyright.
+  Source: snapshot.debian.org, at the snapshot images/debian's base image names.
