@@ -6,12 +6,12 @@
 
 # Each version is named once here; its checksums change with it, and
 # scripts/check-upstream.sh reports a newer release.
-ARG DOCKER_VERSION=29.9.2
+ARG DOCKER_VERSION=29.9.3
 ARG COMPOSE_VERSION=5.7.0
 
 FROM vhd-debian AS docker
 ARG DOCKER_VERSION
-ADD --checksum=sha256:9ac225999fd5e863f7694c728ef23d480616b1e5639328fa309befd4243d69eb \
+ADD --checksum=sha256:3fb5d1f13014c18cc54945bc177c58a9056a482dada031e17d12cf2e6922c973 \
     https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz /tmp/docker.tgz
 RUN tar -xzf /tmp/docker.tgz -C /tmp docker/docker
 
