@@ -5,7 +5,7 @@
 import { createServer } from "node:http";
 import { IncompleteDocuments, InvalidDocuments, Reader, type Documents } from "./documents.js";
 import { assets, handler } from "./routes.js";
-import { report, Reporter, SERVICE, type State } from "./status.js";
+import { report, Reporter, SERVICE } from "./status.js";
 
 // Where the web map listens on the install network; vhd apply publishes it on the manifest's
 // web_map.port (control's layout.WEB_MAP_PORT).
@@ -27,8 +27,8 @@ function log(line: string): void {
 const reader = new Reader(SERVICE, GENERATION, CONTRACTS);
 const reporter = new Reporter(log);
 let documents: Documents | undefined;
-let state: State = "starting";
-let why: string | undefined;
+// The last refusal logged, so a broken generation is logged once, not every second.
+let refused: string | undefined;
 let reportedAt = Number.NEGATIVE_INFINITY;
 
 /** Take a new generation, or say why one cannot be taken; the last good one keeps running. */
@@ -38,19 +38,15 @@ function adopt(): void {
     if (read !== undefined && read.number !== documents?.number) {
       log(`generation ${read.number} adopted`);
       documents = read;
-      state = "running";
-      why = undefined;
+      refused = undefined;
     }
   } catch (error) {
     if (!(error instanceof InvalidDocuments || error instanceof IncompleteDocuments)) {
       throw error;
     }
-    if (error instanceof InvalidDocuments && error.message !== why) {
+    if (error instanceof InvalidDocuments && error.message !== refused) {
       log(`refused this generation: ${error.message}`);
-      why = error.message;
-      if (documents === undefined) {
-        state = "failing";
-      }
+      refused = error.message;
     }
   }
 }
@@ -61,7 +57,8 @@ async function tick(): Promise<void> {
     return;
   }
   reportedAt = Date.now();
-  await reporter.send(documents.generation.status_url, report(documents.number, state, why));
+  // Serving needs nothing the generation holds, so a web map with one runs.
+  await reporter.send(documents.generation.status_url, report(documents.number, "running"));
 }
 
 const server = createServer(
