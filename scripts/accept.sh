@@ -4,7 +4,8 @@
 # runs the expected commit and that the plugin reports its loaded world: the
 # runtime downloads the newest dedicated server, and the server, BepInEx,
 # UnityDoorstop and the plugin all load. Then a synthetic telemetry batch,
-# sent from the world's container, must land in the database through intake. On a clean host it pulls from the
+# sent from the world's container, must land in the database through intake,
+# and so must the session the plugin started. On a clean host it pulls from the
 # registry by default, so an image that was never pushed, or is not public,
 # cannot pass. VHD_PULL=never accepts a local build. The install uses ports
 # away from the defaults, so it never meets a real install on the same host.
@@ -175,4 +176,22 @@ if [[ $stored != "$world_name|1.5|-2.5" ]]; then
   exit 1
 fi
 echo "accept: a batch from the world's container reached the database through intake"
+
+# The plugin's own session: it starts one when the world loads and sends
+# session.start until intake accepts it, so it reaches the database within a
+# few of the sender's 5 s rounds. Only the plugin sends session.start.
+started=''
+for _ in $(seq 12); do
+  started=$(docker exec "${services[database]}" psql -h /run/postgresql -d vhd -tAc \
+    "SELECT s.id FROM session s JOIN world w ON w.id = s.world_id
+     WHERE w.name = '$world_name' AND s.started_at IS NOT NULL ORDER BY s.received_at DESC LIMIT 1")
+  [[ -n $started ]] && break
+  sleep 5
+done
+if [[ -z $started ]]; then
+  echo "accept: the database holds no session the plugin started for $world_name" >&2
+  docker logs "$world" 2>&1 | grep -F ':Valhallowed]' | tail -20 >&2 || true
+  exit 1
+fi
+echo "accept: the plugin's session $started reached the database through intake"
 
