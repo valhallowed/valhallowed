@@ -187,8 +187,8 @@ format, change cost and what applies it.
 **Server manager** — The person who operates an install through the control
 plane. Not a player.
 
-**Service** — One part of the data layer, run as its own child (G14): intake
-and the database, later the broker, the chat relay and the web map. A system
+**Service** — One part of the data layer, run as its own child (G14): intake,
+the database and the web map, later the broker and the chat relay. A system
 outside VHD, such as a chat service or your own database, is an outside service.
 
 **Session** — One load of a world. The plugin names it at each load, and
@@ -201,9 +201,6 @@ secrets schemas are its source, so it cannot disagree with them.
 
 **Sign-in** — The capability that signs a player in to the web map through
 Steam (B9). Only people the game has seen can sign in.
-
-**Skeleton** — The release pipeline's stand-in image for the web map: it
-serves the commit it was built from on the web map's port. Not a child.
 
 **Slice** — One deliverable of a milestone that keeps `main` green on its own,
 tracked as one issue on the board once its milestone is current or next.

@@ -98,8 +98,8 @@
         <tbody>
           <tr><td><span class="chip z-control">control plane image</span></td><td>The control plane</td><td>Registry</td><td>Every install</td></tr>
           <tr><td><span class="chip z-runtime">game runtime image</span></td><td>The game runtime (G16), with the plugin inside</td><td>Registry</td><td>Every install. It downloads SteamCMD and the dedicated server at first start; no Valve or game file ships in the image.</td></tr>
-          <tr><td><span class="chip z-neutral">skeleton image</span></td><td>The release pipeline’s stand-in for the web map, on the web map’s port</td><td>Registry</td><td>Every install</td></tr>
           <tr><td><span class="chip z-data">data-layer image</span></td><td>The database and intake, each in its own container; the other data-layer services as they arrive</td><td>Registry</td><td>Every install</td></tr>
+          <tr><td><span class="chip z-data">web map image</span></td><td>The web map, a data-layer service in TypeScript (G19), which serves the build it was made from on the web map’s port</td><td>Registry</td><td>Every install</td></tr>
           <tr><td><span class="chip z-runtime">plugin artifact</span></td><td>The plugin, compiled against game assemblies fetched in CI, taken out of the accepted game runtime image</td><td>GitHub Release</td><td>Anyone inspecting a release</td></tr>
           <tr><td><span class="chip z-ingress">manifest schema</span></td><td>The schema source; also produces the settings reference</td><td>GitHub Release</td><td>The control plane; server managers and their editors</td></tr>
           <tr><td><span class="chip z-control">compose.yaml</span></td><td>Rendered per release, every image pinned by digest</td><td>GitHub Release</td><td><code>vhd apply</code>, which renders each install’s compose file from it</td></tr>

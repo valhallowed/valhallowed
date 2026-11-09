@@ -202,7 +202,8 @@ markers and journal entries are records, never commands.
   Debian snapshot the other images use, so its major version follows Debian's.
   It reads its generation like every child, and nothing configures it outside B1.
 - **One image, a container per service.** The `data-layer` image runs both the
-  database and intake, each as its own child.
+  database and intake, each as its own child. The web map, in TypeScript (G19),
+  has an image of its own.
 - **Intake knows a world by its address.** It attributes a batch to the world
   whose container sent it, as the control plane's status listener does. No
   child can forge its address on the install network, so worlds hold no token.
@@ -211,8 +212,11 @@ markers and journal entries are records, never commands.
   secrets, before it reports `running`. No other service holds owner rights,
   and a failure leaves the schema as it was.
 - **Services reach each other by name** on the install network and publish no
-  host port (G9). A service that starts before the one it needs retries with
-  capped backoff and reports `starting`. Worlds never wait for the data layer.
+  host port, except the web map, on the port the manifest names (G9). A new
+  port for it waits for `vhd apply` (G13), and the web map keeps the generation
+  it holds until then. A service that starts before the one it needs retries
+  with capped backoff and reports `starting`. Worlds never wait for the data
+  layer.
 
 ### Internal boundaries
 
