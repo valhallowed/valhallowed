@@ -1,0 +1,4 @@
+# A change to a workflow, or to this file, merges only once a maintainer has
+# approved it (AGENTS.md § Delivering).
+/.github/workflows/ @scscodes
+/.github/CODEOWNERS @scscodes
