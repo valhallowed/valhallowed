@@ -11,6 +11,7 @@ from typing import Any
 
 import psycopg
 import pytest
+from psycopg import sql
 
 from vhd_data import schema
 from vhd_data.database import Database, Paths
@@ -27,6 +28,7 @@ EMBER_OLD = "5c1d8e2a-4b7f-4a93-8d6e-0f3a2b9c7e14"
 EMBER = "9e4b7a1c-2d5f-4f08-b3a6-6c8d1e0f2a59"
 HOLLOW = "d2a6f0b8-3c9e-4e17-a5b4-7f1c8d3e6a20"
 AT = "2026-11-03T18:04:58Z"
+WEB_MAP_PASSWORD = "Zk3Qp8Vr1Lx6Tn2Wc9Hb4Yd7Fj0GmSaX"
 
 
 def _free_port() -> int:
@@ -249,6 +251,51 @@ def test_the_live_players_have_no_id_column(running: Running) -> None:
         columns = connection.execute("SELECT * FROM live_player LIMIT 0").description
     assert columns is not None
     assert [column.name for column in columns] == ["world", "name", "x", "y", "z", "at", "received_at"]
+
+
+@pytest.fixture(scope="module")
+def web_map(running: Running) -> Iterator[psycopg.Connection[Any]]:
+    """A connection signed in as the web map's role. The database's secrets carry no password for it
+    yet, so no generation creates the role. The test hands schema.apply one, which creates the role and
+    applies its grants as production does."""
+    with running.owner() as owner:
+        schema.apply(owner, "vhd", {"web_map": WEB_MAP_PASSWORD})
+    with psycopg.connect(
+        host="127.0.0.1",
+        port=running.port,
+        dbname="vhd",
+        user="web_map",
+        password=WEB_MAP_PASSWORD,
+        connect_timeout=5,
+        autocommit=True,
+    ) as connection:
+        yield connection
+
+
+def test_the_web_map_reads_the_live_players(web_map: psycopg.Connection[Any], played: None) -> None:
+    rows = web_map.execute("SELECT name, x FROM live_player WHERE world = 'Hollowmere'").fetchall()
+    assert rows == [("Fenn", 60.0)]
+
+
+def test_the_web_map_is_refused_every_table(running: Running, web_map: psycopg.Connection[Any]) -> None:
+    with running.owner() as owner:
+        tables = [row[0] for row in owner.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")]
+    assert {"world", "session", "player", "presence", "position", "schema_migration"} <= set(tables)
+    for table in tables:
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            web_map.execute(sql.SQL("SELECT 1 FROM {}").format(sql.Identifier(table)))
+
+
+def test_the_web_map_may_write_nothing(web_map: psycopg.Connection[Any]) -> None:
+    for statement in (
+        "INSERT INTO world (name) VALUES ('Elsewhere')",
+        "UPDATE player SET name = 'Elsewhere'",
+        "DELETE FROM position",
+        "CREATE TABLE intruder (id int)",
+        "DROP VIEW live_player",
+    ):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            web_map.execute(statement)
 
 
 def test_a_database_that_ran_only_the_first_migration_takes_the_view_at_its_next_start(running: Running) -> None:

@@ -17,7 +17,8 @@ from psycopg.rows import TupleRow
 MIGRATIONS = Path(__file__).parent / "migrations"
 _NUMBERED = re.compile(r"^(\d{3})_[a-z0-9_]+\.sql$")
 
-# What each role may do. Intake writes telemetry and reads only what it deduplicates against.
+# What each role may do. Intake writes telemetry and reads only what it deduplicates against. The web
+# map reads the live players and nothing else. A role is created only when it is handed a password.
 GRANTS = {
     "intake": """
         GRANT CONNECT ON DATABASE {database} TO intake;
@@ -26,6 +27,11 @@ GRANTS = {
         GRANT UPDATE (started_at) ON session TO intake;
         GRANT SELECT, INSERT, UPDATE (name, seen_at) ON player TO intake;
         GRANT INSERT ON presence, position TO intake;
+    """,
+    "web_map": """
+        GRANT CONNECT ON DATABASE {database} TO web_map;
+        GRANT USAGE ON SCHEMA public TO web_map;
+        GRANT SELECT ON live_player TO web_map;
     """,
 }
 
