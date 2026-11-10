@@ -114,9 +114,10 @@ and lands through pull requests.
   Retro section is filled, a second reader is named where one is due, and no
   older open pull request changes the same file. It runs from `main`'s own
   definition, so a pull request cannot change the check that judges it.
-- **A change to a workflow waits for a maintainer.** `.github/CODEOWNERS` gives
-  `.github/workflows/` and itself to the maintainers, and a pull request that
-  changes either merges only once one of them has approved it.
+- **A change to a gate waits for a maintainer.** `.github/CODEOWNERS` gives
+  `.github/workflows/`, the delivery check's script and tests, and itself to the
+  maintainers, and a pull request that changes any of them merges only once one
+  of them has approved it.
 - **A retro before it is marked ready.** Review its whole diff for defects,
   simplification, performance and hygiene, and check every doc and comment it
   touches against the code, the glossary and docs/architecture.md, and that

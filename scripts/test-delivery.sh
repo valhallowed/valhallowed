@@ -388,6 +388,13 @@ ready
 open_prs 3:bob 7:alice
 check_error 'unreadable files of an older pull request' 2 'cannot list the files of pull request #3' 7
 
+# The workflow runs the check from the branch a pull request targets, so whatever
+# defines the check must need a maintainer's approval to change.
+for path in /.github/workflows/ /scripts/check-delivery.sh /scripts/test-delivery.sh /.github/CODEOWNERS; do
+  verdict "CODEOWNERS gives $path to a maintainer" \
+    "$(awk -v path="$path" '$1 == path && $2 ~ /^@/ { found = 1 } END { print found ? "true" : "false" }' "$root/.github/CODEOWNERS")"
+done
+
 if (( failures )); then
   echo "test-delivery: $failures failed" >&2
   exit 1
