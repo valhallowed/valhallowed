@@ -14,6 +14,9 @@
 # Prints one "delivery: ..." line per failed rule and exits 1 if any failed. A
 # usage error or an unreadable API answer exits 2.
 set -euo pipefail
+# The text rules below match ASCII only: a no-break or a zero-width space is not
+# text, and must not make an empty line look filled.
+export LC_ALL=C
 
 usage() { echo "usage: GH_REPO=owner/name $0 PULL_REQUEST_NUMBER" >&2; exit 2; }
 die() { echo "delivery: $*" >&2; exit 2; }
@@ -35,30 +38,57 @@ changed_files() {
     | jq -r '.[] | (.filename, (.previous_filename // empty)) | gsub("[[:cntrl:]]"; "?")'
 }
 
-# Drop <!-- ... --> comments, which may span lines: the template's own comment
-# says "No findings", and that must not count as the author's answer.
-strip_comments() {
+# Drop what is not the author's own answer: <!-- ... --> comments, which may span
+# lines (the template's own comment says "No findings"), and fenced code blocks
+# (a "## Retro" or "Second reader:" inside a fence is an example, not an answer).
+# A comment or a fence still open at the end runs to it, as in Markdown. Each
+# dropped line leaves an empty one, and the awk stays free of {n,m} intervals,
+# which older awks lack.
+strip_hidden() {
   awk '
     {
-      rest = $0
+      indent = match($0, /^ */) ? RLENGTH : 0
+      rest = substr($0, indent + 1)
+      if (in_fence) {
+        # A fence closes on its own character, at least as long, and nothing else.
+        closer = rest
+        sub(/[ \t]+$/, "", closer)
+        if (indent <= 3 && closer ~ ("^" fence_char "+$") && length(closer) >= fence_len) in_fence = 0
+        print ""
+        next
+      }
+      # A backtick fence takes no backtick in its info string, so inline code is not one.
+      if (!in_comment && indent <= 3 && match(rest, /^(```+|~~~+)/)) {
+        fence_char = substr(rest, 1, 1)
+        fence_len = RLENGTH
+        if (fence_char != "`" || index(substr(rest, fence_len + 1), "`") == 0) {
+          in_fence = 1
+          print ""
+          next
+        }
+      }
+      line = $0
       out = ""
-      while (rest != "") {
+      while (line != "") {
         if (in_comment) {
-          i = index(rest, "-->")
+          i = index(line, "-->")
           if (i == 0) break
-          rest = substr(rest, i + 3)
+          line = substr(line, i + 3)
           in_comment = 0
         } else {
-          i = index(rest, "<!--")
-          if (i == 0) { out = out rest; break }
-          out = out substr(rest, 1, i - 1)
-          rest = substr(rest, i + 4)
+          i = index(line, "<!--")
+          if (i == 0) { out = out line; break }
+          out = out substr(line, 1, i - 1)
+          line = substr(line, i + 4)
           in_comment = 1
         }
       }
       print out
     }'
 }
+
+# The Retro section starts at this line, here and in the extraction below.
+retro_heading='^## Retro[[:space:]]*$'
 
 pull=$(gh_api "repos/$GH_REPO/pulls/$pr") || die "cannot read pull request #$pr"
 
@@ -105,34 +135,37 @@ draft=$(jq -r '.draft // false' <<< "$pull")
 if [[ $draft == true ]]; then
   fail "draft: mark it ready once its Retro section is written"
 else
-  body=$(jq -r '.body // ""' <<< "$pull" | tr -d '\r' | strip_comments)
-  retro=$(awk '
-    in_retro && /^## / { exit }
+  body=$(jq -r '.body // ""' <<< "$pull" | tr -d '\r' | strip_hidden)
+  # The section ends at the next heading of its own level or above.
+  retro=$(awk -v heading="$retro_heading" '
+    in_retro && /^##? / { exit }
     in_retro { print }
-    /^## Retro[ \t]*$/ { in_retro = 1 }
+    $0 ~ heading { in_retro = 1 }
   ' <<< "$body")
   has() { grep -Eq -- "$1" <<< "$retro"; }
 
-  if ! grep -Eq '^## Retro[[:space:]]*$' <<< "$body"; then
+  if ! grep -Eq -- "$retro_heading" <<< "$body"; then
     fail 'the body has no "## Retro" section'
   else
-    has '^[[:space:]]*Reviews:[[:space:]]*[^[:space:]]' || fail 'the Retro section'\''s "Reviews:" line is empty'
-    # A table row counts when it holds more than pipes, dashes and colons, and is
-    # not the template's header.
+    has '^[[:space:]]*Reviews:.*[[:alnum:]]' || fail 'the Retro section'\''s "Reviews:" line is empty'
+    # A findings row is a table line below the separator row, the one made of
+    # pipes, dashes and colons. A line with no text besides those is no row, and
+    # a header with no separator under it opens no table.
     rows=$(awk '
       { s = $0; gsub(/[ \t]/, "", s) }
       s !~ /^[|]/ { next }
-      s ~ /^[|][-:|]*$/ || s == "|Finding|Fixedin|" { next }
-      { n++ }
+      s ~ /^[|][-:|]*-[-:|]*$/ { separator = 1; next }
+      s ~ /^[|][-:|]*$/ { next }
+      separator { n++ }
       END { print n + 0 }
     ' <<< "$retro")
-    if (( rows == 0 )) && ! has '^[[:space:]]*No findings[[:space:]]*$'; then
+    if (( rows == 0 )) && ! has '^[[:space:]]*No findings\.?[[:space:]]*$'; then
       fail 'the Retro section has neither a findings row nor "No findings"'
     fi
   fi
 
   protected=$(grep -m1 -E '^((contracts|schema|control|runtime|images|install|scripts|\.github)/|(Makefile|docker-bake\.hcl)$)' <<< "$files" || true)
-  if [[ -n $protected ]] && ! has '^[[:space:]]*Second reader:[[:space:]]*[^[:space:]]'; then
+  if [[ -n $protected ]] && ! has '^[[:space:]]*Second reader:.*[[:alnum:]]'; then
     fail "the Retro section names no second reader, due since the pull request changes $protected"
   fi
 fi

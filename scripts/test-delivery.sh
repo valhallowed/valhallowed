@@ -258,6 +258,118 @@ pull 7 alice false "$(body 'Reviews: the whole diff' '' '## Notes' '' 'No findin
 check '"No findings" after the next heading does not count' 1 "$no_findings"
 
 ready
+pull 7 alice false "$(body 'Reviews: the whole diff' 'No findings' '' '# Appendix' '' 'No findings')"
+check 'a top-level heading ends the Retro section' 0 "$ok"
+
+ready
+pull 7 alice false "$(body 'Reviews: the whole diff' '' '# Appendix' '' 'No findings')"
+check '"No findings" after a top-level heading does not count' 1 "$no_findings"
+
+ready
+retro 'Reviews: the whole diff' '### Notes' 'No findings'
+check 'a deeper heading does not end the Retro section' 0 "$ok"
+
+ready
+retro 'Reviews: the whole diff' 'No findings.'
+check '"No findings" with a final full stop' 0 "$ok"
+
+# A findings row sits below the separator row
+ready
+retro 'Reviews: the whole diff' '' '| Found | In |' '|---|---|'
+check 'a table with another header and no row' 1 "$no_findings"
+
+ready
+retro 'Reviews: the whole diff' '' '| Finding | Fixed in |' '| A name that misled | 3f2a9c1 |'
+check 'a table row with no separator above it' 1 "$no_findings"
+
+ready
+retro 'Reviews: the whole diff' '' '| A name that misled | 3f2a9c1 |'
+check 'a table row with no header' 1 "$no_findings"
+
+ready
+retro 'Reviews: the whole diff' '' '| Found | In |' '| :-- | --: |' '| A name that misled | 3f2a9c1 |'
+check 'a table with a separator that has colons, and a row' 0 "$ok"
+
+ready
+retro 'Reviews: the whole diff' '' '| Finding | Fixed in |' '|---|---|' '| | |' '| A name that misled | 3f2a9c1 |'
+check 'an empty row, then a real one' 0 "$ok"
+
+ready
+retro 'Reviews: the whole diff' '' '| Found | In |' '| | |' '| A name that misled | 3f2a9c1 |'
+check 'a line of pipes and spaces is no separator' 1 "$no_findings"
+
+ready
+pull 7 alice false $'## Retro   \n\nReviews: the whole diff\n\nNo findings\n'
+check 'a "## Retro" heading with trailing spaces' 0 "$ok"
+
+# Fenced code is no answer
+ready
+pull 7 alice false $'Closes #1\n\n```\n## Retro\n\nReviews: the whole diff\n\nNo findings\n```\n'
+check 'a "## Retro" inside a fence is no section' 1 "$no_retro"
+
+ready
+pull 7 alice false "$(printf '%s\n' '## Retro' '' 'Example:' '' '~~~' '## Retro' 'No findings' '~~~' '' 'Reviews: the whole diff')"
+check '"No findings" inside a fence does not count' 1 "$no_findings"
+
+ready
+files 7 scripts/check-delivery.sh
+retro 'Reviews: the whole diff' 'No findings' '' '```' 'Second reader: Ana' '```'
+check 'a Second reader line inside a fence does not count' 1 "$(no_reader scripts/check-delivery.sh)"
+
+ready
+files 7 scripts/check-delivery.sh
+retro 'Reviews: the whole diff' 'No findings' '' '~~~~' 'Second reader: Ana' '~~~~' '' 'Second reader: Ana'
+check 'a Second reader line after a fence counts' 0 "$ok"
+
+ready
+files 7 scripts/check-delivery.sh
+retro 'Reviews: the whole diff' 'No findings' '' '````' '```' 'Second reader: Ana' '````'
+check 'a shorter fence line does not close a longer fence' 1 "$(no_reader scripts/check-delivery.sh)"
+
+ready
+retro 'Reviews: the whole diff' '```' 'No findings'
+check 'a fence left open runs to the end' 1 "$no_findings"
+
+ready
+ticks='```'
+retro 'Reviews: the whole diff' "Inline ${ticks}code${ticks} is no fence" 'No findings'
+check 'three backticks inline open no fence' 0 "$ok"
+
+ready
+retro 'Reviews: the whole diff' '<!--' '```' '-->' 'No findings'
+check 'a fence marker inside a comment opens no fence' 0 "$ok"
+
+ready
+retro 'Reviews: the whole diff' '```' '<!--' '```' 'No findings'
+check 'a comment marker inside a fence opens no comment' 0 "$ok"
+
+# Only ASCII text fills a line
+nbsp=$'\xc2\xa0'
+zwsp=$'\xe2\x80\x8b'
+ready
+retro "Reviews:$nbsp" 'No findings'
+check 'a Reviews line holding a no-break space' 1 "$no_reviews"
+
+ready
+retro "Reviews: $zwsp" 'No findings'
+check 'a Reviews line holding a zero-width space' 1 "$no_reviews"
+
+ready
+files 7 scripts/check-delivery.sh
+retro 'Reviews: the whole diff' "Second reader:$nbsp" 'No findings'
+check 'a Second reader line holding a no-break space' 1 "$(no_reader scripts/check-delivery.sh)"
+
+ready
+files 7 scripts/check-delivery.sh
+retro 'Reviews: the whole diff' "Second reader: $zwsp" 'No findings'
+check 'a Second reader line holding a zero-width space' 1 "$(no_reader scripts/check-delivery.sh)"
+
+ready
+files 7 scripts/check-delivery.sh
+retro 'Reviews: 2 passes' 'Second reader: 4eyes' 'No findings'
+check 'digits are text' 0 "$ok"
+
+ready
 retro 'Reviews: the whole diff' 'No findings' '' "Reviews: $evil_text"
 check 'a body with shell syntax in it is data' 0 "$ok"
 verdict 'a body with shell syntax in it ran nothing' "$([[ ! -e $tmp/pwned ]] && echo true || echo false)"
