@@ -54,6 +54,7 @@ the reasons.
 | Anything | `scripts/check-public.sh` |
 | Workflows | `actionlint` |
 | Shell scripts | `shellcheck scripts/*.sh` |
+| The delivery check | `scripts/test-delivery.sh` |
 | The manifest schema, a contract or their examples | `scripts/check-schema.sh` |
 | `.github/dependabot.yml` | `scripts/check-schema.sh`, then `scripts/check-images.sh` |
 | A Python component | `scripts/check-python.sh <dir>` |
@@ -106,14 +107,25 @@ and lands through pull requests.
 - **Up to date before it merges.** `main` takes a pull request only when its
   checks passed on a branch up to date with `main`. Bring a branch up to date
   by rebasing it, so its commits stay single-purpose.
+- **A pull request merges itself.** Once it is ready, auto-merge is switched on
+  for it, and GitHub merges it when its gates pass: `checks`, `build` and
+  `delivery`, on a branch up to date with `main`. `delivery` holds what a
+  machine can check of this section: the pull request closes an issue, its
+  Retro section is filled, a second reader is named where one is due, and no
+  older open pull request changes the same file. It runs from `main`'s own
+  definition, so a pull request cannot change the check that judges it.
+- **A change to a workflow waits for a maintainer.** `.github/CODEOWNERS` gives
+  `.github/workflows/` and itself to the maintainers, and a pull request that
+  changes either merges only once one of them has approved it.
 - **A retro before it is marked ready.** Review its whole diff for defects,
   simplification, performance and hygiene, and check every doc and comment it
   touches against the code, the glossary and docs/architecture.md, and that
   each issue it closes has its delivered tasks ticked. A pull request that
   changes a contract, a schema, the control plane, the game runtime, an image
-  or the pipeline is also read whole by a reviewer who wrote none of it. Its
-  Retro section names the reviews, then lists each finding and the commit that
-  fixed it, or says "No findings".
+  or the pipeline is also read whole by a reviewer who wrote none of it, named
+  on the Retro section's `Second reader:` line. Its Retro section names the
+  reviews, then lists each finding and the commit that fixed it, or says
+  "No findings".
 - **Fix, don't defer.** Every finding is fixed in the pull request. The one
   exception is a gap whose fix is the deliverable of a later slice that has an
   issue: it becomes a task in that issue, and its Retro row reads `task in #n`.
