@@ -203,7 +203,8 @@ secrets schemas are its source, so it cannot disagree with them.
 Steam (B9). Only people the game has seen can sign in.
 
 **Slice** — One deliverable of a milestone that keeps `main` green on its own,
-tracked as one issue on the board once its milestone is current or next.
+tracked as one issue on the board once its milestone is current or next. It
+belongs to one track and has a size: S, M or L.
 
 **Status** — The control plane's report on an install and its children. It
 reports world truth, not container health.
@@ -217,6 +218,11 @@ server manager confirmed the restart.
 **Telemetry** — What the plugin observes in a world and sends to intake (B2):
 chat, presence, positions and world events. Observations, so a failure drops
 them and the game never waits.
+
+**Track** — One of three lines of delivery that run side by side: pipeline,
+control plane and capability. Each owns its directories, so slices in
+different tracks can be open at the same time. AGENTS.md § Delivering says
+what each owns.
 
 **TUI** — The control plane's terminal interface. Same control API as the admin
 console; for hosts where a browser is unavailable or unwanted.

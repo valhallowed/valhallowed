@@ -75,25 +75,55 @@ actionlint, shellcheck and Python from the images pinned in
 Work is planned on the [board](https://github.com/orgs/valhallowed/projects/1)
 and lands through pull requests.
 
-- **One branch, one pull request.** It opens as a draft when the branch does,
-  holds single-purpose commits, and closes its issues (`Closes #n`). Related
-  pull requests are combined into one, dependency updates included: the week's
-  Dependabot pull request is folded into an open branch when there is one. A
-  Debian base update stays apart, since its pins move by hand.
+- **Three tracks run side by side.** Each owns its directories, so slices in
+  different tracks can be open at the same time.
+
+  | Track | Owns |
+  |---|---|
+  | Pipeline | `.github/`, `scripts/`, `images/debian/`, `images/tools/`, `Makefile`, `docker-bake.hcl` |
+  | Control plane | `control/`, `runtime/`, `schema/`, `install/`, their images, and the contracts of B1 and B12 |
+  | Capability | `plugin/`, `data/`, `web-map/`, their images, and the contracts of every other boundary |
+
+  A slice stays inside one track, and takes the docs and diagrams that
+  describe what it changes. A new child, setting or secret is a control-plane
+  slice, and merges before the capability slice that uses it. No two open pull
+  requests change the same file, docs apart: a slice that must reach outside
+  its track says so in its issue, and starts once no open pull request holds
+  those files.
+- **A slice has a size.** S changes one component and no contract or schema.
+  M changes one contract or schema, and the code on each side of it. L adds a
+  child, a boundary or a capability, and is split into smaller slices before
+  any of it starts.
+- **Contract first.** A slice that changes a contract or a schema commits it
+  first, with its valid and invalid examples. The code on each side is written
+  against that commit.
+- **One branch, one pull request, and one open pull request per track.** It
+  opens as a draft when the branch does, holds single-purpose commits, and
+  closes its issues (`Closes #n`). Related pull requests are combined into one,
+  dependency updates included: the week's Dependabot pull request is folded
+  into an open branch when there is one. A Debian base update stays apart,
+  since its pins move by hand.
+- **Up to date before it merges.** `main` takes a pull request only when its
+  checks passed on a branch up to date with `main`. Bring a branch up to date
+  by rebasing it, so its commits stay single-purpose.
 - **A retro before it is marked ready.** Review its whole diff for defects,
   simplification, performance and hygiene, and check every doc and comment it
   touches against the code, the glossary and docs/architecture.md, and that
-  each issue it closes has its delivered tasks ticked. Its Retro section names
-  the reviews, then lists each finding and the commit that fixed it, or says
-  "No findings".
+  each issue it closes has its delivered tasks ticked. A pull request that
+  changes a contract, a schema, the control plane, the game runtime, an image
+  or the pipeline is also read whole by a reviewer who wrote none of it. Its
+  Retro section names the reviews, then lists each finding and the commit that
+  fixed it, or says "No findings".
 - **Fix, don't defer.** Every finding is fixed in the pull request. The one
   exception is a gap whose fix is the deliverable of a later slice that has an
   issue: it becomes a task in that issue, and its Retro row reads `task in #n`.
   A gap whose slice has no issue yet is fixed in the pull request.
 - **Progress lives on the board, nowhere else.** Issues exist for the current
   milestone, plus the next one while it is planned; later work stays in
-  docs/architecture.md § Delivery order. An issue's tasks are ticked as each
-  is done, so a closed issue shows what it delivered. The issues `nightly.yml`
+  docs/architecture.md § Delivery order. An issue's track and size are fields
+  on the board; its body lists its tasks, and names the contract it changes and
+  the slices it waits on. Its tasks are ticked as each is done, so a closed
+  issue shows what it delivered. The issues `nightly.yml`
   opens are alerts, not plans, and close themselves when a pass succeeds. Docs
   say what VHD is and why, never where the work stands.
 - **Delete merged branches,** on GitHub and in every clone.
