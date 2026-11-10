@@ -15,8 +15,8 @@ mkdir -p "$tmp/bin" "$tmp/cwd" "$fix"
 # The script reads the API and never the working tree: run it from an empty directory.
 export PATH=$tmp/bin:$PATH FIXTURES=$fix
 
-# gh api, answered from fixtures: pull-N.json, files-N.json, open.json and
-# graphql-N.json. A missing fixture is a 404.
+# gh api, answered from fixtures: pull-N.json, files-N.json, commits-N.json,
+# open.json and graphql-N.json. A missing fixture is a 404.
 cat > "$tmp/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -41,6 +41,9 @@ case $endpoint in
   "${prefix}pulls/"*"/files?per_page=100")
     n=${endpoint#"${prefix}pulls/"}
     file=files-${n%%/*}.json ;;
+  "${prefix}pulls/"*"/commits?per_page=100")
+    n=${endpoint#"${prefix}pulls/"}
+    file=commits-${n%%/*}.json ;;
   "${prefix}pulls/"*) file=pull-${endpoint#"${prefix}pulls/"}.json ;;
   *) echo "stub gh: unexpected endpoint: $endpoint" >&2; exit 1 ;;
 esac
@@ -49,10 +52,28 @@ cat "$FIXTURES/$file"
 STUB
 chmod +x "$tmp/bin/gh"
 
-# pull N AUTHOR DRAFT BODY
+# set_pull N FILTER [JQ_ARG...]: edit pull request N's fixture in place
+set_pull() {
+  local f=$fix/pull-$1.json
+  [[ -f $f ]] || echo '{}' > "$f"
+  jq "${@:3}" "$2" "$f" > "$f.new"
+  mv "$f.new" "$f"
+}
+# pull N AUTHOR DRAFT BODY: the counts of files and commits an earlier files or commits set stay
 pull() {
-  jq -n --arg login "$2" --argjson draft "$3" --arg body "$4" \
-    '{user: {login: $login}, draft: $draft, body: $body}' > "$fix/pull-$1.json"
+  local f=$fix/pull-$1.json old='{}'
+  [[ ! -f $f ]] || old=$(< "$f")
+  jq -n --argjson old "$old" --arg login "$2" --argjson draft "$3" --arg body "$4" \
+    '$old + {user: {login: $login}, draft: $draft, body: $body}' > "$f"
+}
+# commits N LOGIN...: the authors of pull request N's commits, on one page; an empty LOGIN is
+# a commit no GitHub account owns
+commits() {
+  local n=$1
+  shift
+  jq -n '$ARGS.positional | map({author: (if . == "" then null else {login: .} end)})' --args "$@" \
+    > "$fix/commits-$n.json"
+  set_pull "$n" ".commits = $#"
 }
 # files N PATH...: the changed files, on one page
 files() {
@@ -169,11 +190,52 @@ files 7 scripts/check-delivery.sh
 pull 7 alice false "$(body 'Reviews: the whole diff' 'Second reader: Ana' 'No findings' | sed 's/$/\r/')"
 check 'a body with \r\n line endings, and a protected path with a second reader' 0 "$ok"
 
-# R0: a dependency update
+# R0: a dependency update is a Dependabot pull request whose every commit is Dependabot's
+bot='dependabot[bot]'
+not_slice='delivery: a dependency update, not a slice'
 ready
-pull 7 'dependabot[bot]' false ''
+pull 7 "$bot" false ''
+commits 7 "$bot"
 rm "$fix"/graphql-7.json "$fix"/files-7.json "$fix"/open.json
-check 'a dependabot[bot] author passes at R0, before anything else is read' 0 'delivery: a dependency update, not a slice'
+check 'a dependabot[bot] pull request of dependabot[bot] commits passes at R0, before anything else is read' 0 "$not_slice"
+
+ready
+pull 7 "$bot" false ''
+{ jq -n '[{author: {login: "dependabot[bot]"}}]'; jq -n '[{author: {login: "dependabot[bot]"}}]'; } > "$fix/commits-7.json"
+set_pull 7 '.commits = 2'
+check 'dependabot[bot] commits on two pages pass at R0' 0 "$not_slice"
+
+ready
+pull 7 "$bot" false ''
+commits 7 "$bot" alice
+check 'a commit by someone else on a dependabot[bot] pull request: every rule applies' 1 "$no_retro"
+
+ready
+pull 7 "$bot" false ''
+closes 7 0
+commits 7 "$bot" ''
+check 'a commit no GitHub account owns on a dependabot[bot] pull request: every rule applies' 1 "$no_issue" "$no_retro"
+
+ready
+pull 7 "$bot" false ''
+commits 7 "$bot"
+set_pull 7 '.commits = 300'
+check 'fewer commits listed than the pull request has: every rule applies' 1 "$no_retro"
+
+ready
+pull 7 "$bot" false ''
+commits 7 "$bot"
+set_pull 7 'del(.commits)'
+check 'no commit count on the pull request: every rule applies' 1 "$no_retro"
+
+ready
+pull 7 alice false ''
+commits 7 "$bot"
+check 'dependabot[bot] commits on a pull request by someone else: every rule applies' 1 "$no_retro"
+
+ready
+pull 7 "$bot" false ''
+check_error 'unreadable commits of a dependabot[bot] pull request' 2 'cannot list the commits of pull request #7' 7
 
 # R1
 ready

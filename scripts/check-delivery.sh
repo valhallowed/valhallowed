@@ -92,11 +92,20 @@ retro_heading='^## Retro[[:space:]]*$'
 
 pull=$(gh_api "repos/$GH_REPO/pulls/$pr") || die "cannot read pull request #$pr"
 
-# R0: a dependency update is folded into a slice's branch or merged on its own.
+# R0: a dependency update is a Dependabot pull request whose every commit is
+# Dependabot's. A commit pushed onto its branch makes it a slice, so the rules
+# apply. The API lists at most 250 commits, so a count short of the pull
+# request's own leaves it a slice too, and so does a commit no GitHub account owns.
 author=$(jq -r '.user.login // ""' <<< "$pull")
 if [[ $author == 'dependabot[bot]' ]]; then
-  echo "delivery: a dependency update, not a slice"
-  exit 0
+  bot_only=$(gh_api --paginate "repos/$GH_REPO/pulls/$pr/commits?per_page=100" \
+    | jq -rs --argjson pull "$pull" \
+      '[.[][] | .author.login // ""] as $logins | ($logins | length) == $pull.commits and all($logins[]; . == "dependabot[bot]")') \
+    || die "cannot list the commits of pull request #$pr"
+  if [[ $bot_only == true ]]; then
+    echo "delivery: a dependency update, not a slice"
+    exit 0
+  fi
 fi
 
 # R1: the pull request closes an issue, through its body or the sidebar.
