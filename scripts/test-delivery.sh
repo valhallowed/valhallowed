@@ -133,6 +133,7 @@ no_issue='delivery: closes no issue: its body needs "Closes #n"'
 no_reviews='delivery: the Retro section'\''s "Reviews:" line is empty'
 no_findings='delivery: the Retro section has neither a findings row nor "No findings"'
 no_retro='delivery: the body has no "## Retro" section'
+draft_fails='delivery: draft: mark it ready once its Retro section is written'
 # A command that would leave a mark if anything evaluated the text around it
 evil="touch $tmp/pwned"
 evil_text="\$($evil) \`$evil\`"
@@ -183,17 +184,27 @@ ready
 closes 7 2
 check 'closes two issues' 0 "$ok"
 
+# A draft: R1 and R2 report, R3 and R4 wait, and it fails until it is ready
 ready
 pull 7 alice true ''
 closes 7 0
-check 'a draft that closes no issue still fails' 1 "$no_issue" 'delivery: draft, so its Retro section is not checked yet'
+check 'a draft that closes no issue fails on both counts' 1 "$no_issue" "$draft_fails"
 
-# R3 and R4 on a draft
 ready
 pull 7 alice true "$(body 'Reviews:')"
 files 7 scripts/check-delivery.sh
-check 'a draft with an empty Retro passes, and R3 and R4 are skipped' 0 \
-  'delivery: draft, so its Retro section is not checked yet' "$ok"
+check 'a draft with an empty Retro fails, and R3 and R4 are skipped' 1 "$draft_fails"
+
+ready
+pull 7 alice true "$(body 'Reviews: the whole diff' 'No findings')"
+check 'a draft with a filled Retro still fails' 1 "$draft_fails"
+
+ready
+pull 7 alice true ''
+files 7 plugin/a.cs
+files 3 plugin/a.cs
+open_prs 3:bob 7:alice
+check 'a draft that shares a file with an older pull request fails on both counts' 1 "$(shared plugin/a.cs 3)" "$draft_fails"
 
 # R3 on a ready pull request
 ready

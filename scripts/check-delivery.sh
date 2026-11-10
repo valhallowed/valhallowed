@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Check one pull request against the rules of AGENTS.md § Delivering that a
 # machine can read: it closes an issue; it shares no file, docs apart, with an
-# older open pull request; and once it is out of draft, its Retro section names
-# the reviews and the findings (or says "No findings"), and a second reader
-# where the pull request changes a contract, a schema, the control plane, the
-# game runtime, an image, the install or the pipeline. A Dependabot pull
-# request is exempt: it is not a slice.
+# older open pull request; it is not a draft; and, once it is ready, its Retro
+# section names the reviews and the findings (or says "No findings"), and a
+# second reader where the pull request changes a contract, a schema, the
+# control plane, the game runtime, an image, the install or the pipeline. A
+# Dependabot pull request is exempt: it is not a slice.
 # It reads the pull request through the GitHub API and never the working tree,
 # so delivery.yml can run it from main while the pull request's own code stays
 # unread. Everything the API returns is data: quoted, never evaluated, and a
@@ -98,10 +98,12 @@ while IFS= read -r other; do
   done <<< "$shared"
 done <<< "$older"
 
-# R3 and R4: a draft is still being written, so its Retro section waits.
+# R3 and R4 read the Retro section of a pull request that is ready. A draft fails
+# meanwhile: were delivery green on its head commit, a pull request marked ready
+# and armed for auto-merge in one step could merge before the run that reads it.
 draft=$(jq -r '.draft // false' <<< "$pull")
 if [[ $draft == true ]]; then
-  echo "delivery: draft, so its Retro section is not checked yet"
+  fail "draft: mark it ready once its Retro section is written"
 else
   body=$(jq -r '.body // ""' <<< "$pull" | tr -d '\r' | strip_comments)
   retro=$(awk '
