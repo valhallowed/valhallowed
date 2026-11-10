@@ -9,8 +9,11 @@
 --
 -- A world is one lookup in session_newest, and each player one in position_latest and
 -- presence_latest, never a scan of a session's positions.
+--
+-- The view is the web map's whole privilege, so it is a security barrier: a condition the reader
+-- adds runs only on the rows the view lets through, and cannot see where a player who left was.
 
-CREATE VIEW live_player AS
+CREATE VIEW live_player WITH (security_barrier) AS
 SELECT w.name AS world, p.name, pos.x, pos.y, pos.z, pos.at, pos.received_at
 FROM world w
 CROSS JOIN LATERAL (

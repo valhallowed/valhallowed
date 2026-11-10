@@ -253,6 +253,13 @@ def test_the_live_players_have_no_id_column(running: Running) -> None:
     assert [column.name for column in columns] == ["world", "name", "x", "y", "z", "at", "received_at"]
 
 
+def test_the_live_players_are_a_security_barrier(running: Running) -> None:
+    with running.owner() as connection:
+        row = connection.execute("SELECT reloptions FROM pg_class WHERE relname = 'live_player'").fetchone()
+    assert row is not None
+    assert row[0] == ["security_barrier=true"]
+
+
 @pytest.fixture(scope="module")
 def web_map(running: Running) -> Iterator[psycopg.Connection[Any]]:
     """A connection signed in as the web map's role. The database's secrets carry no password for it
