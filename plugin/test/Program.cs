@@ -45,6 +45,11 @@ Check(Players.Name("\u0001\u0002") == null, "a name of control characters is no 
 Check(Players.Name(new string('a', 63) + "\U0001F600") == new string('a', 63) + "\U0001F600",
     "a name of 64 characters keeps its last surrogate pair");
 Check(Players.Name(new string('a', 70)) == new string('a', 64), "a name is cut to 64 characters");
+Check(Players.PositionDue(false, 0f, 0f, 2f), "a player's first position is due");
+Check(!Players.PositionDue(true, 2.9f, 10f, 2f), "a player who moved less than 3 m, 10 s ago, sends nothing");
+Check(Players.PositionDue(true, 3f, 0f, 2f), "a player who moved 3 m sends their position");
+Check(!Players.PositionDue(true, 0f, 28f, 2f), "a still player's position 28 s old waits for the next sample");
+Check(Players.PositionDue(true, 0f, 28.1f, 2f), "a still player's position that would be over 30 s old by the next sample is sent");
 Check(!Batch.IsCoordinate(float.NaN) && !Batch.IsCoordinate(float.PositiveInfinity)
     && !Batch.IsCoordinate(-100001f) && Batch.IsCoordinate(-100000f), "coordinates are finite and in B2's bounds");
 
