@@ -318,8 +318,9 @@ Follows from G4 and G12.
 - **Three gates.** The merge gate: every check passes, `delivery` among them,
   on the pull request and again in the merge queue, on it merged with the
   newest `main`, and a maintainer approves a change to a workflow or to the
-  delivery check, before a merge to `main`. The candidate gate: acceptance passes on the registry images,
-  including against the newest game build, before a candidate tag. The release
+  delivery check, before a merge to `main`. The candidate gate: acceptance
+  passes on the registry images, including against the newest game build,
+  before a candidate tag. The release
   gate: the candidate ran on the candidate channel with no open blockers before
   the release tag.
 
