@@ -213,8 +213,8 @@ markers and journal entries are records, never commands.
   and a failure leaves the schema as it was.
 - **Services reach each other by name** on the install network and publish no
   host port, except the web map, on the port the manifest names (G9). A new
-  port for it waits for `vhd apply` (G13), and the web map keeps the generation
-  it holds until then. A service that starts before the one it needs retries
+  port for it waits for `vhd apply` (G13), and the web map keeps serving on its
+  old port until then. A service that starts before the one it needs retries
   with capped backoff and reports `starting`. Worlds never wait for the data
   layer.
 
@@ -310,8 +310,8 @@ Follows from G4 and G12.
 - **Candidates and releases attach** `compose.yaml`, with every image pinned by
   digest, the manifest and secrets schemas, the plugin artifact and
   `SHA256SUMS`. Release notes name the game build the release was accepted on.
-- **Three gates.** The merge gate: every check passes before a merge to
-  `main`. The candidate gate: acceptance passes on the registry images,
+- **Three gates.** The merge gate: every check passes, on a branch up to date
+  with `main`, before a merge to `main`. The candidate gate: acceptance passes on the registry images,
   including against the newest game build, before a candidate tag. The release
   gate: the candidate ran on the candidate channel with no open blockers before
   the release tag.
