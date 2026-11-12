@@ -124,6 +124,10 @@ by Compose as one project.
 artifacts, dev is a full install with a throwaway world, and consumer runs
 released artifacts only.
 
+**Live player** — A player in their world's newest session who has not left
+since and was seen within three position intervals. docs/architecture.md
+§ Data layer says why.
+
 **Manifest** — The one TOML file a server manager writes to configure an
 install. Checked against the manifest schema; never holds secrets.
 

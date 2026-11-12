@@ -217,6 +217,11 @@ markers and journal entries are records, never commands.
   old port until then. A service that starts before the one it needs retries
   with capped backoff and reports `starting`. Worlds never wait for the data
   layer.
+- **A live player** is in their world's newest session, has not left since,
+  and was seen within three position intervals. The plugin sends each
+  connected player's position once they move and at least every 30 seconds,
+  moved or not, so a player who stands still stays live, and the players of a
+  world that stopped, which sends no leave, stop being live within 90 seconds.
 
 ### Internal boundaries
 
