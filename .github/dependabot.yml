@@ -23,9 +23,14 @@ updates:
     # The checks' Python (images/tools) follows the minor version the Debian
     # base ships, so the checks run the Python the images do: patch releases
     # only. scripts/check-images.sh fails when the two differ.
+    # The plugin builds with the .NET SDK of an LTS release, and its test and
+    # refcheck target that release's runtime, so a new major version moves by
+    # hand with their target frameworks.
     ignore:
       - dependency-name: python
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: dotnet/sdk
+        update-types: ["version-update:semver-major"]
   # Apart from the others: a new Debian base digest moves the package snapshot
   # with it, and what mirrors the snapshot moves by hand in the same pull
   # request, which Dependabot cannot do: the apt pins, the pip pins ignored
