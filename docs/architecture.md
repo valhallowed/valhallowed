@@ -310,8 +310,9 @@ Follows from G4 and G12.
 - **Candidates and releases attach** `compose.yaml`, with every image pinned by
   digest, the manifest and secrets schemas, the plugin artifact and
   `SHA256SUMS`. Release notes name the game build the release was accepted on.
-- **Three gates.** The merge gate: every check passes, on a branch up to date
-  with `main`, before a merge to `main`. The candidate gate: acceptance passes on the registry images,
+- **Three gates.** The merge gate: every check passes, `delivery` among them,
+  on a branch up to date with `main`, and a maintainer approves a change to a
+  gate, before a merge to `main`. The candidate gate: acceptance passes on the registry images,
   including against the newest game build, before a candidate tag. The release
   gate: the candidate ran on the candidate channel with no open blockers before
   the release tag.
