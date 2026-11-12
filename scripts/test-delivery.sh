@@ -16,16 +16,18 @@ mkdir -p "$tmp/bin" "$tmp/cwd" "$fix"
 export PATH=$tmp/bin:$PATH FIXTURES=$fix
 
 # gh api, answered from fixtures: pull-N.json, files-N.json, commits-N.json,
-# open.json and graphql-N.json. A missing fixture is a 404.
+# open.json and graphql-N.json. A missing fixture is a 404. A fixture holding
+# several JSON values is a list on several pages: without --paginate, only the
+# first page is served.
 cat > "$tmp/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
 [[ ${1:-} == api ]] || { echo "stub gh: only 'api' is stubbed: $*" >&2; exit 1; }
 shift
-endpoint='' number='' owner='' name=''
+endpoint='' number='' owner='' name='' paginate=false
 while (( $# )); do
   case $1 in
-    --paginate) ;;
+    --paginate) paginate=true ;;
     -f) shift; case $1 in owner=*) owner=${1#owner=} ;; name=*) name=${1#name=} ;; esac ;;
     -F) shift; case $1 in number=*) number=${1#number=} ;; esac ;;
     *) endpoint=$1 ;;
@@ -48,7 +50,11 @@ case $endpoint in
   *) echo "stub gh: unexpected endpoint: $endpoint" >&2; exit 1 ;;
 esac
 [[ -f $FIXTURES/$file ]] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
-cat "$FIXTURES/$file"
+if [[ $paginate == true ]]; then
+  cat "$FIXTURES/$file"
+else
+  jq -n input "$FIXTURES/$file"
+fi
 STUB
 chmod +x "$tmp/bin/gh"
 
