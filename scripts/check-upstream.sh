@@ -3,8 +3,10 @@
 # release: the Docker CLI and Compose in the control plane's image, the BepInEx
 # pack in the game runtime's, and Node.js, at its newest LTS release, in the web
 # map's. Each version is an ARG in its Dockerfile;
-# moving to a newer one changes that ARG and its checksums. nightly.yml runs
-# this beside the game check. GITHUB_TOKEN, when set, lifts GitHub's anonymous
+# moving to a newer one changes that ARG and its checksums. The .NET SDK the
+# plugin builds with is an LTS release too: Dependabot moves its digest but not
+# its major version, which is the tag of its FROM line, so a newer LTS release is
+# reported here. nightly.yml runs this beside the game check. GITHUB_TOKEN, when set, lifts GitHub's anonymous
 # rate limit.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -43,4 +45,9 @@ compare "BepInEx pack" "$(pinned_version BEPINEX_PACK_VERSION images/game-runtim
   "$(get https://thunderstore.io/api/experimental/package/denikson/BepInExPack_Valheim/ | jq -r .latest.version_number)"
 compare "Node.js LTS" "$(pinned_version NODE_VERSION images/web-map/Dockerfile)" \
   "$(get https://nodejs.org/dist/index.json | jq -r '[.[] | select(.lts != false)][0].version | ltrimstr("v")')"
+compare ".NET SDK LTS" \
+  "$(sed -n 's|^FROM mcr\.microsoft\.com/dotnet/sdk:\([0-9.]*\)@.*|\1|p' images/game-runtime/Dockerfile)" \
+  "$(get https://builds.dotnet.microsoft.com/dotnet/release-metadata/releases-index.json \
+    | jq -r '.["releases-index"][] | select(."release-type" == "lts" and ."support-phase" == "active") | ."channel-version"' \
+    | sort -V | tail -n1)"
 exit "$failed"

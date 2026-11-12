@@ -51,6 +51,8 @@ ADD --checksum=sha256:6bca77b1016acfe0ffaebb6534c84b12ae8d12e5a96abbf59ec6e45262
     https://thunderstore.io/package/download/denikson/BepInExPack_Valheim/${BEPINEX_PACK_VERSION}/ /tmp/bepinex.zip
 RUN mkdir /bepinex && unzip -q /tmp/bepinex.zip -d /bepinex
 
+# An LTS release; scripts/check-upstream.sh reports a newer one. A new major
+# version moves with the TargetFramework of plugin/test and of refcheck.
 FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:212fe4cb74627d5adf9817a4088906ae3edff1bd853bb27565d4b46731efe61e AS build
 ARG VHD_BUILD=dev
 WORKDIR /src
