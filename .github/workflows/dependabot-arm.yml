@@ -1,0 +1,36 @@
+# Arms each Dependabot pull request for auto-merge, so the merge queue merges it
+# once its gates pass (AGENTS.md § Delivering). One that changes a workflow is
+# left for a maintainer, like any change to a workflow. It runs only on
+# Dependabot's own pushes: a commit someone else pushes makes the pull request a
+# slice, which delivery then judges as one.
+name: dependabot-arm
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  arm:
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Arm it, unless it changes a workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          workflows=$(timeout 60 gh api --paginate "repos/$GH_REPO/pulls/$PR/files?per_page=100" \
+            --jq '.[].filename | select(startswith(".github/workflows/"))')
+          if [[ -n $workflows ]]; then
+            echo "dependabot-arm: pull request #$PR changes a workflow, so it waits for a maintainer"
+            exit 0
+          fi
+          timeout 60 gh pr merge "$PR" --auto --merge

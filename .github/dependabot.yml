@@ -1,8 +1,9 @@
 # Pinned dependencies move only through pull requests that pass the same checks
-# as any other change. Each ecosystem lands in one weekly pull request of its
-# own, so an update that fails holds back only its ecosystem, and the actions'
-# pull request, which changes workflows and waits for a maintainer, holds back
-# nothing else. The Debian base comes on its own.
+# as any other change. Each entry below lands in one weekly pull request of its
+# own, so an update that fails holds back only its entry, and the actions' pull
+# request, which changes workflows and waits for a maintainer, holds back
+# nothing else. .github/workflows/dependabot-arm.yml arms each of them for the
+# merge queue.
 version: 2
 updates:
   - package-ecosystem: github-actions
