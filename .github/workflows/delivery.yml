@@ -6,8 +6,10 @@
 # On a pull request it runs on pull_request_target, so that this workflow and
 # the script come from main's own definition: a pull request cannot change the
 # check that judges it. In the merge queue GitHub runs the queued merge's copy
-# of this workflow, but the job still checks out main and runs main's script on
-# the pull request the queued merge holds. Either way the job checks out main,
+# of this workflow, which checks out main and runs main's script on the pull
+# request the queued merge holds; a pull request that changes this workflow
+# decides what runs there, which is why it waits for a maintainer's approval
+# (.github/CODEOWNERS). Either way the job checks out main,
 # never the pull request's code, and only reads the pull request through the
 # API. Keep it so: no checkout of the pull request's ref, and no title or body
 # in a run: line.
@@ -43,7 +45,7 @@ jobs:
       # main, the base of the pull request or of the queue, never the pull request's code.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_ref || '' }}
+          ref: ${{ github.event.merge_group.base_ref }}
           persist-credentials: false
       # A queued merge's branch is gh-readonly-queue/<base>/pr-<number>-<commit>.
       - id: queued
