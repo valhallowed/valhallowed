@@ -27,8 +27,6 @@ namespace Valhallowed.Plugin
         public const string Version = "0.0.0";
 
         private const float SampleSeconds = 2f;
-        // A position is sent only after a player moves this far from the last one sent.
-        private const float MoveMetres = 3f;
         // Several minutes of positions for a full world of ten, should the sender stall.
         private const int QueueCapacity = 2000;
         // Intake's own request timeout.
@@ -56,6 +54,8 @@ namespace Valhallowed.Plugin
             // Null when the peer's id breaks B2: nothing is sent for it.
             public string Id;
             public Vector3? Sent;
+            // Time.unscaledTime when Sent was sent.
+            public float SentAt;
         }
 
         private void Awake()
@@ -146,6 +146,7 @@ namespace Valhallowed.Plugin
         private void SamplePlayers(ZNet net, ZDOMan objects)
         {
             DateTime now = DateTime.UtcNow;
+            float time = Time.unscaledTime;
             _seen.Clear();
             foreach (ZNetPeer peer in net.GetPeers())
             {
@@ -171,11 +172,14 @@ namespace Valhallowed.Plugin
                 }
                 Vector3 at = character.GetPosition();
                 if (!Batch.IsCoordinate(at.x) || !Batch.IsCoordinate(at.y) || !Batch.IsCoordinate(at.z)
-                    || (player.Sent.HasValue && Vector3.Distance(player.Sent.Value, at) < MoveMetres))
+                    || !Players.PositionDue(player.Sent.HasValue,
+                        player.Sent.HasValue ? Vector3.Distance(player.Sent.Value, at) : 0f,
+                        time - player.SentAt, SampleSeconds))
                 {
                     continue;
                 }
                 player.Sent = at;
+                player.SentAt = time;
                 _events.Add(Batch.Position(now, player.Id, at.x, at.y, at.z));
             }
 
