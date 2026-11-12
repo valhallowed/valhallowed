@@ -1,20 +1,30 @@
 # The rules of AGENTS.md § Delivering that a machine can check, on every pull
-# request: scripts/check-delivery.sh. The merge gate requires the job below by
-# its name, so renaming it here means renaming it in the ruleset.
+# request to main: scripts/check-delivery.sh. The merge gate requires the job
+# below by its name, so renaming it here means renaming it in the ruleset.
 #
 # It runs on pull_request_target so that this workflow and the script come from
 # main's own definition: a pull request cannot change the check that judges it.
 # That is safe here because the job checks out main, never the pull request's
 # code, and only reads the pull request through the API. Keep it so: no checkout
 # of the pull request's ref, and no title or body in a run: line.
+#
+# Its verdict holds as of the event that ran it. A push to an older pull
+# request, or an issue linked in the sidebar, runs nothing here: edit the body
+# or re-run the job to read the pull request again. A check run belongs to a
+# commit, not to a pull request, so a job named delivery in another branch's
+# workflow can report on the same commit; this guards against mistakes, not
+# against someone with write access who means harm.
 name: delivery
 
 on:
   pull_request_target:
+    branches: [main]
     types: [opened, edited, reopened, synchronize, ready_for_review, converted_to_draft]
 
 permissions:
   contents: read
+  pull-requests: read
+  issues: read
 
 concurrency:
   group: delivery-${{ github.event.pull_request.number }}
@@ -24,13 +34,8 @@ jobs:
   delivery:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    # A job's own permissions replace the top level ones, so contents stays.
-    permissions:
-      contents: read
-      pull-requests: read
-      issues: read
     steps:
-      # No ref: this is the base of the pull request, never its code.
+      # No ref: this is main, the base of the pull request, never its code.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
