@@ -1,16 +1,18 @@
 # Pinned dependencies move only through pull requests that pass the same checks
-# as any other change. Every ecosystem lands in one weekly pull request, except
-# the Debian base.
+# as any other change. Each entry below lands in one weekly pull request of its
+# own, so an update that fails holds back only its entry, and the actions' pull
+# request, which changes workflows and waits for a maintainer, holds back
+# nothing else. .github/workflows/dependabot-arm.yml arms each of them for the
+# merge queue.
 version: 2
-multi-ecosystem-groups:
-  weekly:
-    schedule:
-      interval: weekly
 updates:
   - package-ecosystem: github-actions
     directory: /
-    patterns: ["*"]
-    multi-ecosystem-group: weekly
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
   - package-ecosystem: docker
     directories:
       - /images/control-plane
@@ -18,8 +20,11 @@ updates:
       - /images/game-runtime
       - /images/tools
       - /images/web-map
-    patterns: ["*"]
-    multi-ecosystem-group: weekly
+    schedule:
+      interval: weekly
+    groups:
+      images:
+        patterns: ["*"]
     # The checks' Python (images/tools) follows the minor version the Debian
     # base ships, so the checks run the Python the images do: patch releases
     # only. scripts/check-images.sh fails when the two differ.
@@ -46,8 +51,11 @@ updates:
       - /control
       - /data
       - /runtime
-    patterns: ["*"]
-    multi-ecosystem-group: weekly
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns: ["*"]
     # These mirror the Debian packages the images install, and move with the
     # base image instead. types-jsonschema's stubs must match that jsonschema.
     # psycopg-binary is psycopg with libpq bundled, for the checks alone.
@@ -62,14 +70,20 @@ updates:
       - dependency-name: psycopg-binary
   - package-ecosystem: pip
     directory: /scripts
-    patterns: ["*"]
-    multi-ecosystem-group: weekly
+    schedule:
+      interval: weekly
+    groups:
+      scripts:
+        patterns: ["*"]
   # The web map's packages. Node's types follow the major version of the Node
   # the image ships, which moves by hand with NODE_VERSION.
   - package-ecosystem: npm
     directory: /web-map
-    patterns: ["*"]
-    multi-ecosystem-group: weekly
+    schedule:
+      interval: weekly
+    groups:
+      web-map:
+        patterns: ["*"]
     ignore:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]

@@ -63,9 +63,10 @@ the reasons.
 | Images or the install | `scripts/check-images.sh`, then `make accept` |
 | A pinned download's version (an `ARG` in a Dockerfile) | `scripts/check-upstream.sh` |
 
-CI runs all of these on every pull request and every push to `main`, except
-`scripts/check-upstream.sh`, which `nightly.yml` runs. Acceptance runs on the
-local build for a pull request and in `nightly.yml`, and from the registry on
+CI runs all of these on every pull request, in the merge queue and on every
+push to `main`, except `scripts/check-upstream.sh`, which `nightly.yml` runs.
+Acceptance runs on the local build for a pull request, in the merge queue and
+in `nightly.yml`, and from the registry on
 `main`, after CI pushes the images, and before a tag moves them. CI runs
 actionlint, shellcheck and Python from the images pinned in
 `images/tools/Dockerfile`; locally, run the same images, for shellcheck with
@@ -101,23 +102,26 @@ and lands through pull requests.
 - **One branch, one pull request, and one open pull request per track.** It
   opens as a draft when the branch does, holds single-purpose commits, and
   closes its issues (`Closes #n`). Related pull requests are combined into one.
-  A dependency update is not a slice: the week's Dependabot pull request and a
-  Debian base update each merge on their own once their gates pass, and one
-  that changes a workflow waits for a maintainer like any other. A Debian base
-  update whose build fails has its pins moved by hand, in a branch of our own
-  that replaces it.
-- **Up to date before it merges.** `main` takes a pull request only when its
-  checks passed on a branch up to date with `main`. Bring a branch up to date
-  by rebasing it, so its commits stay single-purpose.
-- **A pull request merges itself.** Once it is ready, auto-merge is switched on
-  for it, and GitHub merges it when its gates pass: `checks`, `build` and
-  `delivery`, on a branch up to date with `main`. `delivery` holds what a
-  machine can check of this section: the pull request is not a draft, closes
-  an issue, its Retro section is filled, a second reader is named where one is
-  due, and no older open pull request changes the same file, docs apart. A
-  dependency update, every commit of it Dependabot's, is exempt. It runs from
-  `main`'s own definition, so a pull request cannot change the check that
-  judges it.
+  A dependency update is not a slice: Dependabot's weekly pull requests, one
+  per entry of `.github/dependabot.yml`, the Debian base's among them, merge on
+  their own. `.github/workflows/dependabot-arm.yml` arms each for the merge
+  queue, except one that changes a workflow, which waits for a maintainer like
+  any other. A Debian base update whose build fails has its pins moved by hand,
+  in a branch of our own that replaces it.
+- **A pull request merges itself, through the merge queue.** Once it is ready,
+  auto-merge is switched on for it. The merge queue takes one pull request at
+  a time, so every merge is a commit build, and merges it when its gates pass
+  on the pull request and again on it merged with the newest `main`: `checks`,
+  `build` and `delivery`. A branch need not be up to date with `main`; it is
+  rebased only to resolve a conflict, so its commits stay single-purpose. A
+  pull request the queue drops on a failed gate is armed again by the agent
+  tier once the failure is fixed, or once a re-run passes. `delivery` holds
+  what a machine can check of this section: the pull request is not a draft,
+  closes an issue, its Retro section is filled, a second reader is named where
+  one is due, and no older open pull request changes the same file, docs
+  apart. A dependency update, every commit of it Dependabot's, is exempt. It
+  runs `main`'s own script, so a pull request cannot change the check that
+  judges it, unless it changes the workflow, which waits for a maintainer.
 - **A change to a workflow or to the delivery check waits for a maintainer.**
   `.github/CODEOWNERS` gives `.github/workflows/`, the delivery check's script
   and tests, and itself to the maintainers. A pull request that changes any of
@@ -130,9 +134,9 @@ and lands through pull requests.
   each issue it closes has its delivered tasks ticked. A pull request that
   changes `contracts/`, `schema/`, `control/`, `runtime/`, `images/`,
   `install/` or the pipeline's files is also read whole by a reviewer who wrote
-  none of it, named on the Retro section's `Second reader:` line. Its Retro section names the
-  reviews, then lists each finding and the commit that fixed it, or says
-  "No findings".
+  none of it, named on the Retro section's `Second reader:` line. Its Retro
+  section names the reviews, then lists each finding and the commit that fixed
+  it, or says "No findings".
 - **Fix, don't defer.** Every finding is fixed in the pull request. The one
   exception is a gap whose fix is the deliverable of a later slice that has an
   issue: it becomes a task in that issue, and its Retro row reads `task in #n`.

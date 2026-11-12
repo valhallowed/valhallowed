@@ -139,6 +139,11 @@ each child's configuration and the settings reference.
 **Map export** — The file the plugin writes with a world's map, the input to
 world render (B5).
 
+**Merge queue** — GitHub's queue in front of `main`. It takes one ready pull
+request at a time and merges it once the merge gate passes again on it merged
+with the newest `main`, so no branch is rebased only to catch up, and every
+merge is a commit build.
+
 **Milestone** — A set of slices that together reach a point in the delivery
 order, tracked as a GitHub milestone. It lands in one or more pull requests.
 
