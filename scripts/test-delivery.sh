@@ -72,12 +72,14 @@ pull() {
   jq -n --argjson old "$old" --arg login "$2" --argjson draft "$3" --arg body "$4" \
     '$old + {user: {login: $login}, draft: $draft, body: $body}' > "$f"
 }
-# commits N LOGIN...: the authors of pull request N's commits, on one page; an empty LOGIN is
-# a commit no GitHub account owns
+# commits N LOGIN...: the authors of pull request N's commits, on one page, each signed and
+# verified; an empty LOGIN is a commit no GitHub account owns
 commits() {
   local n=$1
   shift
-  jq -n '$ARGS.positional | map({author: (if . == "" then null else {login: .} end)})' --args "$@" \
+  jq -n '$ARGS.positional
+    | map({author: (if . == "" then null else {login: .} end), commit: {verification: {verified: true}}})' \
+    --args "$@" \
     > "$fix/commits-$n.json"
   set_pull "$n" ".commits = $#"
 }
@@ -214,9 +216,18 @@ check 'a dependabot[bot] pull request of dependabot[bot] commits passes at R0, b
 
 ready
 pull 7 "$bot" false ''
-{ jq -n '[{author: {login: "dependabot[bot]"}}]'; jq -n '[{author: {login: "dependabot[bot]"}}]'; } > "$fix/commits-7.json"
+commits 7 "$bot"
+jq -s 'add' "$fix/commits-7.json" "$fix/commits-7.json" > "$fix/one-page.json"
+jq '.[0:1], .[1:2]' "$fix/one-page.json" > "$fix/commits-7.json"
 set_pull 7 '.commits = 2'
 check 'dependabot[bot] commits on two pages pass at R0' 0 "$not_slice"
+
+ready
+pull 7 "$bot" false ''
+commits 7 "$bot"
+jq '.[0].commit.verification.verified = false' "$fix/commits-7.json" > "$fix/unsigned.json"
+mv "$fix/unsigned.json" "$fix/commits-7.json"
+check 'a dependabot[bot] commit GitHub has not verified: every rule applies' 1 "$no_retro"
 
 ready
 pull 7 "$bot" false ''
@@ -471,6 +482,10 @@ for path in contracts/b1.md schema/manifest.json control/app.py runtime/run.py i
   check "protected: $path" 1 "$(no_reader "$path")"
 done
 
+ready
+jq -n '[{filename: "plugin/a.sh", previous_filename: "scripts/a.sh"}]' | files_raw 7
+check 'a protected path renamed out of its directory' 1 "$(no_reader scripts/a.sh)"
+
 for path in plugin/Makefile plugin/scripts/a.sh docs/makefile.md scripts-old/a.sh data/a.py web-map/a.js; do
   ready
   files 7 "$path"
@@ -505,8 +520,17 @@ check 'a shared *.md file below the root is not a doc' 1 "$(shared plugin/README
 
 ready
 files 3 plugin/a.cs
+pull 3 'dependabot[bot]' false ''
+commits 3 'dependabot[bot]'
 open_prs 3:'dependabot[bot]' 7:alice
-check 'a file shared with an older dependabot[bot] pull request' 0 "$ok"
+check 'a file shared with an older dependency update' 0 "$ok"
+
+ready
+files 3 plugin/a.cs
+pull 3 'dependabot[bot]' false ''
+commits 3 'dependabot[bot]' bob
+open_prs 3:'dependabot[bot]' 7:alice
+check 'a file shared with an older dependabot[bot] pull request that is a slice' 1 "$(shared plugin/a.cs 3)"
 
 ready
 files 3 plugin/other.cs

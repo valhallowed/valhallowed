@@ -104,20 +104,33 @@ retro_heading='^## Retro[[:space:]]*$'
 
 pull=$(gh_api "repos/$GH_REPO/pulls/$pr") || die "cannot read pull request #$pr"
 
-# R0: a dependency update is a Dependabot pull request whose every commit is
-# Dependabot's. A commit pushed onto its branch makes it a slice, so the rules
-# apply. The API lists at most 250 commits, so a count short of the pull
-# request's own leaves it a slice too, and so does a commit no GitHub account owns.
-author=$(jq -r '.user.login // ""' <<< "$pull")
-if [[ $author == 'dependabot[bot]' ]]; then
-  bot_only=$(gh_api --paginate "repos/$GH_REPO/pulls/$pr/commits?per_page=100" \
-    | jq -rs --argjson pull "$pull" \
-      '[.[][] | .author.login // ""] as $logins | ($logins | length) == $pull.commits and all($logins[]; . == "dependabot[bot]")') \
-    || die "cannot list the commits of pull request #$pr"
-  if [[ $bot_only == true ]]; then
-    echo "delivery: a dependency update, not a slice"
-    exit 0
+# dependency_update N PULL: true when pull request N, whose own object is PULL, is a
+# dependency update: Dependabot opened it and every commit on it is Dependabot's,
+# with a signature GitHub verified. A commit pushed onto its branch makes it a
+# slice, and so does one pushed from a clone under Dependabot's name, which
+# carries no such signature. The API lists at most 250 commits, so a count short
+# of the pull request's own leaves it a slice too, and so does a commit no GitHub
+# account owns.
+dependency_update() {
+  local n=$1 expected
+  if [[ $(jq -r '.user.login // ""' <<< "$2") != 'dependabot[bot]' ]]; then
+    echo false
+    return
   fi
+  expected=$(jq '.commits // null' <<< "$2")
+  gh_api --paginate "repos/$GH_REPO/pulls/$n/commits?per_page=100" \
+    | jq -rs --argjson expected "$expected" '
+        [.[][]] as $commits
+        | ($commits | length) == $expected
+          and all($commits[]; (.author.login // "") == "dependabot[bot]" and .commit.verification.verified == true)' \
+    || die "cannot list the commits of pull request #$n"
+}
+
+# R0: a dependency update is not a slice, and no rule below applies to it.
+bot_only=$(dependency_update "$pr" "$pull") || exit 2
+if [[ $bot_only == true ]]; then
+  echo "delivery: a dependency update, not a slice"
+  exit 0
 fi
 
 # R1: the pull request closes an issue, through its body or the sidebar.
@@ -134,13 +147,16 @@ fi
 # R2: no file shared with an older open pull request, docs apart.
 files=$(changed_files "$pr" "$pull") || exit 2
 older=$(gh_api --paginate "repos/$GH_REPO/pulls?state=open&per_page=100" \
-  | jq -r --argjson pr "$pr" '.[] | select(.number < $pr and (.user.login // "") != "dependabot[bot]") | .number') \
+  | jq -r --argjson pr "$pr" '.[] | select(.number < $pr) | .number') \
   || die "cannot list the open pull requests"
 while IFS= read -r other; do
   [[ -n $other ]] || continue
   [[ $other =~ ^[0-9]+$ ]] || die "an open pull request has no number"
-  # The list of open pull requests carries no file count, so read each one's own.
+  # The list of open pull requests carries no file or commit count, so read each one's own.
   other_pull=$(gh_api "repos/$GH_REPO/pulls/$other") || die "cannot read pull request #$other"
+  # A dependency update holds no file against a slice, by R0's own test.
+  bot_only=$(dependency_update "$other" "$other_pull") || exit 2
+  [[ $bot_only != true ]] || continue
   theirs=$(changed_files "$other" "$other_pull") || exit 2
   shared=$(awk '
     FILENAME == ARGV[1] { mine[$0]; next }
