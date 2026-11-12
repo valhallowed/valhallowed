@@ -1,0 +1,8 @@
+# A change to a workflow, to the delivery check's script or tests, or to this
+# file merges only once a maintainer has approved it (AGENTS.md § Delivering).
+# The workflow fetches scripts/check-delivery.sh from the branch a pull request
+# targets, so a pull request that rewrote it would weaken every later check.
+/.github/workflows/ @scscodes
+/scripts/check-delivery.sh @scscodes
+/scripts/test-delivery.sh @scscodes
+/.github/CODEOWNERS @scscodes

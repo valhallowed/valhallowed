@@ -28,6 +28,8 @@ jobs:
         run: docker run --rm -v "$PWD:/repo:ro" -w /repo "$(scripts/tool-image.sh actionlint)" -no-color
       - name: Shell scripts
         run: docker run --rm -v "$PWD:/repo:ro" -w /repo "$(scripts/tool-image.sh shellcheck)" scripts/*.sh
+      - name: The delivery check's own tests
+        run: scripts/test-delivery.sh
       - name: Schemas and contracts
         run: scripts/check-schema.sh
       - name: Images CI builds are the images a release ships

@@ -10,5 +10,7 @@ Closes #
 
 Reviews:
 
+Second reader: <!-- who read the whole diff and wrote none of it; due when contracts/, schema/, control/, runtime/, images/, install/ or the pipeline's files change -->
+
 | Finding | Fixed in |
 |---|---|

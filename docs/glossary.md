@@ -175,6 +175,10 @@ schemas.
 **Retro** — The review a pull request passes before it is marked ready, and
 the fixes it calls for. AGENTS.md § Delivering says what it covers.
 
+**Second reader** — A reviewer who wrote none of a pull request and reads its
+whole diff in its retro. AGENTS.md § Delivering says which pull requests need
+one.
+
 **Secrets** — Sensitive values. A server manager supplies those that cannot
 be generated, such as a world's password or a chat service token, in a TOML
 file apart from the manifest, under the keys the secrets schema lists. VHD
