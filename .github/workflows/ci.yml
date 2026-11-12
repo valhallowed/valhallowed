@@ -1,9 +1,11 @@
-# The merge gate on pull requests. On main, also publish the commit channel and
-# accept it from the registry. Images are built here and nowhere else (G12).
+# The merge gate, on pull requests and again in the merge queue, on each pull
+# request merged with main. On main, also publish the commit channel and accept
+# it from the registry. Images are built here and nowhere else (G12).
 name: ci
 
 on:
   pull_request:
+  merge_group:
   push:
     branches: [main]
 
@@ -90,8 +92,9 @@ jobs:
           else
             docker buildx bake --load
           fi
-      # On a pull request, the merge gate installs the local build the way a server
-      # manager does; on main, accept below installs the pushed images.
+      # On a pull request and in the merge queue, the merge gate installs the local
+      # build the way a server manager does; on main, accept below installs the
+      # pushed images.
       - name: Accept the local build
         if: github.ref != 'refs/heads/main'
         env:
