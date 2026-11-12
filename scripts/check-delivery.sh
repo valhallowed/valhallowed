@@ -32,10 +32,22 @@ pr=$1
 # Bounded, and cut off from stdin so a call inside a read loop cannot eat the loop's input.
 gh_api() { timeout 60 gh api "$@" < /dev/null; }
 
-# A rename changes both paths, so a file's previous name counts as changed too.
+# changed_files N PULL: the file names of pull request N, whose own object is PULL.
+# The files API stops at 3000 files without an error. A listing short of the pull
+# request's own count means files unseen, so the check stops rather than pass on
+# part of the diff. A rename changes both paths, so a file's previous name counts
+# as changed too.
 changed_files() {
-  gh_api --paginate "repos/$GH_REPO/pulls/$1/files?per_page=100" \
-    | jq -r '.[] | (.filename, (.previous_filename // empty)) | gsub("[[:cntrl:]]"; "?")'
+  local n=$1 expected list listed
+  expected=$(jq -r '.changed_files // ""' <<< "$2")
+  [[ $expected =~ ^[0-9]{1,9}$ ]] || die "pull request #$n has no file count"
+  list=$(gh_api --paginate "repos/$GH_REPO/pulls/$n/files?per_page=100" | jq -s 'add // []') \
+    || die "cannot list the files of pull request #$n"
+  listed=$(jq 'length' <<< "$list")
+  if (( listed < expected )); then
+    die "pull request #$n is too large to check: GitHub lists $listed of its $expected files"
+  fi
+  jq -r '.[] | (.filename, (.previous_filename // empty)) | gsub("[[:cntrl:]]"; "?")' <<< "$list"
 }
 
 # Drop what is not the author's own answer: <!-- ... --> comments, which may span
@@ -120,14 +132,16 @@ if (( closing < 1 )); then
 fi
 
 # R2: no file shared with an older open pull request, docs apart.
-files=$(changed_files "$pr") || die "cannot list the files of pull request #$pr"
+files=$(changed_files "$pr" "$pull") || exit 2
 older=$(gh_api --paginate "repos/$GH_REPO/pulls?state=open&per_page=100" \
   | jq -r --argjson pr "$pr" '.[] | select(.number < $pr and (.user.login // "") != "dependabot[bot]") | .number') \
   || die "cannot list the open pull requests"
 while IFS= read -r other; do
   [[ -n $other ]] || continue
   [[ $other =~ ^[0-9]+$ ]] || die "an open pull request has no number"
-  theirs=$(changed_files "$other") || die "cannot list the files of pull request #$other"
+  # The list of open pull requests carries no file count, so read each one's own.
+  other_pull=$(gh_api "repos/$GH_REPO/pulls/$other") || die "cannot read pull request #$other"
+  theirs=$(changed_files "$other" "$other_pull") || exit 2
   shared=$(awk '
     FILENAME == ARGV[1] { mine[$0]; next }
     ($0 in mine) && $0 !~ /^docs\// && $0 !~ /^[^\/]+\.md$/

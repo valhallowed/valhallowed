@@ -75,11 +75,18 @@ commits() {
     > "$fix/commits-$n.json"
   set_pull "$n" ".commits = $#"
 }
-# files N PATH...: the changed files, on one page
+# files N PATH...: the changed files, on one page, and the file count of pull request N
 files() {
   local n=$1
   shift
   jq -n '$ARGS.positional | map({filename: .})' --args "$@" > "$fix/files-$n.json"
+  set_pull "$n" ".changed_files = $#"
+}
+# files_raw N: the pages of files given as JSON on stdin, served as they are, and the file count
+# of pull request N
+files_raw() {
+  cat > "$fix/files-$1.json"
+  set_pull "$1" ".changed_files = $(jq -s 'add | length' "$fix/files-$1.json")"
 }
 # closes N COUNT
 closes() {
@@ -502,14 +509,20 @@ check 'an older open pull request with no file in common' 0 "$ok"
 
 ready
 files 7 plugin/a.cs
-jq -n '[{filename: "plugin/new.cs", previous_filename: "plugin/a.cs"}]' > "$fix/files-3.json"
+jq -n '[{filename: "plugin/new.cs", previous_filename: "plugin/a.cs"}]' | files_raw 3
 open_prs 3:bob 7:alice
 check 'a file an older pull request renames' 1 "$(shared plugin/a.cs 3)"
 
 ready
-{ jq -n '[{filename: "plugin/x.cs"}]'; jq -n '[{filename: "plugin/a.cs"}]'; } > "$fix/files-3.json"
+{ jq -n '[{filename: "plugin/x.cs"}]'; jq -n '[{filename: "plugin/a.cs"}]'; } | files_raw 3
 open_prs 3:bob 7:alice
 check 'a shared file on the second page of files' 1 "$(shared plugin/a.cs 3)"
+
+ready
+{ jq -n '[{filename: "plugin/x.cs"}]'; jq -n '[{filename: "plugin/a.cs"}]'; } | files_raw 7
+files 3 plugin/a.cs
+open_prs 3:bob 7:alice
+check 'a file of this pull request on its second page of files' 1 "$(shared plugin/a.cs 3)"
 
 ready
 files 7 plugin/a.cs plugin/b.cs
@@ -560,7 +573,45 @@ check_error 'unreadable closing issues' 2 'cannot read the issues pull request #
 
 ready
 open_prs 3:bob 7:alice
+set_pull 3 '.changed_files = 1'
 check_error 'unreadable files of an older pull request' 2 'cannot list the files of pull request #3' 7
+
+ready
+files 3 plugin/other.cs
+rm "$fix/pull-3.json"
+open_prs 3:bob 7:alice
+check_error 'an unreadable older pull request' 2 'cannot read pull request #3' 7
+
+# A listing short of the pull request's file count is files unseen
+ready
+set_pull 7 '.changed_files = 3001'
+check_error 'this pull request lists fewer files than it has' 2 'pull request #7 is too large to check' 7
+
+ready
+files 3 plugin/other.cs
+set_pull 3 '.changed_files = 3001'
+open_prs 3:bob 7:alice
+check_error 'an older pull request lists fewer files than it has' 2 'pull request #3 is too large to check' 7
+
+ready
+set_pull 7 'del(.changed_files)'
+check_error 'this pull request has no file count' 2 'pull request #7 has no file count' 7
+
+ready
+files 3 plugin/other.cs
+set_pull 3 'del(.changed_files)'
+open_prs 3:bob 7:alice
+check_error 'an older pull request has no file count' 2 'pull request #3 has no file count' 7
+
+ready
+files 3 plugin/other.cs
+set_pull 3 '.changed_files = "many"'
+open_prs 3:bob 7:alice
+check_error 'an older pull request has a file count that is no number' 2 'pull request #3 has no file count' 7
+
+ready
+set_pull 7 '.changed_files = 0'
+check 'a listing longer than the count is not short of it' 0 "$ok"
 
 # The workflow runs the check from the branch a pull request targets, so whatever
 # defines the check must need a maintainer's approval to change.
