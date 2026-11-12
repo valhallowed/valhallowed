@@ -147,7 +147,7 @@
   const pipeData = {
     src: { kind: 'Source control', title: 'Commit or pull request', text: 'All of VHD lives in one repo (G17), so one commit moves the plugin, the services and the manifest schema together.', rows: [['Trigger', 'a pull request, or a merge to main'], ['Next', 'checks']] },
     checks: { kind: 'CI runner', title: 'Checks', text: 'Fast checks on every pull request and every push to main. They gate the merge.', rows: [['Runs', 'lint, unit tests, a contract test for every boundary, the manifest schema check, the public-content check'], ['Public-content check', 'rejects private addresses, internal host names, personal paths and email addresses, so none enters the public history'], ['Gate', 'merge gate']] },
-    merge: { kind: 'Source control', title: 'Merge to main', text: 'Main always builds. Branch protection holds the merge until the merge gate passes.', rows: [['Requires', 'merge gate green']] },
+    merge: { kind: 'Source control', title: 'Merge to main', text: 'Main always builds. The merge queue holds the merge until the merge gate passes on the pull request merged with the newest main.', rows: [['Requires', 'merge gate green']] },
     build: { kind: 'CI runner', title: 'Build', text: 'Asks Steam for the dedicated server’s current build, downloads that build, keeps its assemblies and discards the rest. CI keeps no cache of them. Nothing proprietary is committed or shipped.', rows: [['Produces', 'every image the install lists; the plugin, inside the game runtime image'], ['Inputs', 'the repo at one commit; the game build and its assemblies; the BepInEx pack'], ['Locally', 'the same steps run in the build lane']] },
     commitbuild: { kind: 'Registry', title: 'Commit build', text: 'Every merge publishes its images under the commit tag, the plugin inside the game runtime image. Nothing on this tag is meant for consumers.', rows: [['Tags', 'sha-<commit>, edge'], ['Followed by', 'CI acceptance, the dev lane']] },
     accept: { kind: 'CI runner', title: 'Acceptance', text: 'A clean runner installs VHD the way a server manager does, with vhd apply, and checks the install.', rows: [['Installs', 'on main and before a tag moves them, the registry’s images, so a missing push fails here; for a pull request and the nightly game check, the build it just made'], ['Checks', 'every image is from the commit; the world downloads the newest dedicated server and the plugin reports it loaded; a telemetry batch from the world, and the session the plugin starts, reach the database'], ['Gate', 'candidate gate']] },
@@ -157,7 +157,7 @@
     reltag: { kind: 'Source control', title: 'Release tag', text: 'A maintainer promotes a candidate that soaked clean.', rows: [['Requires', 'the release gate']] },
     release: { kind: 'Registry · GitHub Releases', title: 'Release', text: 'The candidate retagged with its version, plus a GitHub Release.', rows: [['Registry', 'images under the version tag'], ['GitHub Release', 'compose.yaml, both schemas, the plugin artifact and checksums; the notes name the game build the plugin was built against'], ['Site', 'valhallowed.com links to each release']] },
     relch: { kind: 'Consumers', title: 'Release channel', text: 'The default for every install. The maintainers’ own installs follow it like any other consumer.', rows: [['Updates', 'applied by the server manager with vhd apply; a game-server restart waits while players are online unless the server manager confirms it']] },
-    g1: { kind: 'Gate', title: 'Merge gate', text: 'Every check is green, on a branch up to date with main.', rows: [['Blocks', 'merge to main']] },
+    g1: { kind: 'Gate', title: 'Merge gate', text: 'Every check is green on the pull request, and again in the merge queue on it merged with the newest main.', rows: [['Blocks', 'merge to main']] },
     g2: { kind: 'Gate', title: 'Candidate gate', text: 'Acceptance passed on the commit’s registry images, and the newest nightly game check passed within 36 hours.', rows: [['Blocks', 'the candidate tag']] },
     g3: { kind: 'Gate', title: 'Release gate', text: 'The candidate soaked on the candidate channel with no open blockers.', rows: [['Blocks', 'the release tag']] }
   };
@@ -174,7 +174,7 @@
       pr: { label: 'Pull request', steps: [
         { t: 'Push a branch', d: 'A pull request starts the checks.', on: ['src', 'e-push', 'checks'] },
         { t: 'Checks run', d: 'Lint, unit and contract tests, the schema check and the public-content check, then acceptance of the pull request’s own build.', on: ['checks', 'accept'] },
-        { t: 'Merge gate', d: 'The merge stays blocked until every check is green on a branch up to date with main.', on: ['checks', 'e-green', 'g1', 'merge'] }
+        { t: 'Merge gate', d: 'The merge queue merges it once every check is green on the pull request, and again on it merged with the newest main.', on: ['checks', 'e-green', 'g1', 'merge'] }
       ] },
       merge: { label: 'Merge to main', steps: [
         { t: 'Merge', d: 'Every merge builds.', on: ['merge', 'e-merge', 'build'] },
