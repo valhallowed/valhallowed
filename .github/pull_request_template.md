@@ -10,7 +10,7 @@ Closes #
 
 Reviews:
 
-Second reader: <!-- who read the whole diff and wrote none of it; due when a contract, a schema, the control plane, the game runtime, an image or the pipeline changes -->
+Second reader: <!-- who read the whole diff and wrote none of it; due when contracts/, schema/, control/, runtime/, images/, install/ or the pipeline's files change -->
 
 | Finding | Fixed in |
 |---|---|
