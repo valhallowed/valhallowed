@@ -1,6 +1,6 @@
 # The merge gate, on pull requests and again in the merge queue, on each pull
-# request merged with main. On main, also publish the commit channel and accept
-# it from the registry. Images are built here and nowhere else (G12).
+# request merged with main. On main, the checks, then publish the commit channel
+# and accept it from the registry. Images are built here and nowhere else (G12).
 name: ci
 
 on:
@@ -51,8 +51,8 @@ jobs:
   # The merge gate's build, on a pull request and in the merge queue: the images
   # are built and loaded, never pushed, and the local build is installed and
   # accepted the way a server manager does. This job runs the pull request's
-  # own code, so its token cannot push (G12). Its first steps match publish's;
-  # keep the two alike.
+  # own code, so its token cannot push (G12). publish reuses its first five
+  # steps through the YAML anchors below.
   build:
     if: github.event_name != 'push'
     needs: checks
@@ -62,21 +62,27 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - &checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - id: tag
+      - &buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - &tag
+        id: tag
         run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-      - id: game
+      - &game
+        id: game
         name: The dedicated server's current build
         run: |
           build=$(scripts/game-build.sh)
           echo "build=$build" >> "$GITHUB_OUTPUT"
-      - name: Plugin, against the newest dedicated server
+      - &plugin
+        name: Plugin, against the newest dedicated server
         env:
           GAME_BUILD: ${{ steps.game.outputs.build }}
         run: make plugin BUILD="$GITHUB_SHA"
+      # A loaded image carries no attestations; publish adds them.
       - name: Build, and load the images
         env:
           VHD_BUILD: ${{ github.sha }}
@@ -90,11 +96,11 @@ jobs:
           scripts/render-install.sh "$TAG" dist/compose.yaml
           VHD_PULL=never scripts/accept.sh dist/compose.yaml "$GITHUB_SHA"
 
-  # main's build, pushed to the commit channel. It is the only job that holds
-  # packages: write, and it runs only on a push to main, on main's own code
-  # (G12); accept below installs what it pushed.
+  # main's build, pushed to the commit channel with the workflow's own token
+  # (G10). It is ci's only job that holds packages: write, and it runs only on a
+  # push to main, on main's own code (G12); accept below installs what it pushed.
   publish:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: checks
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -104,26 +110,15 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - id: tag
-        run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-      - id: game
-        name: The dedicated server's current build
-        run: |
-          build=$(scripts/game-build.sh)
-          echo "build=$build" >> "$GITHUB_OUTPUT"
-      - name: Plugin, against the newest dedicated server
-        env:
-          GAME_BUILD: ${{ steps.game.outputs.build }}
-        run: make plugin BUILD="$GITHUB_SHA"
+      - *checkout
+      - *buildx
+      - *tag
+      - *game
+      - *plugin
       - name: Log in to GHCR
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-      # Attestations travel with pushed images only.
       - name: Build, and push to the commit channel
         env:
           VHD_BUILD: ${{ github.sha }}
