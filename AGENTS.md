@@ -100,10 +100,11 @@ and lands through pull requests.
   against that commit.
 - **One branch, one pull request, and one open pull request per track.** It
   opens as a draft when the branch does, holds single-purpose commits, and
-  closes its issues (`Closes #n`). Related pull requests are combined into one,
-  dependency updates included: the week's Dependabot pull request is folded
-  into an open branch when there is one. A Debian base update stays apart,
-  since its pins move by hand.
+  closes its issues (`Closes #n`). Related pull requests are combined into one.
+  A dependency update is not a slice: the week's Dependabot pull request and a
+  Debian base update each merge on their own once their gates pass. A Debian
+  base update whose build fails has its pins moved by hand, in a branch of our
+  own that replaces it.
 - **Up to date before it merges.** `main` takes a pull request only when its
   checks passed on a branch up to date with `main`. Bring a branch up to date
   by rebasing it, so its commits stay single-purpose.
