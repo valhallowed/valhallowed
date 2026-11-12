@@ -23,9 +23,10 @@ updates:
     # The checks' Python (images/tools) follows the minor version the Debian
     # base ships, so the checks run the Python the images do: patch releases
     # only. scripts/check-images.sh fails when the two differ.
+    #
     # The plugin builds with the .NET SDK of an LTS release, and its test and
     # refcheck target that release's runtime, so a new major version moves by
-    # hand with their target frameworks.
+    # hand with their target frameworks; scripts/check-upstream.sh reports it.
     ignore:
       - dependency-name: python
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
