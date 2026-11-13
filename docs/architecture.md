@@ -64,8 +64,8 @@ flowchart LR
 - **Optional by default.** An absent secret turns off the capability that needs
   it, and status says why. If the manifest explicitly enables a capability and
   its secret is missing, the manifest is rejected.
-- **Internal secrets are generated, never asked for:** the bundled database's
-  password and every service-to-service token. The server manager supplies
+- **Internal secrets are generated, never asked for:** each service's password
+  for the bundled database, and every service-to-service token. The server manager supplies
   only what cannot be generated: world passwords and credentials for outside
   services (chat relay, LLM provider, their own database).
 - **Least privilege.** Each child receives only the secrets it needs. No child
@@ -207,9 +207,10 @@ markers and journal entries are records, never commands.
 - **Intake knows a world by its address.** It attributes a batch to the world
   whose container sent it, as the control plane's status listener does. No
   child can forge its address on the install network, so worlds hold no token.
-- **The database applies the schema.** At each start it applies the schema,
-  roles and grants in one transaction, then sets every role's password from its
-  secrets, before it reports `running`. No other service holds owner rights,
+- **The database applies the schema.** At each start, and again on a
+  generation whose passwords changed, it applies the schema, roles and grants in
+  one transaction, then sets every role's password from its secrets. At a start
+  it does this before it reports `running`. No other service holds owner rights,
   and a failure leaves the schema as it was.
 - **Services reach each other by name** on the install network and publish no
   host port, except the web map, on the port the manifest names (G9). A new

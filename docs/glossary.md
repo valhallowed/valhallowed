@@ -191,7 +191,7 @@ one.
 **Secrets** — Sensitive values. A server manager supplies those that cannot
 be generated, such as a world's password or a chat service token, in a TOML
 file apart from the manifest, under the keys the secrets schema lists. VHD
-generates the rest, such as the bundled database's password.
+generates the rest, such as each service's database password.
 
 **Secrets schema** — The versioned JSON Schema for the secrets file,
 `schema/secrets.schema.json`: the closed list of secret keys, each with its
