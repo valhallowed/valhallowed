@@ -11,11 +11,11 @@
 # host.
 #
 # A check is a standalone executable. It prints "accept: <why>" and
-# diagnostics to stderr and exits 1 on failure. It gets these exported
+# diagnostics to stderr and exits non-zero on failure. It gets these exported
 # variables: ACCEPT_PROJECT (compose project), ACCEPT_INSTALL (the directory
 # holding compose.yaml and manifest.toml), ACCEPT_COMMIT (the commit under
 # test), ACCEPT_WORLD_NAME, ACCEPT_WORLD_PORT, ACCEPT_WEB_MAP_PORT (the
-# manifest's), ACCEPT_WORLD, ACCEPT_CONTROL, ACCEPT_DATABASE, ACCEPT_INTAKE,
+# manifest's), ACCEPT_WORLD, ACCEPT_DATABASE, ACCEPT_INTAKE,
 # ACCEPT_WEB_MAP (container names or ids) and ACCEPT_STATUS (the last vhd
 # status output).
 set -euo pipefail
@@ -100,16 +100,20 @@ if [[ $state != running ]]; then
   cat "$install/status.err" >&2 2>/dev/null || true
   docker logs --tail 40 "$world" >&2 || true
   [[ -z $control ]] || docker logs --tail 20 "$control" >&2 || true
+  # The checks run only once the world runs, so a wrong build shows here too.
+  for image in $("$root/scripts/install-images.sh" "$install/compose.yaml" || true); do
+    echo "accept: $image is from build '$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image" 2>/dev/null || true)'" >&2
+  done
   exit 1
 fi
 
 export ACCEPT_PROJECT=$project ACCEPT_INSTALL=$install ACCEPT_COMMIT=$expected
 export ACCEPT_WORLD_NAME=$world_name ACCEPT_WORLD_PORT=$world_port ACCEPT_WEB_MAP_PORT=$web_map_port
-export ACCEPT_WORLD=$world ACCEPT_CONTROL=$control ACCEPT_STATUS=$status
+export ACCEPT_WORLD=$world ACCEPT_STATUS=$status
 export ACCEPT_DATABASE=${services[database]} ACCEPT_INTAKE=${services[intake]} ACCEPT_WEB_MAP=${services[web-map]}
 
 checks=("$root"/scripts/accept-[0-9][0-9]-*.sh)
 [[ -e ${checks[0]} ]] || { echo "accept: no checks found" >&2; exit 1; }
 for check in "${checks[@]}"; do
-  "$check" || exit 1
+  "$check" || { echo "accept: ${check##*/} failed" >&2; exit 1; }
 done
