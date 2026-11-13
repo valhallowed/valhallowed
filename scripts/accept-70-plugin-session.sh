@@ -7,9 +7,13 @@ set -euo pipefail
 
 started=''
 for _ in $(seq 12); do
-  started=$(docker exec "$ACCEPT_DATABASE" psql -h /run/postgresql -d vhd -tAc \
-    "SELECT s.id FROM session s JOIN world w ON w.id = s.world_id
-     WHERE w.name = '$ACCEPT_WORLD_NAME' AND s.started_at IS NOT NULL ORDER BY s.received_at DESC LIMIT 1")
+  # psql binds :'world' from standard input, not from -c.
+  started=$(docker exec -i "$ACCEPT_DATABASE" psql -h /run/postgresql -d vhd -tA -v ON_ERROR_STOP=1 \
+    -v world="$ACCEPT_WORLD_NAME" <<'SQL'
+SELECT s.id FROM session s JOIN world w ON w.id = s.world_id
+WHERE w.name = :'world' AND s.started_at IS NOT NULL ORDER BY s.received_at DESC LIMIT 1;
+SQL
+)
   [[ -n $started ]] && break
   sleep 5
 done
