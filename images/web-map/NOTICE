@@ -1,8 +1,8 @@
 The Valhallowed web-map image carries this third-party software, unmodified:
 
-Node.js 26.13.0 (/usr/local/bin/node)
+Node.js 26.13.1 (/usr/local/bin/node)
   MIT, with the licenses of what it bundles. License: node-LICENSE.
-  Source: https://github.com/nodejs/node/tree/v26.13.0
+  Source: https://github.com/nodejs/node/tree/v26.13.1
 
 npm packages (/opt/vhd/web-map/node_modules), at the versions web-map/package-lock.json
 pins, each with the license file it ships: ajv, MIT, and what it depends on:

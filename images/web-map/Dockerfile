@@ -5,7 +5,7 @@
 
 # Named once here; its checksums change with it, and scripts/check-upstream.sh
 # reports a newer LTS release.
-ARG NODE_VERSION=26.13.0
+ARG NODE_VERSION=26.13.1
 
 # Node links libatomic, which the base leaves out.
 FROM vhd-debian AS node
@@ -13,7 +13,7 @@ ARG NODE_VERSION
 RUN apt-get update \
  && apt-get install -y --no-install-recommends libatomic1=14.2.0-19 \
  && rm -rf /var/lib/apt/lists/*
-ADD --checksum=sha256:5848553868b402d3fabb5b09270649977780a390f832155721025a08b5104455 \
+ADD --checksum=sha256:518674de2b621728a5e4486f5fb3b7d2900bb3cc4aa97969edaa463db99f9778 \
     https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz /tmp/node.tar.gz
 RUN mkdir /node && tar -xzf /tmp/node.tar.gz -C /node --strip-components=1 && rm /tmp/node.tar.gz
 
