@@ -1,10 +1,11 @@
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from vhd_control.manifest import InvalidSettings, Settings, World, load
 from vhd_control.naming import child_id
-from vhd_control.reconcile import STATUS_URL, reconcile
+from vhd_control.reconcile import STATUS_INTERVAL_S, STATUS_URL, Generation, Service, reconcile
 from vhd_control.test_daemon import REPO, SCHEMAS
 
 
@@ -65,22 +66,77 @@ def test_two_worlds_that_would_share_a_service_name_are_refused(monkeypatch: pyt
         reconcile(settings(World("Ashwake", 2456, None), World("Meadowfold", 2459, None)), None)
 
 
-def test_the_database_holds_every_role_password_and_intake_only_its_own() -> None:
-    generation = reconcile(settings(World("Meadowfold", 2456, None)), None, token=lambda: "a" * 32)
-    assert generation.services["database"].secrets == {"contract": 1, "passwords": {"intake": "a" * 32}}
-    assert generation.services["intake"].secrets == {"contract": 1, "password": "a" * 32}
-    assert "a" * 32 not in repr(generation)
+def tokens(*values: str) -> Callable[[], str]:
+    """A token source that hands out values in order, and fails if asked for more."""
+    remaining = iter(values)
+    return lambda: next(remaining)
+
+
+INTAKE_PASSWORD = "i" * 32
+WEB_MAP_PASSWORD = "w" * 32
+
+
+def test_the_database_holds_every_role_password_and_each_service_only_its_own() -> None:
+    generation = reconcile(
+        settings(World("Meadowfold", 2456, None)), None, token=tokens(INTAKE_PASSWORD, WEB_MAP_PASSWORD)
+    )
+    assert generation.services["database"].secrets == {
+        "contract": 2,
+        "passwords": {"intake": INTAKE_PASSWORD, "web_map": WEB_MAP_PASSWORD},
+    }
+    assert generation.services["intake"].secrets == {"contract": 1, "password": INTAKE_PASSWORD}
+    assert generation.services["web-map"].secrets == {"contract": 2, "password": WEB_MAP_PASSWORD}
+    assert INTAKE_PASSWORD not in repr(generation)
+    assert WEB_MAP_PASSWORD not in repr(generation)
 
 
 def test_passwords_carry_on_from_the_generation_before() -> None:
-    tokens = iter(["a" * 32, "b" * 32])
-    first = reconcile(settings(World("Meadowfold", 2456, None)), None, token=lambda: next(tokens))
-    second = reconcile(settings(World("Meadowfold", 2457, None)), first, token=lambda: next(tokens))
+    token = tokens("a" * 32, "b" * 32, "c" * 32, "d" * 32)
+    first = reconcile(settings(World("Meadowfold", 2456, None)), None, token=token)
+    second = reconcile(settings(World("Meadowfold", 2457, None)), first, token=token)
     assert second.number == 2
     assert second.services["intake"].secrets["password"] == "a" * 32
-    # With the state lost, there is no generation before, and a new password.
-    lost = reconcile(settings(World("Meadowfold", 2456, None)), None, token=lambda: next(tokens))
-    assert lost.services["intake"].secrets["password"] == "b" * 32
+    assert second.services["web-map"].secrets["password"] == "b" * 32
+    # With the state lost, there is no generation before, and new passwords.
+    lost = reconcile(settings(World("Meadowfold", 2456, None)), None, token=token)
+    assert lost.services["intake"].secrets["password"] == "c" * 32
+    assert lost.services["web-map"].secrets["password"] == "d" * 32
+
+
+def test_a_generation_from_before_the_web_map_role_keeps_intake_and_gains_web_map() -> None:
+    meadowfold = settings(World("Meadowfold", 2456, None))
+    current = reconcile(meadowfold, None, token=tokens(INTAKE_PASSWORD, WEB_MAP_PASSWORD))
+    reporting = {"status_url": STATUS_URL, "status_interval_s": STATUS_INTERVAL_S}
+    # What a release before the web map's role left: the database holds intake's password alone.
+    before = Generation(
+        number=4,
+        children=current.children,
+        services={
+            **current.services,
+            "database": Service(
+                name="database",
+                generation={"contract": 1, **reporting},
+                secrets={"contract": 1, "passwords": {"intake": INTAKE_PASSWORD}},
+            ),
+            "web-map": Service(
+                name="web-map", generation={"contract": 1, **reporting}, secrets={"contract": 1}, port=8456
+            ),
+        },
+    )
+
+    after = reconcile(meadowfold, before, token=tokens("n" * 32))
+
+    assert after.number == 5
+    assert after.services["database"].secrets["passwords"] == {"intake": INTAKE_PASSWORD, "web_map": "n" * 32}
+    assert after.services["intake"] == before.services["intake"]
+    assert after.services["web-map"].secrets == {"contract": 2, "password": "n" * 32}
+
+
+def test_the_web_map_signs_in_to_the_database_as_its_own_role() -> None:
+    generation = reconcile(settings(World("Meadowfold", 2456, None)), None)
+    address = {"host": "database", "port": 5432, "name": "vhd"}
+    assert generation.services["web-map"].generation["database"] == {**address, "user": "web_map"}
+    assert generation.services["intake"].generation["database"] == {**address, "user": "intake"}
 
 
 def test_intake_takes_telemetry_from_the_worlds_the_generation_runs() -> None:
