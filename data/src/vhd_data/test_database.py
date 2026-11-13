@@ -29,6 +29,8 @@ EMBER = "9e4b7a1c-2d5f-4f08-b3a6-6c8d1e0f2a59"
 HOLLOW = "d2a6f0b8-3c9e-4e17-a5b4-7f1c8d3e6a20"
 AT = "2026-11-03T18:04:58Z"
 WEB_MAP_PASSWORD = "Zk3Qp8Vr1Lx6Tn2Wc9Hb4Yd7Fj0GmSaX"
+NEW_INTAKE_PASSWORD = "N3wPassw0rdN3wPassw0rdN3wPassw0r"
+NEW_WEB_MAP_PASSWORD = "Mw5Ds2Kc8Rn1Bx7Tq4Lv9Hj3Fy6GpZaE"
 
 
 def _free_port() -> int:
@@ -51,6 +53,17 @@ class Running:
             )
         )
 
+    def web_map(self, password: str = WEB_MAP_PASSWORD) -> psycopg.Connection[Any]:
+        return psycopg.connect(
+            host="127.0.0.1",
+            port=self.port,
+            dbname="vhd",
+            user="web_map",
+            password=password,
+            connect_timeout=5,
+            autocommit=True,
+        )
+
     def owner(self) -> psycopg.Connection[Any]:
         return self.database.connect()
 
@@ -62,9 +75,10 @@ class Running:
         raise AssertionError(f"the database is {self.database.state.get()}, not {state}")
 
 
-def database_documents(directory: Path, number: int, password: str = PASSWORD) -> None:
+def database_documents(directory: Path, number: int, intake: str = PASSWORD, web_map: str = WEB_MAP_PASSWORD) -> None:
     generation = {"status_url": STATUS_URL, "status_interval_s": 1}
-    write(directory, generation, {"passwords": {"intake": password}}, number)
+    passwords = {"intake": intake, "web_map": web_map}
+    write(directory, generation, {"passwords": passwords}, number, secrets_contract=2)
 
 
 @pytest.fixture(scope="module")
@@ -262,20 +276,9 @@ def test_the_live_players_are_a_security_barrier(running: Running) -> None:
 
 @pytest.fixture(scope="module")
 def web_map(running: Running) -> Iterator[psycopg.Connection[Any]]:
-    """A connection signed in as the web map's role. The database's secrets carry no password for it
-    yet, so no generation creates the role. The test hands schema.apply one, which creates the role and
-    applies its grants as production does."""
-    with running.owner() as owner:
-        schema.apply(owner, "vhd", {"web_map": WEB_MAP_PASSWORD})
-    with psycopg.connect(
-        host="127.0.0.1",
-        port=running.port,
-        dbname="vhd",
-        user="web_map",
-        password=WEB_MAP_PASSWORD,
-        connect_timeout=5,
-        autocommit=True,
-    ) as connection:
+    """A connection signed in as the web map's role, with the password the first generation handed the
+    database. The running database has applied it before it reports running."""
+    with running.web_map() as connection:
         yield connection
 
 
@@ -327,11 +330,10 @@ def test_a_wrong_password_cannot_sign_in(running: Running) -> None:
 
 
 def test_a_new_password_is_applied_in_place(running: Running) -> None:
-    new = "N3wPassw0rdN3wPassw0rdN3wPassw0r"
-    database_documents(running.directory, 2, new)
+    database_documents(running.directory, 2, NEW_INTAKE_PASSWORD)
     for _ in range(100):
         try:
-            running.intake(new).check()
+            running.intake(NEW_INTAKE_PASSWORD).check()
             break
         except Unavailable:
             threading.Event().wait(0.1)
@@ -341,10 +343,25 @@ def test_a_new_password_is_applied_in_place(running: Running) -> None:
         running.intake(PASSWORD).check()
 
 
+def test_a_new_web_map_password_is_applied_in_place(running: Running) -> None:
+    database_documents(running.directory, 3, NEW_INTAKE_PASSWORD, NEW_WEB_MAP_PASSWORD)
+    for _ in range(100):
+        try:
+            with running.web_map(NEW_WEB_MAP_PASSWORD) as connection:
+                connection.execute("SELECT 1 FROM live_player LIMIT 1")
+            break
+        except psycopg.OperationalError:
+            threading.Event().wait(0.1)
+    else:
+        raise AssertionError("the web map cannot sign in with its new password")
+    with pytest.raises(psycopg.OperationalError):
+        running.web_map(WEB_MAP_PASSWORD)
+
+
 def test_applying_again_changes_nothing(running: Running) -> None:
     with running.owner() as connection:
         before = connection.execute("SELECT count(*) FROM schema_migration").fetchone()
-        schema.apply(connection, "vhd", {"intake": "N3wPassw0rdN3wPassw0rdN3wPassw0r"})
+        schema.apply(connection, "vhd", {"intake": NEW_INTAKE_PASSWORD})
         after = connection.execute("SELECT count(*) FROM schema_migration").fetchone()
     assert before == after
 
