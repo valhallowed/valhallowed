@@ -45,13 +45,6 @@ test("a generation and its secrets read together", () => {
   const read = new Reader("web-map", dir, CONTRACTS).read();
   assert.equal(read?.number, 2);
   assert.equal(read?.generation.status_interval_s, 5);
-});
-
-test("the reader constructs against the real contracts, and reads the database and password", () => {
-  const dir = directory();
-  write(dir, "secrets.json", secrets(2));
-  write(dir, "generation.json", GENERATION);
-  const read = new Reader("web-map", dir, CONTRACTS).read();
   assert.deepEqual(read?.generation.database, GENERATION.database);
   assert.equal(read?.secrets.password.reveal(), PASSWORD);
 });
