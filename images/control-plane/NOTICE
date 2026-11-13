@@ -5,9 +5,9 @@ Docker CLI 29.9.3 (/usr/local/bin/docker)
   Apache-2.0. License: docker-cli-LICENSE, notice: docker-cli-NOTICE.
   Source: https://github.com/docker/cli/tree/v29.9.3
 
-Docker Compose 5.7.0 (/usr/local/libexec/docker/cli-plugins/docker-compose)
+Docker Compose 5.7.1 (/usr/local/libexec/docker/cli-plugins/docker-compose)
   Apache-2.0. License: docker-compose-LICENSE.
-  Source: https://github.com/docker/compose/tree/v5.7.0
+  Source: https://github.com/docker/compose/tree/v5.7.1
 
 Debian packages, each under the license in /usr/share/doc/<package>/copyright.
   Source: snapshot.debian.org, at the snapshot images/debian's base image names.
