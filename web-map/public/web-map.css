@@ -1,5 +1,26 @@
-/* The web map's own styles: every colour and font is a token from design/tokens.css. */
+/* The web map's own styles: every colour and font is a token from design/tokens.css. Linked after
+   leaflet.css, it overrides each colour and font that file sets on what the page shows. */
 body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); color: var(--ink); font-family: var(--font-body); }
-main { flex: 1; display: grid; place-items: center; padding: 16px; }
-h1 { font-family: var(--font-display); font-weight: 500; color: var(--hearth-ink); }
+main { flex: 1; display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+h1 { margin: 0; font-family: var(--font-display); font-weight: 500; color: var(--hearth-ink); }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+select { font: inherit; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
+#status { margin: 0; color: var(--ink-muted); }
+#status:empty { display: none; }
+#map { flex: 1; min-height: 20rem; border: 1px solid var(--line); border-radius: 4px; }
 footer { padding: 16px; color: var(--ink-muted); font-size: 0.875rem; }
+
+.leaflet-container { background: var(--panel); color: var(--ink); font-family: var(--font-body); }
+.leaflet-container a { color: var(--focus); }
+.leaflet-zoom-box { border-color: var(--focus); background: transparent; }
+.leaflet-bar { box-shadow: none; border: 1px solid var(--line); }
+.leaflet-bar a { background-color: var(--panel-2); color: var(--ink); border-bottom-color: var(--line); }
+.leaflet-bar a:hover, .leaflet-bar a:focus { background-color: var(--line-subtle); }
+.leaflet-bar a.leaflet-disabled { background-color: var(--panel-2); color: var(--ink-muted); }
+.leaflet-control-zoom-in, .leaflet-control-zoom-out { font-family: var(--font-mono); }
+.leaflet-tooltip { background-color: var(--panel-2); border-color: var(--line); color: var(--ink); box-shadow: none; }
+.leaflet-tooltip-top:before { border-top-color: var(--line); }
+.leaflet-tooltip-bottom:before { border-bottom-color: var(--line); }
+.leaflet-tooltip-left:before { border-left-color: var(--line); }
+.leaflet-tooltip-right:before { border-right-color: var(--line); }
+.player { stroke: var(--z-people); fill: var(--z-people); }

@@ -1,7 +1,8 @@
 # The web map: a TypeScript service (G19) on Node.js, on the snapshot Debian of
 # images/debian. The build stage compiles and tests it; the image carries the
-# compiled service, its production dependencies, its page, the contracts it
-# reads and the design system it is styled from.
+# compiled service, its production dependencies (Leaflet among them, which it
+# serves itself, never from a CDN), its page and the page's compiled script, the
+# contracts it reads and the design system it is styled from.
 
 # Named once here; its checksums change with it, and scripts/check-upstream.sh
 # reports a newer LTS release.
@@ -27,13 +28,13 @@ ENV PATH=/node/bin:$PATH
 WORKDIR /src/web-map
 COPY web-map/package.json web-map/package-lock.json ./
 RUN npm ci --ignore-scripts --no-audit --no-fund
-COPY web-map/tsconfig.json ./
+COPY web-map/tsconfig.json web-map/tsconfig.page.json ./
 COPY web-map/src/ src/
 COPY web-map/public/ public/
 COPY contracts/*.schema.json /src/contracts/
 COPY design/tokens.css /src/design/
 COPY design/fonts/ /src/design/fonts/
-RUN npx tsc -p . && npm test && npm prune --omit=dev \
+RUN npm run build && npm test && npm prune --omit=dev \
  && find node_modules -mindepth 1 -type d -empty -delete
 
 FROM vhd-debian AS web-map
@@ -54,6 +55,7 @@ COPY design/fonts/OFL-*.txt /opt/vhd/licenses/
 COPY web-map/package.json /opt/vhd/web-map/
 COPY --from=build /src/web-map/node_modules/ /opt/vhd/web-map/node_modules/
 COPY --from=build /src/web-map/dist/server/ /opt/vhd/web-map/server/
+COPY --from=build /src/web-map/dist/page/ /opt/vhd/web-map/page/
 COPY web-map/public/ /opt/vhd/web-map/public/
 COPY contracts/*.schema.json /opt/vhd/contracts/
 COPY design/tokens.css /opt/vhd/design/

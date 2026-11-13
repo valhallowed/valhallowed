@@ -1,8 +1,12 @@
--- The web map's one read of the data layer (B6): each world's live players and where they were
--- last seen. A live player is in their world's newest session (by when intake took it), has a
--- position there, and has not left since: their latest presence row in that session is a join, is
--- missing (a player whose name cleaned to nothing sends positions and no join), or is a leave
--- older than their latest position.
+-- The web map's one read of the data layer (B6): each world's players in its newest session (by
+-- when intake took it) who have not left, and where they were last seen. Such a player has a
+-- position there, and their latest presence row in that session is a join, is missing (a player
+-- whose name cleaned to nothing sends positions and no join), or is a leave older than their
+-- latest position.
+--
+-- The view does not check how recent that position is. A live player was also seen within three
+-- position intervals (docs/architecture.md § Data layer); the web map makes that check in its own
+-- query, on received_at, the database's clock (web-map/src/server/players.ts).
 --
 -- No id is a column, neither a player's nor a session's: a platform id never leaves the data layer
 -- through the web map. A player shows by name, null until intake takes their join.

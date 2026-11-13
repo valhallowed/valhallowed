@@ -1,9 +1,11 @@
-// The web map service, run by tini as its container's init. It serves from the moment it starts,
-// since nothing it serves yet depends on its generation, and reports status once a generation
-// arrives, adopting each new one in place.
+// The web map service, run by tini as its container's init. It serves its page from the moment it
+// starts, and reports status once a generation arrives, adopting each new one in place. The live
+// players need the database: until the web map reaches it they answer 503 and its state is
+// `starting`, while the page and /build, which the healthcheck reads, are served all the same.
 
 import { createServer } from "node:http";
 import { Adopter, Reader } from "./documents.js";
+import { Players } from "./players.js";
 import { assets, handler } from "./routes.js";
 import { report, Reporter, SERVICE } from "./status.js";
 
@@ -13,6 +15,8 @@ const PORT = 8456;
 const GENERATION = "/generation";
 const CONTRACTS = "/opt/vhd/contracts";
 const PUBLIC = "/opt/vhd/web-map/public";
+const PAGE = "/opt/vhd/web-map/page";
+const LEAFLET = "/opt/vhd/web-map/node_modules/leaflet/dist";
 const DESIGN = "/opt/vhd/design";
 const POLL_MS = 1000;
 // A slow or idle client cannot hold a connection open, and no flood of them exhausts the process.
@@ -27,22 +31,27 @@ function log(line: string): void {
 const reader = new Reader(SERVICE, GENERATION, CONTRACTS);
 const reporter = new Reporter(log);
 const held = new Adopter(reader, log);
+const players = new Players(log);
 let reportedAt = Number.NEGATIVE_INFINITY;
 
 async function tick(): Promise<void> {
   held.adopt();
   const documents = held.documents;
+  if (documents !== undefined) {
+    players.adopt(documents);
+    await players.tick();
+  }
   if (documents === undefined || Date.now() - reportedAt < documents.generation.status_interval_s * 1000) {
     return;
   }
   reportedAt = Date.now();
-  // Serving needs nothing the generation holds, so a web map with one runs.
-  await reporter.send(documents.generation.status_url, report(documents.number, "running"));
+  const { state, reason } = players.status();
+  await reporter.send(documents.generation.status_url, report(documents.number, state, reason));
 }
 
 const server = createServer(
   { headersTimeout: HEADERS_TIMEOUT_MS, requestTimeout: REQUEST_TIMEOUT_MS },
-  handler(process.env.VHD_BUILD ?? "unknown", assets(PUBLIC, DESIGN)),
+  handler(process.env.VHD_BUILD ?? "unknown", assets({ public: PUBLIC, page: PAGE, leaflet: LEAFLET, design: DESIGN }), () => players.read()),
 );
 server.maxConnections = MAX_CONNECTIONS;
 server.listen(PORT, () => log(`serving on ${PORT}`));
@@ -57,7 +66,9 @@ const timer = setInterval(() => {
 function stop(): void {
   running = false;
   clearInterval(timer);
-  server.close(() => process.exit(0));
+  server.close(() => {
+    players.end().finally(() => process.exit(0));
+  });
 }
 process.on("SIGTERM", stop);
 process.on("SIGINT", stop);

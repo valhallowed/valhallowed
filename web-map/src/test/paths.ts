@@ -4,4 +4,6 @@ import { fileURLToPath } from "node:url";
 // levels below web-map/, which sits beside contracts/ and design/.
 export const CONTRACTS = fileURLToPath(new URL("../../../contracts/", import.meta.url));
 export const DESIGN = fileURLToPath(new URL("../../../design/", import.meta.url));
+export const PAGE = fileURLToPath(new URL("../page/", import.meta.url));
+export const LEAFLET = fileURLToPath(new URL("../../node_modules/leaflet/dist/", import.meta.url));
 export const PUBLIC = fileURLToPath(new URL("../../public/", import.meta.url));

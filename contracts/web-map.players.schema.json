@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Live players",
+  "description": "B11: what the web map answers to GET /api/players, as JSON: each world's live players, by name and where they were last seen. A world shows only while it has a live player. It carries no platform id and no session id. The request carries nothing and needs no session: without sign-in the web map is public and read-only (B9). While the web map cannot read the database it answers 503 in plain text instead.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "worlds"],
+  "properties": {
+    "contract": {
+      "description": "The version of this contract.",
+      "const": 1
+    },
+    "worlds": {
+      "description": "Each world that has a live player.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/world" }
+    }
+  },
+  "$defs": {
+    "world": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "players"],
+      "properties": {
+        "name": {
+          "description": "The world's save name, as the manifest takes it. The pattern repeats schema/manifest.schema.json's save_name, which the web map's image does not ship, and widens with it.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9 _-]{0,62}[A-Za-z0-9])?$"
+        },
+        "players": {
+          "description": "The world's live players.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/player" }
+        }
+      }
+    },
+    "player": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "x", "y", "z"],
+      "properties": {
+        "name": {
+          "description": "The name the player chose, in one line of printable text. It need not be unique, and is null until intake takes their join.",
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "x": { "$ref": "intake.events.schema.json#/$defs/coordinate" },
+        "y": { "description": "Height.", "$ref": "intake.events.schema.json#/$defs/coordinate" },
+        "z": { "$ref": "intake.events.schema.json#/$defs/coordinate" }
+      }
+    }
+  }
+}
