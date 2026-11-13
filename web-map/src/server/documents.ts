@@ -5,6 +5,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { inspect } from "node:util";
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 
 export const GENERATION_FILE = "generation.json";
@@ -19,11 +20,34 @@ export interface Generation {
   database: { host: string; port: number; name: string; user: string };
 }
 
+/** A secret string that prints as "[redacted]" in JSON and in the inspector (console.log, util.
+ * inspect), so holding the documents does not log it by accident. Only reveal() returns it. The
+ * value is a private field, so it is not an enumerable property that a copy could lose. */
+export class Secret {
+  readonly #value: string;
+
+  constructor(value: string) {
+    this.#value = value;
+  }
+
+  reveal(): string {
+    return this.#value;
+  }
+
+  toJSON(): string {
+    return "[redacted]";
+  }
+
+  [inspect.custom](): string {
+    return "[redacted]";
+  }
+}
+
 /** contracts/web-map.secrets.schema.json */
 export interface Secrets {
   contract: number;
   generation: number;
-  password: string;
+  password: Secret;
 }
 
 export interface Documents {
@@ -82,12 +106,11 @@ export class Reader {
     if (!existsSync(secretsPath)) {
       throw new IncompleteDocuments(`generation ${number} has no ${SECRETS_FILE} yet`);
     }
-    const secrets = load(secretsPath, this.#secrets, true) as Secrets;
-    if (secrets.generation !== number) {
-      throw new IncompleteDocuments(`${SECRETS_FILE} belongs to generation ${secrets.generation}, not ${number}`);
+    const loaded = load(secretsPath, this.#secrets, true) as { contract: number; generation: number; password: string };
+    if (loaded.generation !== number) {
+      throw new IncompleteDocuments(`${SECRETS_FILE} belongs to generation ${loaded.generation}, not ${number}`);
     }
-    // Kept out of JSON.stringify and the inspector, so holding the documents cannot log it.
-    Object.defineProperty(secrets, "password", { enumerable: false });
+    const secrets: Secrets = { ...loaded, password: new Secret(loaded.password) };
     const documents = { number, generation, secrets };
     this.#read = { stamp, documents };
     return documents;

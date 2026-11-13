@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { Adopter, IncompleteDocuments, InvalidDocuments, Reader } from "../server/documents.js";
+import { inspect } from "node:util";
+import { Adopter, IncompleteDocuments, InvalidDocuments, Reader, Secret } from "../server/documents.js";
 import { CONTRACTS } from "./paths.js";
 
 const GENERATION = {
@@ -17,6 +18,10 @@ const PASSWORD = "Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6cXV4Zm9vYmFy";
 
 function secrets(generation: number): object {
   return { contract: 2, generation, password: PASSWORD };
+}
+
+function entriesCopy(value: object): object {
+  return Object.fromEntries(Object.entries(value));
 }
 
 function directory(): string {
@@ -40,6 +45,15 @@ test("a generation and its secrets read together", () => {
   const read = new Reader("web-map", dir, CONTRACTS).read();
   assert.equal(read?.number, 2);
   assert.equal(read?.generation.status_interval_s, 5);
+});
+
+test("the reader constructs against the real contracts, and reads the database and password", () => {
+  const dir = directory();
+  write(dir, "secrets.json", secrets(2));
+  write(dir, "generation.json", GENERATION);
+  const read = new Reader("web-map", dir, CONTRACTS).read();
+  assert.deepEqual(read?.generation.database, GENERATION.database);
+  assert.equal(read?.secrets.password.reveal(), PASSWORD);
 });
 
 test("secrets for another generation, or none, wait", () => {
@@ -77,21 +91,19 @@ test("a directory that shows other children's is refused", () => {
   assert.throws(() => new Reader("web-map", dir, CONTRACTS).read(), InvalidDocuments);
 });
 
-test("the reader constructs against the real contracts, and reads the database and password", () => {
+test("the held documents do not show the password, however they are printed or copied", () => {
   const dir = directory();
   write(dir, "secrets.json", secrets(2));
   write(dir, "generation.json", GENERATION);
   const read = new Reader("web-map", dir, CONTRACTS).read();
-  assert.deepEqual(read?.generation.database, GENERATION.database);
-  assert.equal(read?.secrets.password, PASSWORD);
-});
-
-test("the held documents do not show the password when serialized", () => {
-  const dir = directory();
-  write(dir, "secrets.json", secrets(2));
-  write(dir, "generation.json", GENERATION);
-  const read = new Reader("web-map", dir, CONTRACTS).read();
+  assert.ok(read !== undefined);
+  assert.ok(read.secrets.password instanceof Secret);
   assert.ok(!JSON.stringify(read).includes(PASSWORD));
+  assert.ok(!inspect(read, { depth: null, showHidden: true }).includes(PASSWORD));
+  assert.ok(!inspect({ ...read.secrets }).includes(PASSWORD));
+  assert.ok(!JSON.stringify(entriesCopy(read.secrets)).includes(PASSWORD));
+  assert.equal({ ...read.secrets }.password.reveal(), PASSWORD);
+  assert.equal(read.secrets.password.reveal(), PASSWORD);
 });
 
 test("a generation without a database is refused", () => {
