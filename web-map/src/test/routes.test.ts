@@ -2,14 +2,17 @@ import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, test } from "node:test";
+import type { LivePlayers } from "../server/players.js";
 import { assets, handler } from "../server/routes.js";
 import { DESIGN, PUBLIC } from "./paths.js";
 
+const LIVE: LivePlayers = { contract: 1, worlds: [{ name: "Alpha", players: [{ name: "Asa", x: 1, y: 2, z: 3 }] }] };
 let server: Server;
 let base: string;
+let players: () => Promise<LivePlayers> = async () => LIVE;
 
 before(async () => {
-  server = createServer(handler("abc1234", assets(PUBLIC, DESIGN)));
+  server = createServer(handler("abc1234", assets(PUBLIC, DESIGN), () => players()));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -56,4 +59,35 @@ test("only GET and HEAD are answered", async () => {
   const head = await fetch(`${base}/build`, { method: "HEAD" });
   assert.equal(head.status, 200);
   assert.equal(await head.text(), "");
+});
+
+test("/api/players is the live players, never stored", async () => {
+  players = async () => LIVE;
+  const response = await fetch(`${base}/api/players`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "application/json; charset=utf-8");
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.ok(response.headers.get("content-security-policy")?.includes("default-src 'self'"));
+  assert.deepEqual(await response.json(), LIVE);
+  const head = await fetch(`${base}/api/players`, { method: "HEAD" });
+  assert.equal(head.status, 200);
+  assert.equal(await head.text(), "");
+});
+
+test("/api/players is a plain 503 that says nothing of why, whether it refuses or throws", async () => {
+  for (const failure of [
+    () => Promise.reject(new Error("password authentication failed for user web_map")),
+    () => {
+      throw new Error("thrown at once");
+    },
+  ]) {
+    players = failure;
+    const response = await fetch(`${base}/api/players`);
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("content-type"), "text/plain; charset=utf-8");
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(await response.text(), "the live players are unavailable\n");
+  }
+  players = async () => LIVE;
 });

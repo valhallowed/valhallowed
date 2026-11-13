@@ -5,9 +5,12 @@ Node.js 26.13.1 (/usr/local/bin/node)
   Source: https://github.com/nodejs/node/tree/v26.13.1
 
 npm packages (/opt/vhd/web-map/node_modules), at the versions web-map/package-lock.json
-pins, each with the license file it ships: ajv, MIT, and what it depends on:
-fast-deep-equal, MIT; fast-uri, BSD-3-Clause; json-schema-traverse, MIT;
-require-from-string, MIT.
+pins, each with the license it ships (pg-types and pgpass ship theirs in their README): ajv, MIT,
+and what it depends on: fast-deep-equal, MIT; fast-uri, BSD-3-Clause; json-schema-traverse, MIT;
+require-from-string, MIT. pg, MIT, and what it depends on: pg-cloudflare, MIT (optional);
+pg-connection-string, MIT; pg-int8, ISC; pg-pool, MIT; pg-protocol, MIT; pg-types, MIT; pgpass,
+MIT; postgres-array, MIT; postgres-bytea, MIT; postgres-date, MIT; postgres-interval, MIT;
+split2, ISC; xtend, MIT.
 
 Alegreya SC, Alegreya Sans and IBM Plex Mono (/opt/vhd/design/fonts), from design/fonts
   SIL Open Font License 1.1. Licenses: OFL-alegreya-sc.txt, OFL-alegreya-sans.txt,
