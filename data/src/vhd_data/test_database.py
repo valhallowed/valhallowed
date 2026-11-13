@@ -345,17 +345,30 @@ def test_a_new_password_is_applied_in_place(running: Running) -> None:
 
 def test_a_new_web_map_password_is_applied_in_place(running: Running) -> None:
     database_documents(running.directory, 3, NEW_INTAKE_PASSWORD, NEW_WEB_MAP_PASSWORD)
-    for _ in range(100):
-        try:
-            with running.web_map(NEW_WEB_MAP_PASSWORD) as connection:
-                connection.execute("SELECT 1 FROM live_player LIMIT 1")
-            break
-        except psycopg.OperationalError:
-            threading.Event().wait(0.1)
-    else:
-        raise AssertionError("the web map cannot sign in with its new password")
-    with pytest.raises(psycopg.OperationalError):
-        running.web_map(WEB_MAP_PASSWORD)
+    try:
+        for _ in range(100):
+            try:
+                with running.web_map(NEW_WEB_MAP_PASSWORD) as connection:
+                    connection.execute("SELECT 1 FROM live_player LIMIT 1")
+                break
+            except psycopg.OperationalError:
+                threading.Event().wait(0.1)
+        else:
+            raise AssertionError("the web map cannot sign in with its new password")
+        with pytest.raises(psycopg.OperationalError):
+            running.web_map(WEB_MAP_PASSWORD)
+    finally:
+        # The module's other tests sign in with the first generation's passwords.
+        database_documents(running.directory, 4)
+        for _ in range(100):
+            try:
+                with running.web_map():
+                    running.intake().check()
+                break
+            except (psycopg.OperationalError, Unavailable):
+                threading.Event().wait(0.1)
+        else:
+            raise AssertionError("the first generation's passwords were not applied again")
 
 
 def test_applying_again_changes_nothing(running: Running) -> None:
