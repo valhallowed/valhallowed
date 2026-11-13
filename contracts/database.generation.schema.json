@@ -26,5 +26,19 @@
       "minimum": 1,
       "maximum": 60
     }
+  },
+  "$defs": {
+    "address": {
+      "description": "Where a service signs in to the database: its host and port on the install network, the database's name, and the role the service signs in as.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "port", "name", "user"],
+      "properties": {
+        "host": { "type": "string", "pattern": "^[A-Za-z0-9.-]{1,253}$" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "name": { "type": "string", "pattern": "^[a-z_][a-z0-9_]{0,62}$" },
+        "user": { "type": "string", "pattern": "^[a-z_][a-z0-9_]{0,62}$" }
+      }
+    }
   }
 }

@@ -28,15 +28,7 @@
     },
     "database": {
       "description": "Where intake signs in to the database, as its own role.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["host", "port", "name", "user"],
-      "properties": {
-        "host": { "type": "string", "pattern": "^[A-Za-z0-9.-]{1,253}$" },
-        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
-        "name": { "type": "string", "pattern": "^[a-z_][a-z0-9_]{0,62}$" },
-        "user": { "type": "string", "pattern": "^[a-z_][a-z0-9_]{0,62}$" }
-      }
+      "$ref": "database.generation.schema.json#/$defs/address"
     },
     "worlds": {
       "description": "The worlds whose telemetry intake takes, by the Compose service name of each world's container: a batch is taken only from the address Docker's DNS gives that name.",
