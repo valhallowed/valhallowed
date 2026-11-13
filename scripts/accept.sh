@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
 # Acceptance: install from a rendered compose file the way a server manager
-# does, with vhd from the control plane's image, and check that the install
-# runs the expected commit and that the plugin reports its loaded world: the
-# runtime downloads the newest dedicated server, and the server, BepInEx,
-# UnityDoorstop and the plugin all load. Then a synthetic telemetry batch,
-# sent from the world's container, must land in the database through intake,
-# and so must the session the plugin started. On a clean host it pulls from the
-# registry by default, so an image that was never pushed, or is not public,
-# cannot pass. VHD_PULL=never accepts a local build. The install uses ports
-# away from the defaults, so it never meets a real install on the same host.
+# does, with vhd from the control plane's image, and wait until the plugin
+# reports its loaded world: the runtime downloads the newest dedicated server,
+# and the server, BepInEx, UnityDoorstop and the plugin all load. Then run
+# every check, scripts/accept-NN-*.sh in name order; the first to fail stops
+# the run. A new check is a new file there. On a clean host the install pulls
+# from the registry by default, so an image that was never pushed, or is not
+# public, cannot pass. VHD_PULL=never accepts a local build. The install uses
+# ports away from the defaults, so it never meets a real install on the same
+# host.
+#
+# A check is a standalone executable. It prints "accept: <why>" and
+# diagnostics to stderr and exits non-zero on failure. It gets these exported
+# variables: ACCEPT_PROJECT (compose project), ACCEPT_INSTALL (the directory
+# holding compose.yaml and manifest.toml), ACCEPT_COMMIT (the commit under
+# test), ACCEPT_WORLD_NAME, ACCEPT_WORLD_PORT, ACCEPT_WEB_MAP_PORT (the
+# manifest's), ACCEPT_WORLD, ACCEPT_DATABASE, ACCEPT_INTAKE,
+# ACCEPT_WEB_MAP (container names or ids) and ACCEPT_STATUS (the last vhd
+# status output).
 set -euo pipefail
 
 [[ $# -eq 2 ]] || { echo "usage: $0 COMPOSE_FILE COMMIT" >&2; exit 2; }
@@ -38,58 +47,20 @@ printf 'schema = 1\n\n[world.%s]\nport = %d\n\n[web_map]\nport = %d\n' \
 chmod 755 "$install"
 chmod 644 "$install"/*
 
-# Compose reports its own progress on stderr; vhd's answer is stdout.
-expected_validate=$(printf '%s\n' "world $world_name: udp $world_port-$((world_port + 2)), password unset" \
-  "web map: tcp $web_map_port")
-if ! got=$("${cli[@]}" run --rm --pull "$pull" vhd validate) || [[ $got != "$expected_validate" ]]; then
-  echo "accept: vhd validate did not reconcile the manifest:" >&2
-  echo "$got" >&2
-  exit 1
-fi
-echo "accept: vhd validate reconciled the manifest"
-
-"${cli[@]}" run --rm vhd apply
+"${cli[@]}" run --rm --pull "$pull" vhd apply
 applied=$SECONDS
 echo "accept: vhd apply started the install"
 
-for image in $("$root/scripts/install-images.sh" "$install/compose.yaml"); do
-  revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")
-  if [[ $revision != "$expected" ]]; then
-    echo "accept: $image is from build '$revision', not $expected" >&2
-    exit 1
-  fi
-done
-got=$(curl -fsS --max-time 5 "http://127.0.0.1:$web_map_port/build")
-if [[ $got != "$expected" ]]; then
-  echo "accept: the web map serves build '$got', not $expected" >&2
-  exit 1
-fi
-echo "accept: every image is from build $expected"
-
-# The world runs as VHD's unprivileged user with every capability dropped.
 world=$(docker ps --filter "$label" --format '{{.Names}}' | grep -- '-world-' || true)
 if [[ $(wc -l <<< "$world") -ne 1 || -z $world ]]; then
   echo "accept: expected one world container, found: ${world:-none}" >&2
   exit 1
 fi
-read -r user caps < <(docker inspect --format '{{.Config.User}} {{json .HostConfig.CapDrop}}' "$world")
-if [[ $user != vhd || $caps != '["ALL"]' ]]; then
-  echo "accept: $world runs as '$user' dropping $caps; expected vhd dropping [\"ALL\"]" >&2
-  exit 1
-fi
-
-# Running means the plugin reported the loaded world. Held and unverified fail at
-# once, and so does a world or control plane container that stops or restarts:
-# with one generation neither has a reason to exit.
 control=$(docker ps -q --filter "$label" --filter label=com.docker.compose.service=control-plane)
 if [[ -z $control ]]; then
   echo "accept: no control plane container is running" >&2
   exit 1
 fi
-
-# The data layer's services run as VHD's unprivileged user with every
-# capability dropped, on the install network. Only the web map publishes a
-# port, the manifest's.
 declare -A services
 for service in database intake web-map; do
   services[$service]=$(docker ps -q --filter "$label" --filter "label=com.docker.compose.service=$service")
@@ -97,15 +68,11 @@ for service in database intake web-map; do
     echo "accept: no $service container is running" >&2
     exit 1
   fi
-  expected_ports='{}'
-  [[ $service != web-map ]] || expected_ports="{\"8456/tcp\":[{\"HostIp\":\"\",\"HostPort\":\"$web_map_port\"}]}"
-  read -r user caps ports < <(docker inspect \
-    --format '{{.Config.User}} {{json .HostConfig.CapDrop}} {{json .HostConfig.PortBindings}}' "${services[$service]}")
-  if [[ $user != vhd || $caps != '["ALL"]' || $ports != "$expected_ports" ]]; then
-    echo "accept: $service runs as '$user' dropping $caps publishing $ports; expected vhd dropping [\"ALL\"] publishing $expected_ports" >&2
-    exit 1
-  fi
 done
+
+# Running means the plugin reported the loaded world. Held and unverified fail at
+# once, and so does a world or control plane container that stops or restarts:
+# with one generation neither has a reason to exit.
 status='' state='' seen='' outcome=''
 while ((SECONDS - applied < wait_s)); do
   for container in "$world" "$control" "${services[@]}"; do
@@ -133,68 +100,20 @@ if [[ $state != running ]]; then
   cat "$install/status.err" >&2 2>/dev/null || true
   docker logs --tail 40 "$world" >&2 || true
   [[ -z $control ]] || docker logs --tail 20 "$control" >&2 || true
+  # The checks run only once the world runs, so a wrong build shows here too.
+  for image in $("$root/scripts/install-images.sh" "$install/compose.yaml" || true); do
+    echo "accept: $image is from build '$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image" 2>/dev/null || true)'" >&2
+  done
   exit 1
 fi
 
-# The data layer, once the world runs: its services running, then a batch
-# from the world's own container, which intake attributes to the world by its
-# address, found in the database.
-for service in database intake web-map; do
-  if ! grep -q "^$service service: running" <<< "$status"; then
-    echo "accept: vhd status does not show the $service service running:" >&2
-    echo "$status" >&2
-    docker logs --tail 40 "${services[$service]}" >&2 || true
-    exit 1
-  fi
+export ACCEPT_PROJECT=$project ACCEPT_INSTALL=$install ACCEPT_COMMIT=$expected
+export ACCEPT_WORLD_NAME=$world_name ACCEPT_WORLD_PORT=$world_port ACCEPT_WEB_MAP_PORT=$web_map_port
+export ACCEPT_WORLD=$world ACCEPT_STATUS=$status
+export ACCEPT_DATABASE=${services[database]} ACCEPT_INTAKE=${services[intake]} ACCEPT_WEB_MAP=${services[web-map]}
+
+checks=("$root"/scripts/accept-[0-9][0-9]-*.sh)
+[[ -e ${checks[0]} ]] || { echo "accept: no checks found" >&2; exit 1; }
+for check in "${checks[@]}"; do
+  "$check" || { echo "accept: ${check##*/} failed" >&2; exit 1; }
 done
-session=$(cat /proc/sys/kernel/random/uuid)
-answer=$(docker exec -i "$world" python3 - "$session" <<'PY'
-import json, sys, urllib.error, urllib.request
-at = "2026-01-01T00:00:00Z"
-player = {"id": "Steam_accept"}
-events = [
-    {"kind": "player.join", "at": at, "player": {**player, "name": "Accept"}},
-    {"kind": "player.position", "at": at, "player": player, "x": 1.5, "y": 30.0, "z": -2.5},
-]
-body = json.dumps({"contract": 1, "session": sys.argv[1], "sent_at": at, "events": events}).encode()
-request = urllib.request.Request("http://intake:9458/events", data=body, method="POST",
-                                 headers={"Content-Type": "application/json"})
-try:
-    with urllib.request.urlopen(request, timeout=10) as response:
-        print(response.status, response.read().decode())
-except urllib.error.HTTPError as error:
-    print(error.code, error.read().decode())
-PY
-)
-if [[ $answer != '202 {"accepted": 2, "dropped": 0}' ]]; then
-  echo "accept: intake answered the world's batch with: $answer" >&2
-  docker logs --tail 40 "${services[intake]}" >&2 || true
-  exit 1
-fi
-stored=$(docker exec "${services[database]}" psql -h /run/postgresql -d vhd -tAc \
-  "SELECT w.name, p.x, p.z FROM position p JOIN session s ON s.id = p.session_id
-   JOIN world w ON w.id = s.world_id WHERE p.session_id = '$session'")
-if [[ $stored != "$world_name|1.5|-2.5" ]]; then
-  echo "accept: the database holds '$stored' for the world's batch, not $world_name at 1.5, -2.5" >&2
-  exit 1
-fi
-echo "accept: a batch from the world's container reached the database through intake"
-
-# The plugin's own session: it starts one when the world loads and sends
-# session.start until intake accepts it, so it reaches the database within a
-# few of the sender's 5 s rounds. Only the plugin sends session.start.
-started=''
-for _ in $(seq 12); do
-  started=$(docker exec "${services[database]}" psql -h /run/postgresql -d vhd -tAc \
-    "SELECT s.id FROM session s JOIN world w ON w.id = s.world_id
-     WHERE w.name = '$world_name' AND s.started_at IS NOT NULL ORDER BY s.received_at DESC LIMIT 1")
-  [[ -n $started ]] && break
-  sleep 5
-done
-if [[ -z $started ]]; then
-  echo "accept: the database holds no session the plugin started for $world_name" >&2
-  docker logs "$world" 2>&1 | grep -F ':Valhallowed]' | tail -20 >&2 || true
-  exit 1
-fi
-echo "accept: the plugin's session $started reached the database through intake"
-

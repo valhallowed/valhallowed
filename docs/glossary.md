@@ -8,7 +8,9 @@ meaning for an old one, lands here first.
 
 **Acceptance** — Installing images from the registry, anonymously, on a clean
 runner, then checking that the install works. The same check runs on a local
-build for a pull request and in `make accept`.
+build for a pull request and in `make accept`. It waits for the world to load,
+then runs each acceptance check, a file of its own in `scripts/` named
+`accept-NN-*.sh`, in name order.
 
 **Acceptance material** — Recorded sessions, world saves, schema constraints
 and chat-command contracts that every capability must keep. Synthesized or
