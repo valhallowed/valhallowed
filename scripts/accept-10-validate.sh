@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Acceptance check: vhd validate, run from the control plane's image against the
 # installed compose file and manifest, reconciles the manifest: it reports the
-# world and web map ports the manifest sets. See accept.sh for the ACCEPT_ variables.
+# world's ports and password state and the web map's port as the manifest sets
+# them. See accept.sh for the ACCEPT_ variables.
 set -euo pipefail
 
 cli=(docker compose -p "$ACCEPT_PROJECT" -f "$ACCEPT_INSTALL/compose.yaml")
