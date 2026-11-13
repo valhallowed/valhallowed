@@ -4,7 +4,12 @@
 # serves it. See accept.sh for the ACCEPT_ variables.
 set -euo pipefail
 
-for image in $("$(dirname "$0")/install-images.sh" "$ACCEPT_INSTALL/compose.yaml"); do
+images=$("$(dirname "$0")/install-images.sh" "$ACCEPT_INSTALL/compose.yaml")
+if [[ -z $images ]]; then
+  echo "accept: the compose file names no image" >&2
+  exit 1
+fi
+for image in $images; do
   revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")
   if [[ $revision != "$ACCEPT_COMMIT" ]]; then
     echo "accept: $image is from build '$revision', not $ACCEPT_COMMIT" >&2
