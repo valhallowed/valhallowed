@@ -8,6 +8,10 @@ import pg from "pg";
 import type { Documents } from "./documents.js";
 import type { Log, State } from "./status.js";
 
+// A live player was seen within three of the plugin's position intervals, which are 30 s
+// (plugin/src/Telemetry/Players.cs; docs/architecture.md § Data layer, live player). A world that
+// stopped sends no leave, so this cut is what ends its players.
+export const LIVE_WINDOW_S = 90;
 // How long a read's answer serves later requests: many viewers poll, the database is asked once.
 export const CACHE_MS = 2000;
 // Waits between attempts to reach the database, doubling to the most.
@@ -57,7 +61,11 @@ export type Connect = (documents: Documents, log: Log) => Connection;
 /** Players cannot be read: the database is not reached yet, or has failed. */
 export class Unavailable extends Error {}
 
-const READ = "SELECT world, name, x, y, z FROM live_player ORDER BY world, name NULLS LAST";
+// received_at is the database's clock, which one machine keeps; a game's own clock (at) is not.
+const READ =
+  "SELECT world, name, x, y, z FROM live_player " +
+  "WHERE received_at > now() - make_interval(secs => $1) " +
+  "ORDER BY world, name NULLS LAST";
 const CHECK = "SELECT 1 FROM live_player LIMIT 1";
 
 /** The rows grouped by world, in the order they come: a world shows only with a live player. */
@@ -191,7 +199,7 @@ export class Players {
 
   async #fetch(connection: Connection, now: number): Promise<LivePlayers> {
     try {
-      const answer = grouped(await connection.query(READ, []));
+      const answer = grouped(await connection.query(READ, [LIVE_WINDOW_S]));
       if (connection === this.#connection) {
         this.#cache = { at: now, answer };
       }
