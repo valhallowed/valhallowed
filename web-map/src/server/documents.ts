@@ -124,3 +124,41 @@ function problem(errors: ErrorObject[]): string {
   }
   return `at ${first.instancePath || "(root)"}: ${first.message ?? first.keyword}`;
 }
+
+/** Holds the last good documents. Each pass takes a higher generation, or keeps what it holds
+ * when the pair is refused or incomplete; a refusal is logged once, not on every pass. */
+export class Adopter {
+  readonly #reader: Pick<Reader, "read">;
+  readonly #log: (line: string) => void;
+  #documents: Documents | undefined;
+  #refused: string | undefined;
+
+  constructor(reader: Pick<Reader, "read">, log: (line: string) => void) {
+    this.#reader = reader;
+    this.#log = log;
+  }
+
+  get documents(): Documents | undefined {
+    return this.#documents;
+  }
+
+  /** Take a new generation, or say why one cannot be taken; the last good one keeps running. */
+  adopt(): void {
+    try {
+      const read = this.#reader.read();
+      if (read !== undefined && read.number !== this.#documents?.number) {
+        this.#log(`generation ${read.number} adopted`);
+        this.#documents = read;
+        this.#refused = undefined;
+      }
+    } catch (error) {
+      if (!(error instanceof InvalidDocuments || error instanceof IncompleteDocuments)) {
+        throw error;
+      }
+      if (error instanceof InvalidDocuments && error.message !== this.#refused) {
+        this.#log(`refused this generation: ${error.message}`);
+        this.#refused = error.message;
+      }
+    }
+  }
+}
