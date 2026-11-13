@@ -57,6 +57,7 @@ class Database:
     state: State = field(default_factory=State, init=False)
     _stop: threading.Event = field(default_factory=threading.Event, init=False)
     _server: subprocess.Popen[bytes] | None = field(default=None, init=False)
+    _refused: str | None = field(default=None, init=False)
 
     def request_stop(self, signum: int = 0, frame: object = None) -> None:
         self._stop.set()
@@ -111,13 +112,20 @@ class Database:
         return None
 
     def _read(self) -> Documents | None:
+        """The current documents, or None. A refusal is logged once, until it changes or a generation
+        is read."""
         try:
-            return self.reader.read()
+            documents = self.reader.read()
         except IncompleteDocuments:
             return None
         except InvalidDocuments as error:
-            _log.error("refused this generation: %s", error)
+            if str(error) != self._refused:
+                _log.error("refused this generation: %s", error)
+                self._refused = str(error)
             return None
+        if documents is not None:
+            self._refused = None
+        return documents
 
     def _init(self) -> None:
         """Create the cluster at first start. A cluster from an interrupted initdb is removed first,
