@@ -1,6 +1,6 @@
 # The merge gate, on pull requests and again in the merge queue, on each pull
-# request merged with main. On main, also publish the commit channel and accept
-# it from the registry. Images are built here and nowhere else (G12).
+# request merged with main. On main, the checks, then publish the commit channel
+# and accept it from the registry. Images are built here and nowhere else (G12).
 name: ci
 
 on:
@@ -44,71 +44,91 @@ jobs:
       - name: The data layer against its own PostgreSQL
         run: scripts/check-data-layer.sh
 
-  # No build cache is kept between runs: the game stage holds Valve's and Iron
-  # Gate's assemblies, and a cache main writes, a pull request from a fork could
-  # restore.
+  # No build cache is kept between runs, in build or publish: the game stage
+  # holds Valve's and Iron Gate's assemblies, and a cache main writes, a pull
+  # request from a fork could restore.
+  #
+  # The merge gate's build, on a pull request and in the merge queue: the images
+  # are built and loaded, never pushed, and the local build is installed and
+  # accepted the way a server manager does. This job runs the pull request's
+  # own code, so its token cannot push (G12). publish reuses its first five
+  # steps through the YAML anchors below.
   build:
+    if: github.event_name != 'push'
     needs: checks
     runs-on: ubuntu-24.04
     # The game stage downloads the dedicated server; SteamCMD's tries are bounded too.
     timeout-minutes: 90
-    # packages: write is used only on main, where the push step runs; a fork's
-    # pull request gets a read-only token whatever this says. A same-repo pull
-    # request and a queued merge run their own code in this job, so that code
-    # could reach the token: the gate's reviews, not the token, keep it off GHCR.
     permissions:
       contents: read
-      packages: write
-    outputs:
-      tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - &checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - id: tag
+      - &buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - &tag
+        id: tag
         run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-      - id: game
+      - &game
+        id: game
         name: The dedicated server's current build
         run: |
           build=$(scripts/game-build.sh)
           echo "build=$build" >> "$GITHUB_OUTPUT"
-      - name: Plugin, against the newest dedicated server
+      - &plugin
+        name: Plugin, against the newest dedicated server
         env:
           GAME_BUILD: ${{ steps.game.outputs.build }}
         run: make plugin BUILD="$GITHUB_SHA"
-      - name: Log in to GHCR
-        if: github.ref == 'refs/heads/main'
-        env:
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-      - name: Build, and on main push to the commit channel
+      # A loaded image carries no attestations; publish adds them.
+      - name: Build, and load the images
         env:
           VHD_BUILD: ${{ github.sha }}
           GAME_BUILD: ${{ steps.game.outputs.build }}
           TAGS: ${{ steps.tag.outputs.tag }},edge
-        run: |
-          if [[ $GITHUB_REF == refs/heads/main ]]; then
-            # Attestations travel with pushed images only.
-            docker buildx bake --push --provenance=mode=max --sbom=true
-          else
-            docker buildx bake --load
-          fi
-      # On a pull request and in the merge queue, the merge gate installs the local
-      # build the way a server manager does; on main, accept below installs the
-      # pushed images.
+        run: docker buildx bake --load
       - name: Accept the local build
-        if: github.ref != 'refs/heads/main'
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           scripts/render-install.sh "$TAG" dist/compose.yaml
           VHD_PULL=never scripts/accept.sh dist/compose.yaml "$GITHUB_SHA"
 
+  # main's build, pushed to the commit channel with the workflow's own token
+  # (G10). It is ci's only job that holds packages: write, and it runs only on a
+  # push to main, on main's own code (G12); accept below installs what it pushed.
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - *checkout
+      - *buildx
+      - *tag
+      - *game
+      - *plugin
+      - name: Log in to GHCR
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Build, and push to the commit channel
+        env:
+          VHD_BUILD: ${{ github.sha }}
+          GAME_BUILD: ${{ steps.game.outputs.build }}
+          TAGS: ${{ steps.tag.outputs.tag }},edge
+        run: docker buildx bake --push --provenance=mode=max --sbom=true
+
   # promote.sh finds this job by its name; renaming it here means renaming it there.
   accept:
-    needs: build
-    if: github.ref == 'refs/heads/main'
+    needs: publish
     runs-on: ubuntu-24.04
     # accept.sh waits up to 20 minutes for the world, and prints why on a failure.
     timeout-minutes: 40
@@ -118,7 +138,7 @@ jobs:
           persist-credentials: false
       - name: Install from the registry, anonymously, and accept
         env:
-          TAG: ${{ needs.build.outputs.tag }}
+          TAG: ${{ needs.publish.outputs.tag }}
         run: |
           scripts/render-install.sh "$TAG" dist/compose.yaml --pin
           scripts/accept.sh dist/compose.yaml "$GITHUB_SHA"
