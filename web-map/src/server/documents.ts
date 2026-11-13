@@ -167,7 +167,7 @@ function problem(errors: ErrorObject[]): string {
   return `at ${first.instancePath || "(root)"}: ${first.message ?? first.keyword}`;
 }
 
-/** Holds the last good documents. Each pass takes a higher generation, or keeps what it holds
+/** Holds the last good documents. Each pass takes a new generation, or keeps what it holds
  * when the pair is refused or incomplete; a refusal is logged once, not on every pass. */
 export class Adopter {
   readonly #reader: Pick<Reader, "read">;
