@@ -5,8 +5,9 @@ documents change, and a runtime adopts a new number for unchanged documents with
 restart, so a change to one world never restarts another.
 
 The data layer's internal passwords are generated here, never asked for (Secrets), and each
-generation carries on the one before's, so they change only when the install's state is lost.
-The database then sets every role's password again at its next start.
+generation carries on the one before's, so a password changes only when the install's state is
+lost, and a role new to the install gets one. The database sets every role's password again
+whenever they change.
 """
 
 import secrets
