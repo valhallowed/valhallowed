@@ -20,7 +20,7 @@
       "enum": ["database", "intake", "web-map"]
     },
     "state": {
-      "description": "starting: not yet serving, such as the database applying its schema, or intake waiting for the database. running: serving. failing: it cannot serve, and keeps trying; the reason says why.",
+      "description": "starting: not yet doing all its work, such as the database applying its schema, intake waiting for the database, or the web map waiting to read the live players while it serves its page. running: doing all its work. failing: it cannot serve, and keeps trying; the reason says why.",
       "enum": ["starting", "running", "failing"]
     },
     "reason": {
