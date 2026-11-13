@@ -17,12 +17,25 @@ const NO_STORE = { "Cache-Control": "no-store" };
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
   ".woff2": "font/woff2",
 };
 
-/** The files the web map serves, by request path: its own pages, and the design system's tokens
- * and fonts under /design/, where tokens.css finds its fonts by relative path. */
-export function assets(publicDir: string, designDir: string): Map<string, Asset> {
+export interface Directories {
+  /** The page and its styles. */
+  public: string;
+  /** The page's compiled script. */
+  page: string;
+  /** Leaflet's dist directory. */
+  leaflet: string;
+  /** The design system. */
+  design: string;
+}
+
+/** The files the web map serves, by request path: its own page, styles and script; the two files
+ * of Leaflet it needs, by name, under /leaflet/; and the design system's tokens and fonts under
+ * /design/, where tokens.css finds its fonts by relative path. */
+export function assets(directories: Directories): Map<string, Asset> {
   const served = new Map<string, Asset>();
   const add = (path: string, file: string): void => {
     const type = TYPES[file.slice(file.lastIndexOf("."))];
@@ -30,12 +43,16 @@ export function assets(publicDir: string, designDir: string): Map<string, Asset>
       served.set(path, { type, body: readFileSync(file) });
     }
   };
-  for (const name of readdirSync(publicDir)) {
-    add(name === "index.html" ? "/" : `/${name}`, join(publicDir, name));
+  for (const name of readdirSync(directories.public)) {
+    add(name === "index.html" ? "/" : `/${name}`, join(directories.public, name));
   }
-  add("/design/tokens.css", join(designDir, "tokens.css"));
-  for (const name of readdirSync(join(designDir, "fonts"))) {
-    add(`/design/fonts/${name}`, join(designDir, "fonts", name));
+  add("/web-map.js", join(directories.page, "web-map.js"));
+  for (const name of ["leaflet.js", "leaflet.css"]) {
+    add(`/leaflet/${name}`, join(directories.leaflet, name));
+  }
+  add("/design/tokens.css", join(directories.design, "tokens.css"));
+  for (const name of readdirSync(join(directories.design, "fonts"))) {
+    add(`/design/fonts/${name}`, join(directories.design, "fonts", name));
   }
   return served;
 }

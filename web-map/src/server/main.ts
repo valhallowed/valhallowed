@@ -15,6 +15,8 @@ const PORT = 8456;
 const GENERATION = "/generation";
 const CONTRACTS = "/opt/vhd/contracts";
 const PUBLIC = "/opt/vhd/web-map/public";
+const PAGE = "/opt/vhd/web-map/page";
+const LEAFLET = "/opt/vhd/web-map/node_modules/leaflet/dist";
 const DESIGN = "/opt/vhd/design";
 const POLL_MS = 1000;
 // A slow or idle client cannot hold a connection open, and no flood of them exhausts the process.
@@ -49,7 +51,7 @@ async function tick(): Promise<void> {
 
 const server = createServer(
   { headersTimeout: HEADERS_TIMEOUT_MS, requestTimeout: REQUEST_TIMEOUT_MS },
-  handler(process.env.VHD_BUILD ?? "unknown", assets(PUBLIC, DESIGN), () => players.read()),
+  handler(process.env.VHD_BUILD ?? "unknown", assets({ public: PUBLIC, page: PAGE, leaflet: LEAFLET, design: DESIGN }), () => players.read()),
 );
 server.maxConnections = MAX_CONNECTIONS;
 server.listen(PORT, () => log(`serving on ${PORT}`));

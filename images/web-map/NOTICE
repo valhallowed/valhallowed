@@ -10,7 +10,8 @@ and what it depends on: fast-deep-equal, MIT; fast-uri, BSD-3-Clause; json-schem
 require-from-string, MIT. pg, MIT, and what it depends on: pg-cloudflare, MIT (optional);
 pg-connection-string, MIT; pg-int8, ISC; pg-pool, MIT; pg-protocol, MIT; pg-types, MIT; pgpass,
 MIT; postgres-array, MIT; postgres-bytea, MIT; postgres-date, MIT; postgres-interval, MIT;
-split2, ISC; xtend, MIT.
+split2, ISC; xtend, MIT. leaflet, BSD-2-Clause; the web map serves leaflet.js and leaflet.css
+from it.
 
 Alegreya SC, Alegreya Sans and IBM Plex Mono (/opt/vhd/design/fonts), from design/fonts
   SIL Open Font License 1.1. Licenses: OFL-alegreya-sc.txt, OFL-alegreya-sans.txt,

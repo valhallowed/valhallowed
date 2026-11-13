@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { after, before, test } from "node:test";
 import type { LivePlayers } from "../server/players.js";
 import { assets, handler } from "../server/routes.js";
-import { DESIGN, PUBLIC } from "./paths.js";
+import { DESIGN, LEAFLET, PAGE, PUBLIC } from "./paths.js";
 
 const LIVE: LivePlayers = { contract: 1, worlds: [{ name: "Alpha", players: [{ name: "Asa", x: 1, y: 2, z: 3 }] }] };
 let server: Server;
@@ -12,7 +12,7 @@ let base: string;
 let players: () => Promise<LivePlayers> = async () => LIVE;
 
 before(async () => {
-  server = createServer(handler("abc1234", assets(PUBLIC, DESIGN), () => players()));
+  server = createServer(handler("abc1234", assets({ public: PUBLIC, page: PAGE, leaflet: LEAFLET, design: DESIGN }), () => players()));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -31,6 +31,9 @@ test("the page, its styles, the design tokens and their fonts are served", async
   for (const [path, type] of [
     ["/", "text/html"],
     ["/web-map.css", "text/css"],
+    ["/web-map.js", "text/javascript"],
+    ["/leaflet/leaflet.js", "text/javascript"],
+    ["/leaflet/leaflet.css", "text/css"],
     ["/design/tokens.css", "text/css"],
     ["/design/fonts/alegreya-sans-400.woff2", "font/woff2"],
   ] as const) {
@@ -47,7 +50,18 @@ test("the page carries the trademark line", async () => {
 });
 
 test("nothing outside the allow-list is served, a path that climbs included", async () => {
-  for (const path of ["/index.html", "/design/fonts/OFL-alegreya-sans.txt", "/../package.json", "/%2e%2e/package.json"]) {
+  for (const path of [
+    "/leaflet/",
+    "/leaflet/LICENSE",
+    "/leaflet/leaflet-src.js",
+    "/leaflet/leaflet.js.map",
+    "/leaflet/images/layers.png",
+    "/leaflet/../package.json",
+    "/index.html",
+    "/design/fonts/OFL-alegreya-sans.txt",
+    "/../package.json",
+    "/%2e%2e/package.json",
+  ]) {
     assert.equal((await fetch(`${base}${path}`)).status, 404, path);
   }
 });
