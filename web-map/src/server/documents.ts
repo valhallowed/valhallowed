@@ -16,12 +16,14 @@ export interface Generation {
   generation: number;
   status_url: string;
   status_interval_s: number;
+  database: { host: string; port: number; name: string; user: string };
 }
 
 /** contracts/web-map.secrets.schema.json */
 export interface Secrets {
   contract: number;
   generation: number;
+  password: string;
 }
 
 export interface Documents {
@@ -45,8 +47,15 @@ export class Reader {
   constructor(service: string, directory: string, contracts: string) {
     const ajv = new Ajv2020({ strict: true });
     this.#directory = directory;
-    this.#generation = ajv.compile(schema(join(contracts, `${service}.generation.schema.json`)));
-    this.#secrets = ajv.compile(schema(join(contracts, `${service}.secrets.schema.json`)));
+    // A contract refers to another by its file name (web-map.secrets's password is database.
+    // secrets's), which resolves against the schemas registered under their file names. Adding
+    // compiles nothing, so contracts that refer into schema/, which the image does not ship, are
+    // inert unless something refers to them.
+    for (const file of readdirSync(contracts).filter((name) => name.endsWith(".schema.json"))) {
+      ajv.addSchema(schema(join(contracts, file)), file);
+    }
+    this.#generation = compiled(ajv, `${service}.generation.schema.json`);
+    this.#secrets = compiled(ajv, `${service}.secrets.schema.json`);
   }
 
   /** The current documents, or undefined while the control plane has written none. Throws
@@ -77,10 +86,20 @@ export class Reader {
     if (secrets.generation !== number) {
       throw new IncompleteDocuments(`${SECRETS_FILE} belongs to generation ${secrets.generation}, not ${number}`);
     }
+    // Kept out of JSON.stringify and the inspector, so holding the documents cannot log it.
+    Object.defineProperty(secrets, "password", { enumerable: false });
     const documents = { number, generation, secrets };
     this.#read = { stamp, documents };
     return documents;
   }
+}
+
+function compiled(ajv: Ajv2020, file: string): ValidateFunction {
+  const validate = ajv.getSchema(file);
+  if (validate === undefined) {
+    throw new Error(`no contract ${file}`);
+  }
+  return validate;
 }
 
 function schema(path: string): object {
