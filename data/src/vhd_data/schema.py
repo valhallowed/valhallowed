@@ -1,9 +1,9 @@
 """B4: the data layer's schema, roles and grants, which only the database service applies.
 
 The schema moves forward only: each file in migrations/ is applied once, in order, and recorded.
-Roles and grants are applied at every start, with each role's password from the database's
-secrets, so a password generated again still signs in. All of it runs in one transaction, so a
-failure leaves the database as it was.
+Roles and grants are applied at every start, and on each generation whose passwords changed, with
+each role's password from the database's secrets, so a password generated again still signs in. All
+of it runs in one transaction, so a failure leaves the database as it was.
 """
 
 import re

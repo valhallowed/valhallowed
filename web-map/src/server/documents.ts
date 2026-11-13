@@ -5,6 +5,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { inspect } from "node:util";
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 
 export const GENERATION_FILE = "generation.json";
@@ -16,12 +17,37 @@ export interface Generation {
   generation: number;
   status_url: string;
   status_interval_s: number;
+  database: { host: string; port: number; name: string; user: string };
+}
+
+/** A secret string that prints as "[redacted]" in JSON and in the inspector (console.log, util.
+ * inspect), so holding the documents does not log it by accident. Only reveal() returns it. The
+ * value is a private field, so it is not an enumerable property that a copy could lose. */
+export class Secret {
+  readonly #value: string;
+
+  constructor(value: string) {
+    this.#value = value;
+  }
+
+  reveal(): string {
+    return this.#value;
+  }
+
+  toJSON(): string {
+    return "[redacted]";
+  }
+
+  [inspect.custom](): string {
+    return "[redacted]";
+  }
 }
 
 /** contracts/web-map.secrets.schema.json */
 export interface Secrets {
   contract: number;
   generation: number;
+  password: Secret;
 }
 
 export interface Documents {
@@ -45,8 +71,15 @@ export class Reader {
   constructor(service: string, directory: string, contracts: string) {
     const ajv = new Ajv2020({ strict: true });
     this.#directory = directory;
-    this.#generation = ajv.compile(schema(join(contracts, `${service}.generation.schema.json`)));
-    this.#secrets = ajv.compile(schema(join(contracts, `${service}.secrets.schema.json`)));
+    // A contract refers to another by its file name (web-map.secrets's password is database.
+    // secrets's), which resolves against the schemas registered under their file names. Adding
+    // compiles nothing, so contracts that refer into schema/, which the image does not ship, are
+    // inert unless something refers to them.
+    for (const file of readdirSync(contracts).filter((name) => name.endsWith(".schema.json"))) {
+      ajv.addSchema(schema(join(contracts, file)), file);
+    }
+    this.#generation = compiled(ajv, `${service}.generation.schema.json`);
+    this.#secrets = compiled(ajv, `${service}.secrets.schema.json`);
   }
 
   /** The current documents, or undefined while the control plane has written none. Throws
@@ -73,14 +106,23 @@ export class Reader {
     if (!existsSync(secretsPath)) {
       throw new IncompleteDocuments(`generation ${number} has no ${SECRETS_FILE} yet`);
     }
-    const secrets = load(secretsPath, this.#secrets, true) as Secrets;
-    if (secrets.generation !== number) {
-      throw new IncompleteDocuments(`${SECRETS_FILE} belongs to generation ${secrets.generation}, not ${number}`);
+    const loaded = load(secretsPath, this.#secrets, true) as { contract: number; generation: number; password: string };
+    if (loaded.generation !== number) {
+      throw new IncompleteDocuments(`${SECRETS_FILE} belongs to generation ${loaded.generation}, not ${number}`);
     }
+    const secrets: Secrets = { ...loaded, password: new Secret(loaded.password) };
     const documents = { number, generation, secrets };
     this.#read = { stamp, documents };
     return documents;
   }
+}
+
+function compiled(ajv: Ajv2020, file: string): ValidateFunction {
+  const validate = ajv.getSchema(file);
+  if (validate === undefined) {
+    throw new Error(`no contract ${file}`);
+  }
+  return validate;
 }
 
 function schema(path: string): object {
@@ -123,4 +165,42 @@ function problem(errors: ErrorObject[]): string {
     return "it breaks its contract";
   }
   return `at ${first.instancePath || "(root)"}: ${first.message ?? first.keyword}`;
+}
+
+/** Holds the last good documents. Each pass takes a new generation, or keeps what it holds
+ * when the pair is refused or incomplete; a refusal is logged once, not on every pass. */
+export class Adopter {
+  readonly #reader: Pick<Reader, "read">;
+  readonly #log: (line: string) => void;
+  #documents: Documents | undefined;
+  #refused: string | undefined;
+
+  constructor(reader: Pick<Reader, "read">, log: (line: string) => void) {
+    this.#reader = reader;
+    this.#log = log;
+  }
+
+  get documents(): Documents | undefined {
+    return this.#documents;
+  }
+
+  /** Take a new generation, or say why one cannot be taken; the last good one keeps running. */
+  adopt(): void {
+    try {
+      const read = this.#reader.read();
+      if (read !== undefined && read.number !== this.#documents?.number) {
+        this.#log(`generation ${read.number} adopted`);
+        this.#documents = read;
+        this.#refused = undefined;
+      }
+    } catch (error) {
+      if (!(error instanceof InvalidDocuments || error instanceof IncompleteDocuments)) {
+        throw error;
+      }
+      if (error instanceof InvalidDocuments && error.message !== this.#refused) {
+        this.#log(`refused this generation: ${error.message}`);
+        this.#refused = error.message;
+      }
+    }
+  }
 }

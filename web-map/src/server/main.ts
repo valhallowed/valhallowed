@@ -3,7 +3,7 @@
 // arrives, adopting each new one in place.
 
 import { createServer } from "node:http";
-import { IncompleteDocuments, InvalidDocuments, Reader, type Documents } from "./documents.js";
+import { Adopter, Reader } from "./documents.js";
 import { assets, handler } from "./routes.js";
 import { report, Reporter, SERVICE } from "./status.js";
 
@@ -26,33 +26,12 @@ function log(line: string): void {
 
 const reader = new Reader(SERVICE, GENERATION, CONTRACTS);
 const reporter = new Reporter(log);
-let documents: Documents | undefined;
-// The last refusal logged, so a broken generation is logged once, not every second.
-let refused: string | undefined;
+const held = new Adopter(reader, log);
 let reportedAt = Number.NEGATIVE_INFINITY;
 
-/** Take a new generation, or say why one cannot be taken; the last good one keeps running. */
-function adopt(): void {
-  try {
-    const read = reader.read();
-    if (read !== undefined && read.number !== documents?.number) {
-      log(`generation ${read.number} adopted`);
-      documents = read;
-      refused = undefined;
-    }
-  } catch (error) {
-    if (!(error instanceof InvalidDocuments || error instanceof IncompleteDocuments)) {
-      throw error;
-    }
-    if (error instanceof InvalidDocuments && error.message !== refused) {
-      log(`refused this generation: ${error.message}`);
-      refused = error.message;
-    }
-  }
-}
-
 async function tick(): Promise<void> {
-  adopt();
+  held.adopt();
+  const documents = held.documents;
   if (documents === undefined || Date.now() - reportedAt < documents.generation.status_interval_s * 1000) {
     return;
   }

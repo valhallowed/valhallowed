@@ -20,9 +20,16 @@ STATUS_URL = "http://control-plane:9457/status"
 DATABASE = {"host": "database", "port": 5432, "name": "vhd", "user": "intake"}
 
 
-def write(directory: Path, generation: dict[str, object], secrets: dict[str, object], number: int = 1) -> None:
+def write(
+    directory: Path,
+    generation: dict[str, object],
+    secrets: dict[str, object],
+    number: int = 1,
+    secrets_contract: int = 1,
+) -> None:
+    """Each service's documents carry that service's contract versions: pass the secrets' when it is not 1."""
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / "secrets.json").write_text(json.dumps({**secrets, "contract": 1, "generation": number}))
+    (directory / "secrets.json").write_text(json.dumps({**secrets, "contract": secrets_contract, "generation": number}))
     (directory / "generation.json").write_text(json.dumps({**generation, "contract": 1, "generation": number}))
 
 
@@ -57,6 +64,27 @@ def test_a_bad_secret_is_refused_without_its_value(tmp_path: Path) -> None:
         Reader("intake", tmp_path, CONTRACTS).read()
     assert "short-but-secret" not in str(raised.value)
     assert "breaks pattern" in str(raised.value)
+
+
+def test_database_secrets_without_the_web_map_password_are_refused(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        {"status_url": STATUS_URL, "status_interval_s": 1},
+        {"passwords": {"intake": PASSWORD}},
+        secrets_contract=2,
+    )
+    with pytest.raises(InvalidDocuments, match="'web_map' is a required property"):
+        Reader("database", tmp_path, CONTRACTS).read()
+
+
+def test_database_secrets_of_the_first_contract_are_refused(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        {"status_url": STATUS_URL, "status_interval_s": 1},
+        {"passwords": {"intake": PASSWORD, "web_map": PASSWORD}},
+    )
+    with pytest.raises(InvalidDocuments, match="breaks const 2"):
+        Reader("database", tmp_path, CONTRACTS).read()
 
 
 def test_the_whole_volume_mounted_is_refused(tmp_path: Path) -> None:

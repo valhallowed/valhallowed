@@ -4,11 +4,11 @@
   "description": "B1: the effective configuration of the web map service, as generation.json in its own directory of the generations volume. The web map adopts a new generation in place. Its host port is no part of it: vhd apply publishes that port when it creates the container (G13).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["contract", "generation", "status_url", "status_interval_s"],
+  "required": ["contract", "generation", "status_url", "status_interval_s", "database"],
   "properties": {
     "contract": {
       "description": "The version of this contract.",
-      "const": 1
+      "const": 2
     },
     "generation": {
       "description": "The generation number. A higher number replaces a lower one.",
@@ -25,6 +25,10 @@
       "type": "integer",
       "minimum": 1,
       "maximum": 60
+    },
+    "database": {
+      "description": "Where the web map signs in to the database, as its own read-only role.",
+      "$ref": "database.generation.schema.json#/$defs/address"
     }
   }
 }

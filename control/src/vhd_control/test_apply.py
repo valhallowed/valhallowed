@@ -295,6 +295,52 @@ def test_a_world_whose_container_and_documents_change_is_stopped_before_its_docu
     assert setup.handed(MEADOWFOLD) == (2, "hearth-and-horn")
 
 
+def _stopping(setup: Setup) -> list[int | None]:
+    """Record the staged generation's number at each stop."""
+    at_stop: list[int | None] = []
+
+    def hook(args: list[str]) -> None:
+        if "stop" in args:
+            generation = Store(setup.volume).load().generation
+            at_stop.append(None if generation is None else generation.number)
+
+    setup.docker.hook = hook
+    return at_stop
+
+
+def test_a_recreated_control_plane_is_stopped_before_the_new_generation_is_staged(setup: Setup) -> None:
+    """Otherwise the previous release's daemon would reconcile over the new generation with its own code."""
+    setup.apply()
+    setup.docker.running = ["control-plane"]
+    setup.docker.images["control-plane"] = "ghcr.io/valhallowed/control-plane:0.2.0@sha256:" + "d" * 64
+    (setup.install / "secrets.toml").write_text(PASSWORD)
+    at_stop = _stopping(setup)
+
+    setup.apply()
+
+    stops = [args for args in setup.docker.streamed if "stop" in args]
+    rendered = str(setup.install / layout.RENDERED)
+    assert stops == [["compose", "-p", "valhallowed", "-f", rendered, "stop", layout.CONTROL_PLANE]]
+    assert at_stop == [1]
+    assert setup.docker.streamed[-1][5] == "up"
+    generation = Store(setup.volume).load().generation
+    assert generation is not None and generation.number == 2
+
+
+def test_an_apply_that_changes_only_a_world_leaves_the_control_plane_running(setup: Setup) -> None:
+    setup.apply()
+    setup.docker.running = [MEADOWFOLD, ASHWAKE, "control-plane"]
+    setup.players("Meadowfold", 0)
+    setup.players("Ashwake", 0)
+    setup.docker.images["game-runtime"] = "ghcr.io/valhallowed/game-runtime:0.2.0@sha256:" + "d" * 64
+    (setup.install / "secrets.toml").write_text(PASSWORD)
+
+    setup.apply()
+
+    stops = [args for args in setup.docker.streamed if "stop" in args]
+    assert stops == [["compose", "-p", "valhallowed", "-f", str(setup.install / layout.RENDERED), "stop", MEADOWFOLD]]
+
+
 def test_without_the_control_plane_a_running_world_counts_as_occupied(setup: Setup) -> None:
     setup.apply()
     setup.docker.running = [MEADOWFOLD]
@@ -451,6 +497,34 @@ def test_a_failed_compose_run_gives_same_port_worlds_back_their_documents(setup:
     state = Store(setup.volume).load()
     assert state.handed[MEADOWFOLD].number == 1
     assert state.generation is not None and state.generation.number == 1
+
+
+def test_a_failed_compose_run_stops_the_new_control_plane_before_restoring_the_state(setup: Setup) -> None:
+    """Otherwise the new release's daemon would reconcile over the state the previous one wrote."""
+    setup.apply()
+    setup.docker.running = ["control-plane"]
+    setup.docker.images["control-plane"] = "ghcr.io/valhallowed/control-plane:0.2.0@sha256:" + "d" * 64
+    (setup.install / "secrets.toml").write_text(PASSWORD)
+    at_stop = _stopping(setup)
+    stopping = setup.docker.hook
+
+    def fail_the_new_up(args: list[str]) -> None:
+        stopping(args)
+        if args[4:6] == [str(setup.install / layout.NEXT), "up"]:
+            raise DockerError("docker compose -p exited with 1")
+
+    setup.docker.hook = fail_the_new_up
+
+    with pytest.raises(Refused, match="back as it ran before"):
+        setup.apply()
+
+    stops = [args for args in setup.docker.streamed if "stop" in args]
+    rendered = str(setup.install / layout.NEXT)
+    assert stops[-1] == ["compose", "-p", "valhallowed", "-f", rendered, "stop", layout.CONTROL_PLANE]
+    assert at_stop == [1, 2]
+    assert setup.docker.streamed[-1][4:6] == [str(setup.install / layout.RENDERED), "up"]
+    generation = Store(setup.volume).load().generation
+    assert generation is not None and generation.number == 1
 
 
 def test_a_failure_after_worlds_stopped_brings_the_install_back(setup: Setup, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -16,9 +16,10 @@ SERVICES = (DATABASE, INTAKE, WEB_MAP)
 DATABASE_PORT = 5432
 INTAKE_PORT = 9458
 WEB_MAP_PORT = 8456
-# The database the services share, and the role intake signs in as.
+# The database the services share, and the role each service signs in as.
 DATABASE_NAME = "vhd"
 INTAKE_ROLE = "intake"
+WEB_MAP_ROLE = "web_map"
 # The install folder, read-only in the control plane, read-write in vhd.
 INSTALL = Path("/install")
 # The generations volume: one directory per child, which mounts only its own.

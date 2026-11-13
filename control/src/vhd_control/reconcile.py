@@ -5,8 +5,9 @@ documents change, and a runtime adopts a new number for unchanged documents with
 restart, so a change to one world never restarts another.
 
 The data layer's internal passwords are generated here, never asked for (Secrets), and each
-generation carries on the one before's, so they change only when the install's state is lost.
-The database then sets every role's password again at its next start.
+generation carries on the one before's, so a password changes only when the install's state is
+lost, and a role new to the install gets one. The database sets every role's password again
+whenever they change.
 """
 
 import secrets
@@ -26,7 +27,7 @@ STATUS_INTERVAL_S = 5
 # A world reserves its port through port+2 (Game facts).
 WORLD_PORTS = 3
 # The database roles the services sign in as, each with a generated password.
-ROLES = (layout.INTAKE_ROLE,)
+ROLES = (layout.INTAKE_ROLE, layout.WEB_MAP_ROLE)
 
 Token = Callable[[], str]
 
@@ -136,30 +137,30 @@ def _services(children: Mapping[str, Child], passwords: Mapping[str, str], web_m
         layout.DATABASE: Service(
             name=layout.DATABASE,
             generation={"contract": 1, **reporting},
-            secrets={"contract": 1, "passwords": dict(passwords)},
+            secrets={"contract": 2, "passwords": dict(passwords)},
         ),
         layout.INTAKE: Service(
             name=layout.INTAKE,
             generation={
                 "contract": 1,
                 **reporting,
-                "database": {
-                    "host": layout.DATABASE,
-                    "port": layout.DATABASE_PORT,
-                    "name": layout.DATABASE_NAME,
-                    "user": layout.INTAKE_ROLE,
-                },
+                "database": _database(layout.INTAKE_ROLE),
                 "worlds": {cid: child.world for cid, child in sorted(children.items())},
             },
             secrets={"contract": 1, "password": passwords[layout.INTAKE_ROLE]},
         ),
         layout.WEB_MAP: Service(
             name=layout.WEB_MAP,
-            generation={"contract": 1, **reporting},
-            secrets={"contract": 1},
+            generation={"contract": 2, **reporting, "database": _database(layout.WEB_MAP_ROLE)},
+            secrets={"contract": 2, "password": passwords[layout.WEB_MAP_ROLE]},
             port=web_map_port,
         ),
     }
+
+
+def _database(role: str) -> dict[str, object]:
+    """Where a service signs in to the database, as role: one address for every service."""
+    return {"host": layout.DATABASE, "port": layout.DATABASE_PORT, "name": layout.DATABASE_NAME, "user": role}
 
 
 def _check_ports(worlds: tuple[World, ...]) -> None:

@@ -28,7 +28,3 @@ def test_every_role_the_secrets_hold_a_password_for_has_grants() -> None:
     # apply looks up the grants of every role it is handed a password for: a role without an entry is a KeyError.
     secrets = json.loads((CONTRACTS / "database.secrets.schema.json").read_text())
     assert set(secrets["properties"]["passwords"]["properties"]) <= set(GRANTS)
-
-
-def test_the_web_map_role_has_grants() -> None:
-    assert "web_map" in GRANTS

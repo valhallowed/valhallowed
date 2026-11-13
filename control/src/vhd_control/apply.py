@@ -112,7 +112,8 @@ class Apply:
             confirmed = {cid for cid, restart in restarts.items() if override and restart.world in override}
             self._write(next_file, rendered, host.owner)
             try:
-                self._stop_recreated(host, state, generation, restarts)
+                control_plane = layout.CONTROL_PLANE in recreated and layout.CONTROL_PLANE in running
+                self._stop_recreated(host, state, generation, restarts, control_plane)
                 moving = self._stage(state, generation, confirmed)
                 self._own(host.owner)
             # Whatever failed, worlds may already be stopped or hold new documents.
@@ -131,7 +132,7 @@ class Apply:
                 failure = error
         if failure is not None:
             try:
-                self._roll_back(host, before, generation, next_file, failure)
+                self._roll_back(host, before, generation, recreated, failure)
             finally:
                 next_file.unlink(missing_ok=True)
         next_file.replace(self._applied)
@@ -172,35 +173,40 @@ class Apply:
         ]  # fmt: skip
 
     def _roll_back(
-        self, host: Host, before: "_Before", generation: Generation, rendered: Path, error: Exception
+        self, host: Host, before: "_Before", generation: Generation, recreated: set[str], error: Exception
     ) -> NoReturn:
         """Something failed once worlds may have been stopped or handed documents: bring the install
         back as it ran. Each world and service gets back the documents it held, since a child from the
         previous release may refuse the new ones, and Compose runs the compose file it last ran
         successfully, which vhd apply has not touched. After a first apply there is no such file:
         the containers this run created are removed instead, since one whose start failed keeps no
-        network, and Compose would start it again as it is."""
+        network, and Compose would start it again as it is.
+        A control plane Compose recreated and started is stopped before the state is restored, so
+        that state is reconciled only by the release that wrote it."""
         ran_before = self._applied.exists()
+        rendered = self.install / layout.NEXT
         doing, done = (
             ("bringing back the install as it ran before", "The install is back as it ran before")
             if ran_before
             else ("removing the containers it created", "The containers it created are removed")
         )
         print(f"vhd apply: failed; {doing}", file=self.out, flush=True)
-        with self.store.locked():
-            state = self.store.load()
-            for cid, handed in before.handed.items():
-                if before.applied.get(cid) == handed.child.port:
-                    self.store.publish(cid, handed.child, handed.number)
-            for served in before.services.values():
-                self.store.serve(state, served.child, served.number)
-            state.generation, state.handed = before.generation, dict(before.handed)
-            state.services = dict(before.services)
-            self.store.save(state)
-            created = set(generation.children) - set(before.handed)
-            created |= set(generation.services) - set(before.services)
-            self.store.prune(before.applied, created)
         try:
+            if layout.CONTROL_PLANE in recreated and layout.CONTROL_PLANE in self._running(host.project):
+                self.docker.stream(["compose", "-p", host.project, "-f", str(rendered), "stop", layout.CONTROL_PLANE])
+            with self.store.locked():
+                state = self.store.load()
+                for cid, handed in before.handed.items():
+                    if before.applied.get(cid) == handed.child.port:
+                        self.store.publish(cid, handed.child, handed.number)
+                for served in before.services.values():
+                    self.store.serve(state, served.child, served.number)
+                state.generation, state.handed = before.generation, dict(before.handed)
+                state.services = dict(before.services)
+                self.store.save(state)
+                created = set(generation.children) - set(before.handed)
+                created |= set(generation.services) - set(before.services)
+                self.store.prune(before.applied, created)
             if ran_before:
                 self.docker.stream(self._up(host, self._applied))
             else:
@@ -286,17 +292,27 @@ class Apply:
         return dict(occupied)
 
     def _stop_recreated(
-        self, host: Host, state: State, generation: Generation, restarts: Mapping[str, _Restart]
+        self,
+        host: Host,
+        state: State,
+        generation: Generation,
+        restarts: Mapping[str, _Restart],
+        control_plane: bool,
     ) -> None:
         """Stop each world whose container and documents both change in place. Handed the
         documents while it ran, its runtime would restart the game on them, and Compose would
-        then restart it again. A world moving to a new port reads them only in its new container."""
+        then restart it again. A world moving to a new port reads them only in its new container.
+        Stop the control plane too when Compose recreates it: once vhd apply releases the volume's
+        lock, the previous release would reconcile over the new generation with its own code, and
+        hand on a generation of its own, which the new release's children may refuse."""
         applied = state.applied or {}
         stopping = sorted(
             cid
             for cid, restart in restarts.items()
             if restart.container and restart.documents and applied.get(cid) == generation.children[cid].port
         )
+        if control_plane:
+            stopping.append(layout.CONTROL_PLANE)
         if stopping:
             self.docker.stream(["compose", "-p", host.project, "-f", str(self._applied), "stop", *stopping])
 
