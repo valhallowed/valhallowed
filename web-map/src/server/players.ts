@@ -66,7 +66,8 @@ const READ =
   "SELECT world, name, x, y, z FROM live_player " +
   "WHERE received_at > now() - make_interval(secs => $1) " +
   "ORDER BY world, name NULLS LAST";
-const CHECK = "SELECT 1 FROM live_player LIMIT 1";
+// No row is read: reaching the database, and being allowed the view, is the whole answer.
+const CHECK = "SELECT 1 FROM live_player LIMIT 0";
 
 /** The rows grouped by world, in the order they come: a world shows only with a live player. */
 export function grouped(rows: readonly Row[]): LivePlayers {
