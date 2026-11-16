@@ -47,9 +47,9 @@
           "maxLength": 64,
           "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
         },
-        "x": { "$ref": "intake.events.schema.json#/$defs/coordinate" },
+        "x": { "description": "East of the world's centre.", "$ref": "intake.events.schema.json#/$defs/coordinate" },
         "y": { "description": "Height.", "$ref": "intake.events.schema.json#/$defs/coordinate" },
-        "z": { "$ref": "intake.events.schema.json#/$defs/coordinate" }
+        "z": { "description": "North of the world's centre.", "$ref": "intake.events.schema.json#/$defs/coordinate" }
       }
     }
   }
