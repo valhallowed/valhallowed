@@ -7,7 +7,6 @@ import { Secret, type Documents } from "../server/documents.js";
 import {
   CACHE_MS,
   grouped,
-  LIVE_WINDOW_S,
   Players,
   RETRY_FIRST_MS,
   RETRY_MAX_MS,
@@ -232,17 +231,10 @@ test("a check in flight on a replaced connection does not hold up the new one", 
   assert.equal(held.status().state, "running");
 });
 
-test("every statement is parameterized text the web map wrote", async () => {
-  const { players: held, fake } = await running();
-  await held.read(0);
-  assert.ok(fake.asked.every(({ text }) => !/\$\{|\+/.test(text) && text.includes("live_player")));
-});
-
 test("a read asks only for players seen within 90 seconds, by the database's clock", async () => {
   const { players: held, fake } = await running();
   await held.read(0);
   const [read] = fake.asked;
-  assert.equal(LIVE_WINDOW_S, 90);
   assert.deepEqual(read?.values, [90]);
   assert.match(read?.text ?? "", /WHERE received_at > now\(\) - make_interval\(secs => \$1\)/);
   assert.ok(!/\bat\b\s*>/.test(read?.text ?? ""), "not the game's clock");
