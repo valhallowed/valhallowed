@@ -50,6 +50,9 @@ map.setView([0, 0], 0);
 const markers = L.layerGroup().addTo(map);
 
 let worlds: LiveWorld[] = [];
+// The names the picker lists. It is rebuilt only when they change: rebuilt on every poll, it
+// would close under a viewer who has it open.
+let listed = "";
 let picked: string | undefined;
 // The world the view was last fitted to: it fits again only for another world, or after its
 // players were gone.
@@ -98,16 +101,24 @@ function say(line: string): void {
 function render(): void {
   markers.clearLayers();
   const world = worlds.find((entry) => entry.name === picked);
-  picker.replaceChildren(
-    ...worlds.map((entry) => {
-      const option = document.createElement("option");
-      option.value = entry.name;
-      option.textContent = entry.name;
-      return option;
-    }),
-  );
+  // A world's name holds no line break (the contract's pattern), so the joined names tell lists apart.
+  const names = worlds.map((entry) => entry.name).join("\n");
+  if (names !== listed) {
+    picker.replaceChildren(
+      ...worlds.map((entry) => {
+        const option = document.createElement("option");
+        option.value = entry.name;
+        option.textContent = entry.name;
+        return option;
+      }),
+    );
+    listed = names;
+  }
   picker.hidden = worlds.length === 0;
-  picker.selectedIndex = world === undefined ? -1 : worlds.indexOf(world);
+  const index = world === undefined ? -1 : worlds.indexOf(world);
+  if (picker.selectedIndex !== index) {
+    picker.selectedIndex = index;
+  }
   if (world === undefined) {
     fitted = undefined;
     say(picked === undefined ? "no live players" : `no live players in ${picked}`);
