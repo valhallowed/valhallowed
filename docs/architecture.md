@@ -216,13 +216,14 @@ markers and journal entries are records, never commands.
   host port, except the web map, on the port the manifest names (G9). A new
   port for it waits for `vhd apply` (G13), and the web map keeps serving on its
   old port until then. A service that starts before the one it needs retries
-  with capped backoff and reports `starting`. Worlds never wait for the data
-  layer.
-- **A live player** is in their world's newest session, has not left since,
-  and was seen within three position intervals. The plugin sends each
-  connected player's position once they move and at least every 30 seconds,
-  moved or not, so a player who stands still stays live, and the players of a
-  world that stopped, which sends no leave, stop being live within 90 seconds.
+  with capped backoff and reports `starting`; the web map serves its page
+  meanwhile. Worlds never wait for the data layer.
+- **A live player** is in their world's newest session, has not left since, and
+  was seen within three position intervals. The plugin sends each connected
+  player's position once they move and at least every position interval, 30
+  seconds, moved or not, so a player who stands still stays live, and the
+  players of a world that stopped, which sends no leave, stop being live within
+  90 seconds.
 
 ### Internal boundaries
 
@@ -250,7 +251,7 @@ boundary, and every boundary follows one standard. Each contract lives in
 | B8 | Chat relay ↔ chat service | Events out; commands in | Adapter; inbound authors allow-listed; commands go through the broker | The relay switches off; the game is unaffected |
 | B9 | Web map ↔ Steam | Sign-in | OpenID; server-side sessions | The web map stays public and read-only |
 | B10 | Players → game runtime | Game traffic and chat lines | Game protocol (not ours); chat commands parsed and rate-limited by the plugin, issued through the broker | The command is refused and audited |
-| B11 | Players → web map | Web requests | Web map API schema; identity from the session only | The request is rejected |
+| B11 | Players → web map | Web requests | Web map API schema; identity from the session only | The request is rejected; while the web map cannot read the database, the live players answer 503 |
 | B12 | Supervisor ↔ plugin | The plugin's generated config; the world status file back | Plugin config schema, world status schema | The report counts as absent, and world truth decides what that means for the world |
 
 ### Exposure
