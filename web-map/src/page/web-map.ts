@@ -131,8 +131,10 @@ function render(): void {
   }
 }
 
+// What was last read is no longer known to be live, so none of it stays to be picked or drawn.
 function unavailable(): void {
-  markers.clearLayers();
+  worlds = [];
+  render();
   say("the live players are unavailable");
 }
 
