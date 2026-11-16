@@ -57,13 +57,31 @@ let fitted: string | undefined;
 let timer: number | undefined;
 let polling = false;
 
-function isLivePlayers(value: unknown): value is LivePlayers {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isLivePlayer(value: unknown): value is LivePlayer {
   return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as { contract?: unknown }).contract === 1 &&
-    Array.isArray((value as { worlds?: unknown }).worlds)
+    isRecord(value) &&
+    (value.name === null || typeof value.name === "string") &&
+    [value.x, value.y, value.z].every((part) => typeof part === "number" && Number.isFinite(part))
   );
+}
+
+function isLiveWorld(value: unknown): value is LiveWorld {
+  return (
+    isRecord(value) &&
+    typeof value.name === "string" &&
+    Array.isArray(value.players) &&
+    value.players.length > 0 &&
+    value.players.every(isLivePlayer)
+  );
+}
+
+// The page is B11's receiver: it checks the shape of everything it draws from before it draws.
+function isLivePlayers(value: unknown): value is LivePlayers {
+  return isRecord(value) && value.contract === 1 && Array.isArray(value.worlds) && value.worlds.every(isLiveWorld);
 }
 
 // A player's name is whatever they chose: it goes in as text, never as markup.
