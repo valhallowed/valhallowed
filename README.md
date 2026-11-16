@@ -84,8 +84,11 @@ Builds the images with the definition CI uses, installs them through the
 release compose file and runs acceptance against them: the install's world
 downloads the dedicated server from Steam and must load with the plugin, which
 can take up to 20 minutes. A telemetry batch sent from the world's container,
-and the session the plugin starts when the world loads, must reach the database. It uses ports away from the defaults, so it never
-meets an install on them.
+and the session the plugin starts when the world loads, must reach the database;
+a synthetic player sent the same way must come back from the web map's
+`GET /api/players`, and show as a marker on its page in a headless browser with
+no error and no content security policy violation. It uses ports away from the
+defaults, so it never meets an install on them.
 
 ```bash
 make plugin
