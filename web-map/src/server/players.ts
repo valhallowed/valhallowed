@@ -24,7 +24,8 @@ const CONNECT_TIMEOUT_MS = 2000;
 const STATEMENT_TIMEOUT_MS = 3000;
 const QUERY_TIMEOUT_MS = 4000;
 const IDLE_TIMEOUT_MS = 30_000;
-// Two connections: a flood of viewers cannot open more, and one query is in flight at a time.
+// Two connections: a flood of viewers cannot open more. Reads share one query in flight, and the
+// check that the database answers may run beside it.
 const MAX_CONNECTIONS = 2;
 
 /** contracts/web-map.players.schema.json */
@@ -211,6 +212,7 @@ export class Players {
     try {
       const answer = grouped(await connection.query(READ, [LIVE_WINDOW_S]));
       if (connection === this.#connection) {
+        // Stamped when the read began, so no answer is served longer than CACHE_MS after it was asked.
         this.#cache = { at: now, answer };
       }
       return answer;

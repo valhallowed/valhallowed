@@ -1,7 +1,8 @@
 // The web map service, run by tini as its container's init. It serves its page from the moment it
 // starts, and reports status once a generation arrives, adopting each new one in place. The live
-// players need the database: until the web map reaches it they answer 503 and its state is
-// `starting`, while the page and /build, which the healthcheck reads, are served all the same.
+// players need the database: until the web map reaches it its state is `starting`, after a read
+// fails it is `failing`, and in both the players answer 503, while the page and /build, which the
+// healthcheck reads, are served all the same.
 
 import { createServer } from "node:http";
 import { Adopter, Reader } from "./documents.js";
