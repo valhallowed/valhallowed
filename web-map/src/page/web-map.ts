@@ -20,7 +20,9 @@ interface LivePlayers {
 
 // The plugin's sender rounds every 5 s, so a faster poll finds nothing new.
 const POLL_MS = 5000;
-const POLL_TIMEOUT_MS = 4000;
+// Longer than the web map's longest read (web-map/src/server/players.ts), so a slow answer is
+// shown, not dropped. The next poll waits for this one, so they never overlap.
+const POLL_TIMEOUT_MS = 8000;
 // A lone player, or two close together, would otherwise fill the view.
 const FIT_MAX_ZOOM = 1;
 const FIT_PADDING = 48;

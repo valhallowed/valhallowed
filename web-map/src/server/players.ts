@@ -17,9 +17,11 @@ export const CACHE_MS = 2000;
 // Waits between attempts to reach the database, doubling to the most.
 export const RETRY_FIRST_MS = 1000;
 export const RETRY_MAX_MS = 30_000;
-const CONNECT_TIMEOUT_MS = 5000;
-const STATEMENT_TIMEOUT_MS = 5000;
-const QUERY_TIMEOUT_MS = 6000;
+// A read's longest, a connection and then its query, stays under the time the page gives a poll
+// (POLL_TIMEOUT_MS, web-map/src/page/web-map.ts), so a slow answer still reaches its viewer.
+const CONNECT_TIMEOUT_MS = 2000;
+const STATEMENT_TIMEOUT_MS = 3000;
+const QUERY_TIMEOUT_MS = 4000;
 const IDLE_TIMEOUT_MS = 30_000;
 // Two connections: a flood of viewers cannot open more, and one query is in flight at a time.
 const MAX_CONNECTIONS = 2;
