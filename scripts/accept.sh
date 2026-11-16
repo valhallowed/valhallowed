@@ -6,9 +6,10 @@
 # every check, scripts/accept-NN-*.sh in name order; the first to fail stops
 # the run. A new check is a new file there. On a clean host the install pulls
 # from the registry by default, so an image that was never pushed, or is not
-# public, cannot pass. VHD_PULL=never accepts a local build. The install uses
-# ports away from the defaults, so it never meets a real install on the same
-# host.
+# public, cannot pass. VHD_PULL=never accepts a local build. VHD_GAME_BUILD_FILE,
+# when set, names a file the run writes the world's game build to. The install
+# uses ports away from the defaults, so it never meets a real install on the
+# same host.
 #
 # A check is a standalone executable. It prints "accept: <why>" and
 # diagnostics to stderr and exits non-zero on failure. It gets these exported
@@ -106,6 +107,17 @@ if [[ $state != running ]]; then
   done
   exit 1
 fi
+
+# The build the world runs, read by the runtime's own code, since G16 downloads
+# the newest: a release's notes name it beside the plugin's.
+game_build=$(docker exec "$world" python3 -c \
+  'from vhd_runtime import steam, supervisor; print(steam.server_build(supervisor.Paths().server) or "")') || true
+if [[ ! $game_build =~ ^[0-9]+$ ]]; then
+  echo "accept: the world runs, but its dedicated server records no build: '$game_build'" >&2
+  exit 1
+fi
+echo "accept: the world runs dedicated server build $game_build"
+[[ -z ${VHD_GAME_BUILD_FILE:-} ]] || echo "$game_build" > "$VHD_GAME_BUILD_FILE"
 
 export ACCEPT_PROJECT=$project ACCEPT_INSTALL=$install ACCEPT_COMMIT=$expected
 export ACCEPT_WORLD_NAME=$world_name ACCEPT_WORLD_PORT=$world_port ACCEPT_WEB_MAP_PORT=$web_map_port

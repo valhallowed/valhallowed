@@ -28,6 +28,7 @@ jobs:
       version: ${{ steps.check.outputs.version }}
       prerelease: ${{ steps.check.outputs.prerelease }}
       compose_sha256: ${{ steps.accept.outputs.compose_sha256 }}
+      accepted_game_build: ${{ steps.accept.outputs.game_build }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,8 +46,9 @@ jobs:
           COMMIT: ${{ steps.check.outputs.commit }}
         run: |
           scripts/render-install.sh "$VERSION" dist/compose.yaml --pin "$SOURCE"
-          scripts/accept.sh dist/compose.yaml "$COMMIT"
+          VHD_GAME_BUILD_FILE=dist/game-build scripts/accept.sh dist/compose.yaml "$COMMIT"
           echo "compose_sha256=$(sha256sum dist/compose.yaml | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "game_build=$(<dist/game-build)" >> "$GITHUB_OUTPUT"
       # Before any tag moves, so a release that cannot be assembled promotes nothing.
       - name: The release's assets can be gathered
         run: scripts/release-assets.sh dist/compose.yaml dist/assets >/dev/null
@@ -90,9 +92,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PRERELEASE: ${{ needs.promote.outputs.prerelease }}
           GAME_BUILD: ${{ steps.assets.outputs.game_build }}
+          ACCEPTED_GAME_BUILD: ${{ needs.promote.outputs.accepted_game_build }}
         run: |
           {
-            echo "The plugin in this release was built against dedicated server build $GAME_BUILD."
+            echo "The plugin in this release was built against dedicated server build $GAME_BUILD, and acceptance ran it on build $ACCEPTED_GAME_BUILD."
             echo
             gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$GITHUB_REF_NAME" --jq .body
             echo

@@ -78,7 +78,7 @@ updates:
   # The web map's packages. Node's types follow the major version of the Node
   # the image ships, which moves by hand with NODE_VERSION. Leaflet's major
   # moves by hand too: the page's script is written against Leaflet 1's global
-  # L, and no check loads the page in a browser.
+  # L, so a new major is a change to that script, made by hand.
   - package-ecosystem: npm
     directory: /web-map
     schedule:

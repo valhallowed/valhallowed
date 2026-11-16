@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Print the pinned image a check runs in, by its stage name in
-# images/tools/Dockerfile: python, actionlint or shellcheck.
+# images/tools/Dockerfile: python, actionlint, shellcheck or headless-shell.
 set -euo pipefail
 
 [[ $# -eq 1 ]] || { echo "usage: $0 NAME" >&2; exit 2; }
