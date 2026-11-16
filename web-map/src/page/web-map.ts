@@ -121,7 +121,7 @@ function render(): void {
     points.push(at);
     const marker = L.circleMarker(at, { radius: 6, weight: 2, fillOpacity: 0.85, className: "player", interactive: false });
     if (player.name !== null) {
-      marker.bindTooltip(label(player.name), { permanent: true, direction: "right", offset: [8, 0], className: "player-name" });
+      marker.bindTooltip(label(player.name), { permanent: true, direction: "right", offset: [8, 0] });
     }
     marker.addTo(markers);
   }
