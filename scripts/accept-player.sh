@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Acceptance helper, not a check: a synthetic player joins and is seen at X Y Z,
 # in a new session of the world's, sent as one telemetry batch from the world's
-# own container, which intake attributes to the world by its address. The
-# session is the world's newest, so the web map reads its players. Prints the
-# session id. See accept.sh for the ACCEPT_ variables.
+# own container, which intake attributes to the world by its address. Prints
+# the session id. The web map reads only the world's newest session, so a check
+# that reads the player back from it runs after accept-70, once the plugin's
+# own session is stored. See accept.sh for the ACCEPT_ variables.
 set -euo pipefail
 
 [[ $# -eq 5 ]] || { echo "usage: $0 PLAYER_ID NAME X Y Z" >&2; exit 2; }
@@ -26,6 +27,8 @@ try:
         print(response.status, response.read().decode())
 except urllib.error.HTTPError as error:
     print(error.code, error.read().decode())
+except OSError as error:
+    print("unreached:", error)
 PY
 )
 if [[ $answer != '202 {"accepted": 2, "dropped": 0}' ]]; then
