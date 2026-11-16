@@ -12,7 +12,9 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 
 # The browser reaches the published port through the host, as a viewer would.
-shell=$(docker run -d --rm --add-host install-host:host-gateway \
+# Labelled with the install's project, so accept.sh's cleanup removes it too.
+shell=$(docker run -d --rm --label "com.docker.compose.project=$ACCEPT_PROJECT" \
+  --add-host install-host:host-gateway \
   "$("$root/scripts/tool-image.sh" headless-shell)")
 trap 'docker rm --force "$shell" >/dev/null 2>&1 || true' EXIT
 node_image=$(docker inspect --format '{{.Config.Image}}' "$ACCEPT_WEB_MAP")
@@ -29,6 +31,11 @@ const deadline = Date.now() + 30_000;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const problems = [];
 let seen;
+// A browser that stops answering would leave a reply pending forever: the whole run is bounded.
+setTimeout(() => {
+  console.log(JSON.stringify({ seen, problems: [...problems, "the browser stopped answering"] }));
+  process.exit(1);
+}, 60_000).unref();
 
 // The shell takes a moment to listen; a new target is a blank page of its own.
 let target;
@@ -72,17 +79,23 @@ const probe = `JSON.stringify({
   names: [...document.querySelectorAll(".leaflet-tooltip")].map((tooltip) => tooltip.textContent),
   status: document.getElementById("status")?.textContent,
 })`;
-const shows = () => seen?.markers === 1 && seen.names.length === 1 && seen.names[0] === player;
-while (Date.now() < deadline) {
+const look = async () => {
   seen = JSON.parse((await send("Runtime.evaluate", { expression: probe, returnByValue: true }))?.result?.value ?? "null");
-  if (shows()) break;
-  await sleep(500);
+  return seen?.markers === 1 && seen.names.length === 1 && seen.names[0] === player;
+};
+let shows = false;
+while (!shows && Date.now() < deadline) {
+  shows = await look();
+  if (!shows) await sleep(500);
 }
-// The page polls every 5 s: one more poll's worth catches a failure the first answer hid.
-await sleep(6000);
+// The page polls every 5 s: after one more poll the marker must still show, with nothing failed.
+if (shows) {
+  await sleep(6000);
+  shows = await look();
+}
 socket.close();
 console.log(JSON.stringify({ seen, problems }));
-process.exit(shows() && problems.length === 0 ? 0 : 1);
+process.exit(shows && problems.length === 0 ? 0 : 1);
 JS
 ); then
   echo "accept: the web map's page did not show Pagewalker cleanly: ${report:-the browser gave no report}" >&2
