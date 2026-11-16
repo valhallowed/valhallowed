@@ -18,6 +18,9 @@ export const CACHE_MS = 2000;
 // Waits between attempts to reach the database, doubling to the most.
 export const RETRY_FIRST_MS = 1000;
 export const RETRY_MAX_MS = 30_000;
+// While it runs, how often the database is asked whether it still answers: with no viewer
+// reading, nothing else would notice it gone, and the status would stay `running`.
+export const RECHECK_MS = 5000;
 // A read's longest, a connection and then its query, stays under the time the page gives a poll
 // (POLL_TIMEOUT_MS, web-map/src/page/web-map.ts), so a slow answer still reaches its viewer.
 const CONNECT_TIMEOUT_MS = 2000;
@@ -125,7 +128,7 @@ export interface PlayersStatus {
 }
 
 /** Holds the connection and its state: starting until the database answers, running while it
- * does, failing once a read fails. */
+ * does, failing once a read or a later check fails. */
 export class Players {
   readonly #log: Log;
   readonly #connect: Connect;
@@ -134,6 +137,7 @@ export class Players {
   #state: State = "starting";
   #reason: string | undefined = "waiting for the generation";
   #retryAt = 0;
+  #checkedAt = 0;
   #checking: Connection | undefined;
   #wait = RETRY_FIRST_MS;
   #flight: Promise<LivePlayers> | undefined;
@@ -165,11 +169,15 @@ export class Players {
     before?.end().catch(() => undefined);
   }
 
-  /** Until the database answers, try it with a capped backoff. */
+  /** Until the database answers, try it with a capped backoff; once it does, ask again every
+   * RECHECK_MS, unless a read has answered since. */
   async tick(now: number = Date.now()): Promise<void> {
     const connection = this.#connection;
     // A check still in flight on a connection since replaced does not hold up the new one.
-    if (connection === undefined || this.#state === "running" || this.#checking === connection || now < this.#retryAt) {
+    if (connection === undefined || this.#checking === connection) {
+      return;
+    }
+    if (now < (this.#state === "running" ? this.#checkedAt + RECHECK_MS : this.#retryAt)) {
       return;
     }
     this.#checking = connection;
@@ -177,7 +185,8 @@ export class Players {
       await connection.query(CHECK, []);
     } catch (error) {
       if (connection === this.#connection) {
-        this.#set(this.#state === "failing" ? "failing" : "starting", `cannot reach the database: ${message(error)}`);
+        this.#cache = undefined;
+        this.#set(this.#state === "starting" ? "starting" : "failing", `cannot reach the database: ${message(error)}`);
         this.#retryAt = now + this.#wait;
         this.#wait = Math.min(this.#wait * 2, RETRY_MAX_MS);
       }
@@ -189,6 +198,7 @@ export class Players {
     }
     if (connection === this.#connection) {
       this.#set("running");
+      this.#checkedAt = now;
       this.#wait = RETRY_FIRST_MS;
     }
   }
@@ -214,6 +224,7 @@ export class Players {
       if (connection === this.#connection) {
         // Stamped when the read began, so no answer is served longer than CACHE_MS after it was asked.
         this.#cache = { at: now, answer };
+        this.#checkedAt = now;
       }
       return answer;
     } catch (error) {

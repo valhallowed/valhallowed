@@ -8,6 +8,7 @@ import {
   CACHE_MS,
   grouped,
   Players,
+  RECHECK_MS,
   RETRY_FIRST_MS,
   RETRY_MAX_MS,
   Unavailable,
@@ -206,6 +207,27 @@ test("readers at once share one query, and an answer serves for its cache time",
   assert.equal(fake.asked.length, 1);
   await held.read(CACHE_MS);
   assert.equal(fake.asked.length, 2);
+});
+
+test("while it runs it asks the database again, and one gone with no viewer fails the state", async () => {
+  const { players: held, fake } = await running();
+  await held.tick(RECHECK_MS - 1);
+  assert.equal(fake.asked.length, 0, "not before its time");
+  await held.tick(RECHECK_MS);
+  assert.equal(fake.asked.length, 1);
+  assert.equal(held.status().state, "running");
+  fake.failing = new Error("terminating connection");
+  await held.tick(2 * RECHECK_MS);
+  assert.deepEqual(held.status(), { state: "failing", reason: "cannot reach the database: terminating connection" });
+  await assert.rejects(held.read(2 * RECHECK_MS), Unavailable);
+});
+
+test("a read that answers stands in for the next check", async () => {
+  const { players: held, fake } = await running();
+  await held.read(RECHECK_MS - 1);
+  fake.asked.length = 0;
+  await held.tick(RECHECK_MS);
+  assert.equal(fake.asked.length, 0);
 });
 
 test("a check in flight on a replaced connection does not hold up the new one", async () => {
