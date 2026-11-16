@@ -10,13 +10,16 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-"$root/scripts/accept-player.sh" Steam_accept_page Pagewalker -12.0 28.5 9.0 >/dev/null
 
 # The browser reaches the published port through the host, as a viewer would.
 shell=$(docker run -d --rm --add-host install-host:host-gateway \
   "$("$root/scripts/tool-image.sh" headless-shell)")
 trap 'docker rm --force "$shell" >/dev/null 2>&1 || true' EXIT
 node_image=$(docker inspect --format '{{.Config.Image}}' "$ACCEPT_WEB_MAP")
+
+# Sent once the browser's image is pulled, so the player is still live, seen
+# within the web map's 90 s, when the page loads.
+"$root/scripts/accept-player.sh" Steam_accept_page Pagewalker -12.0 28.5 9.0 >/dev/null
 
 if ! report=$(docker run --rm -i --network "container:$shell" --entrypoint node \
   -e PAGE="http://install-host:$ACCEPT_WEB_MAP_PORT/" -e PLAYER=Pagewalker \
