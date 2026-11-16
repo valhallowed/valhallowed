@@ -76,7 +76,9 @@ updates:
       scripts:
         patterns: ["*"]
   # The web map's packages. Node's types follow the major version of the Node
-  # the image ships, which moves by hand with NODE_VERSION.
+  # the image ships, which moves by hand with NODE_VERSION. Leaflet's major
+  # moves by hand too: the page's script is written against Leaflet 1's global
+  # L, and no check loads the page in a browser.
   - package-ecosystem: npm
     directory: /web-map
     schedule:
@@ -86,4 +88,8 @@ updates:
         patterns: ["*"]
     ignore:
       - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "leaflet"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/leaflet"
         update-types: ["version-update:semver-major"]
