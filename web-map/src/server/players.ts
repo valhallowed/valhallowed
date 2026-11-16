@@ -4,6 +4,7 @@
 // layer's intake does (vhd_data/intake.py); until it is reached, players are refused at once
 // and the page keeps being served.
 
+import { createHash } from "node:crypto";
 import pg from "pg";
 import type { Documents } from "./documents.js";
 import type { Log, State } from "./status.js";
@@ -110,8 +111,11 @@ export function open(documents: Documents, log: Log): Connection {
   };
 }
 
+/** What tells one sign-in from another. A digest: the password stays in its Secret alone. */
 function signIn(documents: Documents): string {
-  return JSON.stringify([documents.generation.database, documents.secrets.password.reveal()]);
+  return createHash("sha256")
+    .update(JSON.stringify([documents.generation.database, documents.secrets.password.reveal()]))
+    .digest("hex");
 }
 
 export interface PlayersStatus {
