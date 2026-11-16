@@ -110,7 +110,7 @@ function render(): void {
   picker.selectedIndex = world === undefined ? -1 : worlds.indexOf(world);
   if (world === undefined) {
     fitted = undefined;
-    say(picked === undefined ? "" : `no live players in ${picked}`);
+    say(picked === undefined ? "no live players" : `no live players in ${picked}`);
     return;
   }
   say("");
