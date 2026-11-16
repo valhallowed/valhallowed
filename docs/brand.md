@@ -17,7 +17,8 @@ system. Terms follow [glossary.md](glossary.md).
 - The product name and its marks never include "Valheim" or imitate the game's
   logo.
 - Every public page, one made for people outside the project (the README, the
-  diagram pages, release notes, valhallowed.com), carries one line:
+  diagram pages, the web map's page, release notes, valhallowed.com), carries
+  one line:
   *Valhallowed is not affiliated with or endorsed by Iron Gate. Valheim is a
   trademark of Iron Gate AB.* One exemption: the valhallowed.com landing page,
   which stays almost wordless.

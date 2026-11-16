@@ -211,7 +211,7 @@
                   <tr><td><code>world.Meadowfold.port</code></td><td class="num">2456</td><td>manifest</td><td><span class="chip st-bad">game-server restart</span></td><td><code>vhd apply</code></td><td>That world; your firewall rule</td></tr>
                   <tr><td><code>world.Meadowfold.memory</code></td><td class="num">6GiB</td><td>default</td><td><span class="chip st-bad">game-server restart</span></td><td><code>vhd apply</code></td><td>That world's memory limit; the host check</td></tr>
                   <tr><td><code>world.Meadowfold.password</code></td><td class="num">set</td><td>secrets</td><td><span class="chip st-bad">game-server restart</span></td><td>control plane</td><td>Who can join</td></tr>
-                  <tr><td><code>telemetry.position_interval</code></td><td class="num">5s</td><td>default</td><td><span class="chip st-ok">live</span></td><td>control plane</td><td>Intake load; web map trails</td></tr>
+                  <tr><td><code>telemetry.send_interval</code></td><td class="num">5s</td><td>default</td><td><span class="chip st-ok">live</span></td><td>control plane</td><td>Intake load; web map trails</td></tr>
                   <tr><td><code>commands.player_rate</code></td><td class="num">30/min</td><td>manifest</td><td><span class="chip st-ok">live</span></td><td>control plane</td><td>Every player's chat commands</td></tr>
                   <tr><td><code>web_map.public_url</code></td><td class="num">https://map.example.org</td><td>manifest</td><td><span class="chip st-warn">service restart</span></td><td>control plane</td><td>Sign-in return address; links in chat</td></tr>
                   <tr><td><code>admin_console.listen</code></td><td class="num">127.0.0.1:9456</td><td>default</td><td><span class="chip st-warn">service restart</span></td><td><code>vhd apply</code></td><td>Who can reach this console</td></tr>
@@ -282,8 +282,8 @@
       { f: 'cp', t: 'cp', l: 'validate', d: 'Manifest against its schema; secrets against the key list.' },
       { f: 'cp', t: 'cp', l: 'host check: memory, CPU, disk', d: 'What the manifest asks for, against what the host has. A shortfall becomes a warning in status.' },
       { f: 'cp', t: 'cp', l: 'reconcile: generation 1', d: 'Defaults fill every unset setting, and reconcile records what each implies.' },
-      { f: 'cp', t: 'dl', l: 'generation 1 + scoped secrets', d: 'The database applies its schema, roles and grants; intake retries, with a capped backoff, until it reaches the database. Compose does not order the start.' },
-      { f: 'dl', t: 'cp', l: 'status: running', dash: true, d: 'The database once its schema is applied; intake once it reaches the database. Until then each reports starting, and why.' },
+      { f: 'cp', t: 'dl', l: 'generation 1 + scoped secrets', d: 'The database applies its schema, roles and grants; intake and the web map retry, with a capped backoff, until they reach the database. Compose does not order the start.' },
+      { f: 'dl', t: 'cp', l: 'status: running', dash: true, d: 'The database once its schema is applied; intake and the web map once they reach the database. Until then each reports starting, and why.' },
       { f: 'cp', t: 'gr', l: 'generation 1 + scoped secrets', d: 'Each game runtime, one per world, at the same time. Telemetry fails soft, so a world never waits for intake.' },
       { f: 'gr', t: 'steam', l: 'download SteamCMD, dedicated server', d: 'First start: the supervisor fetches SteamCMD, then the server. Later starts reuse SteamCMD and update the server.' },
       { f: 'gr', t: 'cp', l: 'status: world loaded', dash: true, d: 'World truth: the supervisor checks the loaded world against what it last held, not just the container.' },

@@ -1,24 +1,41 @@
 // What the web map answers. Every route is a GET, and every file it serves is read once at start
-// from an allow-list, so no request path ever reaches the file system.
+// from an allow-list, so no request path ever reaches the file system. No route reads a cookie, a
+// header or the query: the players are public and read-only (B9, B11).
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { LivePlayers } from "./players.js";
 
 export interface Asset {
   readonly type: string;
   readonly body: Buffer;
 }
 
+const NO_STORE = { "Cache-Control": "no-store" };
+
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
   ".woff2": "font/woff2",
 };
 
-/** The files the web map serves, by request path: its own pages, and the design system's tokens
- * and fonts under /design/, where tokens.css finds its fonts by relative path. */
-export function assets(publicDir: string, designDir: string): Map<string, Asset> {
+export interface Directories {
+  /** The page and its styles. */
+  public: string;
+  /** The page's compiled script. */
+  page: string;
+  /** Leaflet's dist directory. */
+  leaflet: string;
+  /** The design system. */
+  design: string;
+}
+
+/** The files the web map serves, by request path: its own page, styles and script; the two files
+ * of Leaflet it needs, by name, under /leaflet/; and the design system's tokens and fonts under
+ * /design/, where tokens.css finds its fonts by relative path. */
+export function assets(directories: Directories): Map<string, Asset> {
   const served = new Map<string, Asset>();
   const add = (path: string, file: string): void => {
     const type = TYPES[file.slice(file.lastIndexOf("."))];
@@ -26,20 +43,26 @@ export function assets(publicDir: string, designDir: string): Map<string, Asset>
       served.set(path, { type, body: readFileSync(file) });
     }
   };
-  for (const name of readdirSync(publicDir)) {
-    add(name === "index.html" ? "/" : `/${name}`, join(publicDir, name));
+  for (const name of readdirSync(directories.public)) {
+    add(name === "index.html" ? "/" : `/${name}`, join(directories.public, name));
   }
-  add("/design/tokens.css", join(designDir, "tokens.css"));
-  for (const name of readdirSync(join(designDir, "fonts"))) {
-    add(`/design/fonts/${name}`, join(designDir, "fonts", name));
+  add("/web-map.js", join(directories.page, "web-map.js"));
+  for (const name of ["leaflet.js", "leaflet.css"]) {
+    add(`/leaflet/${name}`, join(directories.leaflet, name));
+  }
+  add("/design/tokens.css", join(directories.design, "tokens.css"));
+  for (const name of readdirSync(join(directories.design, "fonts"))) {
+    add(`/design/fonts/${name}`, join(directories.design, "fonts", name));
   }
   return served;
 }
 
-/** The request handler: the build the image was made from, then the allow-listed files. */
+/** The request handler: the build the image was made from, the live players, then the
+ * allow-listed files. */
 export function handler(
   build: string,
   served: ReadonlyMap<string, Asset>,
+  players: () => Promise<LivePlayers>,
 ): (request: IncomingMessage, response: ServerResponse) => void {
   return (request: IncomingMessage, response: ServerResponse): void => {
     const path = new URL(request.url ?? "/", "http://web-map").pathname;
@@ -50,6 +73,14 @@ export function handler(
     if (path === "/build") {
       // What acceptance and the healthcheck read: the commit this image was built from.
       answer(response, 200, "text/plain; charset=utf-8", `${build}\n`);
+      return;
+    }
+    if (path === "/api/players") {
+      // The database's error goes to the log and the status, never to a viewer.
+      Promise.resolve().then(players).then(
+        (live) => answer(response, 200, "application/json; charset=utf-8", JSON.stringify(live), NO_STORE),
+        () => answer(response, 503, "text/plain; charset=utf-8", "the live players are unavailable\n", NO_STORE),
+      );
       return;
     }
     const asset = served.get(path);

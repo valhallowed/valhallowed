@@ -156,7 +156,7 @@
           <tr data-k="b8"><td>B8</td><td>Chat relay ↔ chat service</td><td>Adapter; inbound authors allow-listed</td><td>Relay off; game unaffected</td></tr>
           <tr data-k="b9"><td>B9</td><td>Web map ↔ Steam</td><td>OpenID; server-side sessions</td><td>Web map stays public and read-only</td></tr>
           <tr data-k="b10"><td>B10</td><td>Players → game runtime</td><td>Game protocol; chat commands parsed and rate-limited</td><td>Command refused and audited</td></tr>
-          <tr data-k="b11"><td>B11</td><td>Players → web map</td><td>Web map API schema; identity from the session</td><td>Request rejected</td></tr>
+          <tr data-k="b11"><td>B11</td><td>Players → web map</td><td>Web map API schema; identity from the session</td><td>Request rejected; live players answer 503 while the database cannot be read</td></tr>
           <tr data-k="b12"><td>B12</td><td>Supervisor ↔ plugin</td><td>Plugin config schema, world status schema</td><td>The report counts as absent; world truth decides</td></tr>
         </tbody>
       </table>
@@ -258,7 +258,7 @@
     b11: B('B11 · Players → web map', [
       ['Crosses', 'web requests'],
       ['Contract', 'web map API schema; identity comes from the session, never the request'],
-      ['On failure', 'the request is rejected'],
+      ['On failure', 'the request is rejected; while the web map cannot read the database, the live players answer 503'],
     ]),
     b12: B('B12 · Supervisor ↔ plugin', [
       ['Crosses', 'the plugin’s generated config down; the world status file back'],

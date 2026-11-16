@@ -1,6 +1,7 @@
 """The database service and intake against a real PostgreSQL. They run where its binaries are,
 the data-layer image's test stage (scripts/check-data-layer.sh), and are skipped elsewhere."""
 
+import itertools
 import json
 import socket
 import threading
@@ -27,6 +28,7 @@ OTHER = "0b7e4a2c-5d1f-4c3e-8a9b-2f6d1e0c7a35"
 EMBER_OLD = "5c1d8e2a-4b7f-4a93-8d6e-0f3a2b9c7e14"
 EMBER = "9e4b7a1c-2d5f-4f08-b3a6-6c8d1e0f2a59"
 HOLLOW = "d2a6f0b8-3c9e-4e17-a5b4-7f1c8d3e6a20"
+STILL = "7a3e1c9d-6b2f-4d58-9e0a-4c5b8f2d1e73"
 AT = "2026-11-03T18:04:58Z"
 WEB_MAP_PASSWORD = "Zk3Qp8Vr1Lx6Tn2Wc9Hb4Yd7Fj0GmSaX"
 NEW_INTAKE_PASSWORD = "N3wPassw0rdN3wPassw0rdN3wPassw0r"
@@ -287,6 +289,49 @@ def test_the_web_map_reads_the_live_players(web_map: psycopg.Connection[Any], pl
     assert rows == [("Fenn", 60.0)]
 
 
+# The statements the web map sends (web-map/src/server/players.ts), whose test pins the same text.
+# psycopg sends the 90 as text of no stated type, as node-postgres does.
+WEB_MAP_CHECK = "SELECT 1 FROM live_player LIMIT 0"
+WEB_MAP_READ = (
+    "SELECT world, name, x, y, z FROM live_player "
+    "WHERE received_at > now() - make_interval(secs => %s) "
+    "ORDER BY world, name NULLS LAST"
+)
+
+
+def test_the_web_maps_read_drops_a_player_not_seen_for_three_position_intervals(
+    running: Running, web_map: psycopg.Connection[Any], played: None
+) -> None:
+    telemetry = running.intake()
+    telemetry.take(
+        "Stillwater",
+        STILL,
+        [
+            join("Steam_31", "Hild", 1),
+            position("Steam_31", 31.0, moment(2)),
+            join("Steam_32", "Ivar", 1),
+            position("Steam_32", 32.0, moment(2)),
+        ],
+    )
+    telemetry.reset()
+    with running.owner() as owner:
+        owner.execute("UPDATE position SET received_at = now() - interval '89 seconds' WHERE player_id = 'Steam_31'")
+        owner.execute("UPDATE position SET received_at = now() - interval '91 seconds' WHERE player_id = 'Steam_32'")
+    rows = web_map.execute(WEB_MAP_READ, ("90",)).fetchall()
+    assert [row for row in rows if row[0] == "Stillwater"] == [("Stillwater", "Hild", 31.0, 2.0, 3.0)]
+    # The web map groups the rows as they come, so a world's rows come together.
+    worlds = [world for world, _ in itertools.groupby(row[0] for row in rows)]
+    assert len(worlds) == len(set(worlds)) > 1
+
+
+def test_the_web_maps_check_reads_no_row_and_is_still_refused_without_the_grant(
+    running: Running, web_map: psycopg.Connection[Any]
+) -> None:
+    assert web_map.execute(WEB_MAP_CHECK).fetchall() == []
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        web_map.execute("SELECT 1 FROM position LIMIT 0")
+
+
 def test_the_web_map_is_refused_every_table(running: Running, web_map: psycopg.Connection[Any]) -> None:
     with running.owner() as owner:
         tables = [row[0] for row in owner.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")]
@@ -349,7 +394,7 @@ def test_a_new_web_map_password_is_applied_in_place(running: Running) -> None:
         for _ in range(100):
             try:
                 with running.web_map(NEW_WEB_MAP_PASSWORD) as connection:
-                    connection.execute("SELECT 1 FROM live_player LIMIT 1")
+                    connection.execute(WEB_MAP_CHECK)
                 break
             except psycopg.OperationalError:
                 threading.Event().wait(0.1)

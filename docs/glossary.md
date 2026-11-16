@@ -167,6 +167,10 @@ they never touch the control plane.
 **Plugin** — The VHD BepInEx plugin loaded into each game runtime. It captures
 telemetry and executes commands.
 
+**Position interval** — The longest a connected player's position goes unsent:
+30 seconds, moved or not, fixed in the plugin. A live player was seen within
+three of them.
+
 **Promotion** — Applying a version tag to images already in the registry.
 Candidates and releases are promoted, never rebuilt (G12).
 
