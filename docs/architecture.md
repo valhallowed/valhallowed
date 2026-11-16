@@ -316,7 +316,8 @@ Follows from G4 and G12.
   wait on an unrelated bump.
 - **Candidates and releases attach** `compose.yaml`, with every image pinned by
   digest, the manifest and secrets schemas, the plugin artifact and
-  `SHA256SUMS`. Release notes name the game build the release was accepted on.
+  `SHA256SUMS`. Release notes name the game build the release was accepted on,
+  beside the one its plugin was built against.
 - **Three gates.** The merge gate: every check passes, `delivery` among them,
   on the pull request and again in the merge queue, on it merged with the
   newest `main`, and a maintainer approves a change to a workflow or to the
