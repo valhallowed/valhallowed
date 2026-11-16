@@ -28,15 +28,9 @@ if [[ -z $found ]]; then
 fi
 
 # The contract is checked as scripts/check-schema.sh checks its examples.
-scratch=$(mktemp -d)
-trap 'rm -rf "$scratch"' EXIT
-printf '%s\n' "$answer" > "$scratch/players.json"
-chmod 755 "$scratch"
-chmod 644 "$scratch/players.json"
-if ! out=$(docker run --rm -v "$root:/repo:ro" -v "$scratch:/answer:ro" -w /repo \
-  "$("$root/scripts/tool-image.sh" python)" sh -c '
+if ! out=$(docker run --rm -i -v "$root:/repo:ro" -w /repo "$("$root/scripts/tool-image.sh" python)" sh -c '
   pip install --quiet --disable-pip-version-check --root-user-action=ignore --no-deps -r scripts/requirements-check-schema.txt &&
-  check-jsonschema --schemafile contracts/web-map.players.schema.json /answer/players.json' 2>&1); then
+  check-jsonschema --schemafile contracts/web-map.players.schema.json -' <<< "$answer" 2>&1); then
   echo "accept: the web map's answer to GET /api/players breaks its contract:" >&2
   echo "$out" >&2
   exit 1
