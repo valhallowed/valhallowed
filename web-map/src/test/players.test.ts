@@ -209,6 +209,29 @@ test("readers at once share one query, and an answer serves for its cache time",
   assert.equal(fake.asked.length, 2);
 });
 
+test("a check in flight on a replaced connection does not hold up the new one", async () => {
+  const old = new Fake();
+  let release = (): void => undefined;
+  old.gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const next = new Fake();
+  const fakes = [old, next];
+  const held = new Players(
+    () => undefined,
+    () => (fakes.shift() ?? next).connection(),
+  );
+  held.adopt(documents());
+  const first = held.tick(0);
+  held.adopt(documents("other"));
+  await held.tick(0);
+  assert.equal(next.asked.length, 1);
+  assert.equal(held.status().state, "running");
+  release();
+  await first;
+  assert.equal(held.status().state, "running");
+});
+
 test("every statement is parameterized text the web map wrote", async () => {
   const { players: held, fake } = await running();
   await held.read(0);

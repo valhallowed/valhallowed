@@ -126,7 +126,7 @@ export class Players {
   #state: State = "starting";
   #reason: string | undefined = "waiting for the generation";
   #retryAt = 0;
-  #checking = false;
+  #checking: Connection | undefined;
   #wait = RETRY_FIRST_MS;
   #flight: Promise<LivePlayers> | undefined;
   #cache: { at: number; answer: LivePlayers } | undefined;
@@ -160,10 +160,11 @@ export class Players {
   /** Until the database answers, try it with a capped backoff. */
   async tick(now: number = Date.now()): Promise<void> {
     const connection = this.#connection;
-    if (connection === undefined || this.#state === "running" || this.#checking || now < this.#retryAt) {
+    // A check still in flight on a connection since replaced does not hold up the new one.
+    if (connection === undefined || this.#state === "running" || this.#checking === connection || now < this.#retryAt) {
       return;
     }
-    this.#checking = true;
+    this.#checking = connection;
     try {
       await connection.query(CHECK, []);
     } catch (error) {
@@ -174,7 +175,9 @@ export class Players {
       }
       return;
     } finally {
-      this.#checking = false;
+      if (this.#checking === connection) {
+        this.#checking = undefined;
+      }
     }
     if (connection === this.#connection) {
       this.#set("running");
