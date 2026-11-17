@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Build-time test of the plugin's telemetry, which uses no game type, so it
+  <!-- Build-time test of the plugin's telemetry and map export, which use no game type, so it
        runs without the game's assemblies; never shipped. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <Compile Include="../src/Telemetry/*.cs" />
+    <Compile Include="../src/MapExport/*.cs" />
   </ItemGroup>
 
 </Project>
