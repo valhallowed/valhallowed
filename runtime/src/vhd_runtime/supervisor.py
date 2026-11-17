@@ -141,7 +141,7 @@ class Supervisor:
         # The control plane may have handed a newer generation while the server installed.
         generation = self._read_generation() or generation
         reporter = status.Reporter(generation.status_url, self.post)
-        self.paths.map_export.mkdir(parents=True, exist_ok=True)
+        self._map_export_directory()
         config = server.plugin_config(generation, self.paths.world_status, self.paths.map_export)
         server.install_mods(self.paths.pack, self.paths.plugin, self.paths.server, config)
         save_existed = server.save_exists(self.paths.saves, generation.world)
@@ -159,6 +159,19 @@ class Supervisor:
             self.paths.server,
         )
         return self._watch(process, generation, reporter, save_existed, build)
+
+    def _map_export_directory(self) -> None:
+        """The directory the plugin writes the map export into, made on every start. The export is
+        an observation: a directory that cannot be made or written costs the web map its render,
+        never the world its start."""
+        directory = self.paths.map_export
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            _log.error("cannot make the map export directory %s, so the web map gets no export: %s", directory, error)
+            return
+        if not os.access(directory, os.W_OK):
+            _log.error("the map export directory %s is not writable, so the web map gets no export", directory)
 
     def _install(self, generation: Generation, reporter: status.Reporter) -> str | None:
         """SteamCMD and the dedicated server, installed or updated: the server's build id, or

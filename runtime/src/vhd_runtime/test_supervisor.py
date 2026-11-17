@@ -307,6 +307,20 @@ def test_an_earlier_map_export_is_kept_across_a_start(world: World) -> None:
     assert export.read_bytes() == b"map"
 
 
+def test_a_map_export_directory_that_cannot_be_made_does_not_stop_the_world(
+    world: World, caplog: pytest.LogCaptureFixture
+) -> None:
+    world.paths.map_export.parent.mkdir(parents=True, exist_ok=True)
+    world.paths.map_export.write_bytes(b"not a directory")
+    world.generation()
+    sup = world.supervisor()
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert len(world.launches) == 1
+    assert "the web map gets no export" in caplog.text
+
+
 def test_a_new_world_may_start_empty(world: World) -> None:
     world.generation()
     sup = world.supervisor()
