@@ -35,6 +35,8 @@ namespace Valhallowed.Plugin
         private ConfigEntry<string> _statusPath;
         private ConfigEntry<int> _statusIntervalSeconds;
         private ConfigEntry<string> _intakeUrl;
+        // The map export writes here.
+        private ConfigEntry<string> _mapExportDirectory;
         private bool _worldLoaded;
         private bool _statusFailing;
         private float _nextStatusAt;
@@ -68,6 +70,8 @@ namespace Valhallowed.Plugin
                 "How often to rewrite the world status file, in seconds.");
             _intakeUrl = Config.Bind("Intake", "Url", "",
                 "Where to post telemetry batches (B2). Empty sends none.");
+            _mapExportDirectory = Config.Bind("MapExport", "Directory", "",
+                "Where to write the world's map export (B5).");
 
             string build = typeof(Plugin).Assembly
                 .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
