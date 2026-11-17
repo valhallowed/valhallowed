@@ -216,9 +216,19 @@ markers and journal entries are records, never commands.
   thread, and only files inside `map-export`, never the directory itself, which
   the web map mounts. It writes the raster first and the meta last, and the meta
   names the raster's length and SHA-256, so a reader never takes a partial
-  export. The web map's generation (B1) lists each world by save name, as its
-  live players do, with where its export is mounted. Only the `map-export`
-  subpath is mounted, so a world's saves and secrets never reach the web map.
+  export. The web map polls each world's `meta.json` and renders on a new one:
+  north up, one pixel per raster pixel, water at or below the meta's water
+  level and land coloured by biome, shaded by height and darker under forest,
+  in the colours of the `--map-*` design tokens. It holds each world's last good
+  render, with the geometry to place it, in memory, so a restart renders again
+  from the export. It reads an export as untrusted input, since the world's own
+  container writes it: regular files only, never through a link, each within a
+  stated size, and the raster checked against the meta. A missing export is no
+  export yet; a refused one leaves the last good render and shows in the web
+  map's status as `failing`, with the world and the reason. The web map serves
+  nothing of the meta that names the seed. The web map's generation (B1) lists
+  each world by save name, as its live players do, with where its export is
+  mounted. Only the `map-export` subpath is mounted, so a world's saves and secrets never reach the web map.
   `vhd apply` makes the directory first, as the game runtime's own user in a
   one-off container of its image, since Compose cannot mount a subpath that does
   not exist; that also lets a new world's data volume take the image's `/data`

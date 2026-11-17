@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { Ajv2020 } from "ajv/dist/2020.js";
-import { MAX_REASON, reason, report, Reporter } from "../server/status.js";
+import { MAX_REASON, reason, report, Reporter, withProblems } from "../server/status.js";
 import { CONTRACTS } from "./paths.js";
 
 // The contract requires reason inside an if/then, which ajv's strict mode flags as a style choice.
@@ -42,4 +42,13 @@ test("a failing report is logged once, and its recovery once", async () => {
     logged.map((line) => line.split(":")[0]),
     ["status {\"contract\"", "cannot report status to http", "status reports reach http"],
   );
+});
+
+test("a refused map export fails the report with its reason, and a healthy one changes nothing", () => {
+  assert.deepEqual(withProblems("running", undefined, []), { state: "running" });
+  assert.deepEqual(withProblems("starting", "waiting for the database", []), { state: "starting", reason: "waiting for the database" });
+  const joined = withProblems("running", undefined, ["world A: map export refused: x", "world B: map export refused: y"]);
+  assert.deepEqual(joined, { state: "failing", reason: "world A: map export refused: x; world B: map export refused: y" });
+  assert.ok(validate(report(2, joined.state, joined.reason)), JSON.stringify(validate.errors));
+  assert.equal(withProblems("starting", "waiting for the database", ["p"]).reason, "waiting for the database; p");
 });

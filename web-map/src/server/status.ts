@@ -42,6 +42,15 @@ export function report(generation: number, state: State, why?: string): ServiceS
   return status;
 }
 
+/** The state with the world renders' problems joined in: a refused map export means the web map
+ * cannot do all its work, so it is failing, and its reason says which world and why. */
+export function withProblems(state: State, why: string | undefined, problems: readonly string[]): { state: State; reason?: string } {
+  if (problems.length === 0) {
+    return why === undefined ? { state } : { state, reason: why };
+  }
+  return { state: "failing", reason: [...(why === undefined ? [] : [why]), ...problems].join("; ") };
+}
+
 /** text as the contract takes a reason: one line of printable characters, cut to fit. */
 export function reason(text: string): string {
   const line = text.replace(/[\u0000-\u001f\u007f]/g, " ").trim();
