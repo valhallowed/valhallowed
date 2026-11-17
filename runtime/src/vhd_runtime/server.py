@@ -19,11 +19,12 @@ PLUGIN_GUID = "com.valhallowed.plugin"
 PLUGIN_FILE = "Valhallowed.Plugin.dll"
 
 
-def plugin_config(generation: Generation, status_file: Path) -> PluginConfig:
+def plugin_config(generation: Generation, status_file: Path, map_export: Path) -> PluginConfig:
     """The plugin's config for a generation, as the B12 contract states its keys."""
     return {
         "Status": {"Path": str(status_file), "IntervalSeconds": generation.status_interval_s},
         "Intake": {"Url": generation.intake_url},
+        "MapExport": {"Directory": str(map_export)},
     }
 
 

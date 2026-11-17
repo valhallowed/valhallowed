@@ -76,6 +76,11 @@ class Paths:
         return self.data / "saves"
 
     @property
+    def map_export(self) -> Path:
+        """Where the plugin writes the world's map export (B5), kept in the data volume for the web map to read."""
+        return self.data / "map-export"
+
+    @property
     def last_objects(self) -> Path:
         """The object count the runtime last saw its world hold, kept in the data volume."""
         return self.data / "vhd" / "last-objects.json"
@@ -136,7 +141,8 @@ class Supervisor:
         # The control plane may have handed a newer generation while the server installed.
         generation = self._read_generation() or generation
         reporter = status.Reporter(generation.status_url, self.post)
-        config = server.plugin_config(generation, self.paths.world_status)
+        self.paths.map_export.mkdir(parents=True, exist_ok=True)
+        config = server.plugin_config(generation, self.paths.world_status, self.paths.map_export)
         server.install_mods(self.paths.pack, self.paths.plugin, self.paths.server, config)
         save_existed = server.save_exists(self.paths.saves, generation.world)
         # A report from an earlier run of this container must not pass for this one.
