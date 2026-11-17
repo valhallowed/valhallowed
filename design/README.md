@@ -18,6 +18,10 @@ Every token is a custom property on `:root`, so a surface styles with
 font name. `data-theme="light"` or `data-theme="dark"` on the root element
 overrides the system preference.
 
+The `--map-*` tokens colour a world's base image, which is not themed: they are
+defined once, with no light variant. The web map reads them from `tokens.css`
+as text, so each stays a literal `#rrggbb;`, in the first `:root` block.
+
 ## Changing it
 
 A token or font change lands here first, then reaches each surface. A consumer

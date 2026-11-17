@@ -1,5 +1,6 @@
 // The base image's colours, read from design/tokens.css (the --map-* tokens), the one palette: the
-// image is not themed. No colour is written in this code.
+// image is not themed. No colour is written in this code. The file is read as text, so each token
+// stays a literal #rrggbb; and not a var() or another notation.
 
 import { readFileSync } from "node:fs";
 
@@ -27,7 +28,8 @@ export interface Palette {
 
 /** The palette tokens.css states. Throws when a token is missing or is not a #rrggbb colour. */
 export function readPalette(tokensPath: string): Palette {
-  const css = readFileSync(tokensPath, "utf8");
+  // Only the first :root block, the dark home theme, which states the palette once; comments out.
+  const css = /:root\s*\{([^}]*)\}/.exec(readFileSync(tokensPath, "utf8").replace(/\/\*[\s\S]*?\*\//g, ""))?.[1] ?? "";
   const token = (name: string): Rgb => {
     const match = new RegExp(`--map-${name}:\\s*#([0-9a-fA-F]{6})\\s*;`).exec(css);
     if (match?.[1] === undefined) {
