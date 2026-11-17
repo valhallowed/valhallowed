@@ -77,7 +77,7 @@
           </g>
           <g class="n z-control" data-k="cp"><rect x="460" y="335" width="200" height="46" rx="6"/><text class="t" x="474" y="355">Control plane</text><text class="s" x="474" y="372">console on 127.0.0.1:9456</text></g>
           <g class="n z-data" data-k="ib"><rect x="710" y="80" width="200" height="46" rx="6"/><text class="t" x="724" y="100">Intake · broker</text><text class="s" x="724" y="117">no host port</text></g>
-          <g class="n z-data" data-k="wr"><rect x="710" y="150" width="200" height="40" rx="6"/><text class="t" x="724" y="167">World render</text><text class="s" x="724" y="183">no host port</text></g>
+          <g class="n z-data" data-k="wr"><rect x="710" y="150" width="200" height="40" rx="6"/><text class="t" x="724" y="167">World render</text><text class="s" x="724" y="183">in the web map</text></g>
           <g class="n z-data" data-k="cr"><rect x="710" y="210" width="200" height="40" rx="6"/><text class="t" x="724" y="227">Chat relay</text><text class="s" x="724" y="243">outbound only</text></g>
           <g class="n z-data" data-k="as"><rect x="710" y="270" width="200" height="40" rx="6"/><text class="t" x="724" y="287">Assistant</text><text class="s" x="724" y="303">outbound only</text></g>
           <g class="n z-data" data-k="db"><rect x="710" y="330" width="200" height="46" rx="6"/><text class="t" x="724" y="350">Database</text><text class="s" x="724" y="367">5432, install network only</text></g>
@@ -127,7 +127,7 @@
           <tr><td>Web map</td><td class="num">tcp 8456</td><td>all interfaces, HTTP</td><td>all, public, HTTP</td><td>127.0.0.1, behind TLS on 443</td><td>off</td><td><code>web_map.port</code>, <code>web_map.listen</code>, <code>web_map.public_url</code></td></tr>
           <tr><td>Admin console (once its authentication is settled, O14)</td><td class="num">tcp 9456</td><td>127.0.0.1</td><td>127.0.0.1</td><td>127.0.0.1</td><td>127.0.0.1</td><td><code>admin_console.listen</code></td></tr>
           <tr><td>TUI and CLI</td><td class="num">none</td><td colspan="4">The CLI in a one-shot container from the control plane’s image, through the control plane’s socket, which no network reaches</td><td>n/a</td></tr>
-          <tr><td>Intake, broker, world render</td><td class="num">none on the host</td><td colspan="4">Install network only; the plugin calls intake and the broker, and the web map and chat relay reach the broker</td><td>n/a</td></tr>
+          <tr><td>Intake, broker</td><td class="num">none on the host</td><td colspan="4">Install network only; the plugin calls intake and the broker, and the web map and chat relay reach the broker</td><td>n/a</td></tr>
           <tr><td>Database (bundled)</td><td class="num">tcp 5432, install network</td><td colspan="4">Never published</td><td><code>database.url</code> for BYO</td></tr>
         </tbody>
       </table>
@@ -200,7 +200,7 @@
     wm: N('Data layer', 'Web map', [['LAN', 'tcp 8456 on all interfaces, plain HTTP'], ['Public, direct', 'the same port, open to the internet'], ['Public with TLS', '127.0.0.1:8456 behind TLS'], ['Game only', 'off']]),
     cp: N('Control plane', 'Control plane', [['Listens', 'status from the children, on the install network only; the control API on a socket only vhd shares; the admin console on 127.0.0.1:9456 by default, once it exists'], ['Outbound', 'Steam, for the game update check']]),
     ib: N('Data layer', 'Intake · broker', [['Listens', 'install network only; intake on tcp 9458'], ['Callers', 'the plugin; the web map and chat relay through the broker']]),
-    wr: N('Data layer', 'World render', [['Listens', 'nowhere; reads the map export from a shared volume']]),
+    wr: N('Data layer', 'World render', [['Runs', 'in the web map, which reads each world’s map export from its volume, mounted read-only']]),
     cr: N('Data layer', 'Chat relay', [['Outbound', 'the chat service, only while its secret is set']]),
     as: N('Data layer', 'Assistant', [['Outbound', 'the LLM provider, only while its secret is set']]),
     db: N('Data layer', 'Database', [['Listens', 'tcp 5432 on the install network only'], ['BYO', 'replace it with database.url; the data layer then connects out']]),

@@ -285,7 +285,7 @@
     plugin: N('Game runtime', 'Plugin', 'Captures telemetry, parses chat commands, executes commands from the broker and writes the map export.'),
     intake: N('Data layer', 'Intake', 'Takes telemetry batches from each world’s own container (B2) into the database, as its own role.'),
     broker: N('Data layer', 'Broker', 'Creates, queues and audits every command, whoever asked for it.'),
-    render: N('Data layer', 'World render', 'Turns the map export into the web map’s base image, at runtime.'),
+    render: N('Data layer', 'World render', 'Runs in the web map: turns each world’s map export into its base image, at runtime.'),
     relay: N('Data layer', 'Chat relay', 'Mirrors world events to a chat service and takes commands from allow-listed authors.'),
     assistant: N('Data layer', 'Assistant', 'Answers player questions in game, using facts the data layer computed.'),
     db: N('Data layer', 'Database', 'Bundled by default: PostgreSQL from Debian, in the data-layer image. It applies its own schema, roles and grants at each start.'),
