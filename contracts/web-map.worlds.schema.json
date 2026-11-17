@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Worlds and their renders",
+  "description": "B11: what the web map answers to GET /api/worlds, as JSON: each world of its generation, by name, and the geometry of its world render, which is the extent and the resolution the page needs to lay the render under its players. It carries nothing of the map export's meta but that geometry: no seed, seed name or water level. A world with no render yet has render null. The render's image is GET /api/worlds/<name>/render.png, the name URL-encoded: a north-up PNG of size by size pixels, row 0 north and column 0 west, covering x and z from -half_width up to but not including +half_width metres (B5's frame), so an image pixel is 2 * half_width / size metres a side. Any other name than a world's own is answered 404 in plain text. The image changes only when the render does, and version changes with it: the PNG's ETag is version in quotes, and it is answered with Cache-Control: no-cache. The request carries nothing and needs no session (B9), and unlike GET /api/players it needs no database, so it answers while the database is unreachable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "worlds"],
+  "properties": {
+    "contract": {
+      "description": "The version of this contract.",
+      "const": 1
+    },
+    "worlds": {
+      "description": "Each world of the web map's generation, in the generation's order, whether or not it has a live player.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/world" }
+    }
+  },
+  "$defs": {
+    "world": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "render"],
+      "properties": {
+        "name": {
+          "description": "The world's save name, as the manifest takes it. The pattern repeats schema/manifest.schema.json's save_name, which the web map's image does not ship, and widens with it.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9 _-]{0,62}[A-Za-z0-9])?$"
+        },
+        "render": {
+          "description": "The world's last good render, or null while it has none.",
+          "$ref": "#/$defs/render"
+        }
+      }
+    },
+    "render": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["size", "half_width", "version"],
+      "properties": {
+        "size": {
+          "description": "The image's width and height in pixels: B5's geometry.size.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "half_width": {
+          "description": "Half the image's width in metres: B5's geometry.half_width. The image's edges lie at x and z of -half_width and +half_width, centred on the origin.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "version": {
+          "description": "Names this render's image: the first 16 hex digits of the SHA-256 of its PNG. It differs whenever the image does, so a client fetches the image again only when it changes.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        }
+      }
+    }
+  }
+}
