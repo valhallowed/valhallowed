@@ -5,7 +5,8 @@
 # leaves every candidate unpromotable, or ships an image no install runs. Also
 # fail unless Dependabot's docker updates watch every images/ directory with a
 # Dockerfile, unless each image's NOTICE names the versions its Dockerfile pins
-# as ARGs, and unless the checks run the Python minor version the images
+# as ARGs and links no source at a tag (tree/v<version>) of a version it does
+# not pin, and unless the checks run the Python minor version the images
 # install.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -40,12 +41,20 @@ fi
 for dockerfile in images/*/Dockerfile; do
   notice=${dockerfile%Dockerfile}NOTICE
   [[ -f $notice ]] || continue
+  pinned=$(sed -n 's/^ARG [A-Z_]*_VERSION=//p' "$dockerfile")
   while IFS= read -r version; do
     if ! grep -qF " $version" "$notice"; then
       echo "check-images: $notice does not name $version, which $dockerfile pins" >&2
       exit 1
     fi
-  done < <(sed -n 's/^ARG [A-Z_]*_VERSION=//p' "$dockerfile")
+  done <<< "$pinned"
+  # A pin move that renames the version and leaves its source link behind.
+  while IFS= read -r linked; do
+    if ! grep -qxF "$linked" <<< "$pinned"; then
+      echo "check-images: $notice links the source of $linked, which $dockerfile does not pin" >&2
+      exit 1
+    fi
+  done < <(grep -o 'tree/v[0-9][0-9.]*[0-9]' "$notice" | sed 's#^tree/v##')
 done
 # Dependabot takes only patch releases of the checks' Python; a new minor version
 # moves with the Debian base, by hand.
@@ -55,4 +64,4 @@ if [[ -z $checks || $shipped != "$checks" ]]; then
   echo "check-images: the checks run Python ${checks:-none}; the images install ${shipped//$'\n'/, }" >&2
   exit 1
 fi
-echo "check-images: CI builds exactly the images the install lists, Dependabot watches every Dockerfile, every NOTICE names its pinned versions, and the checks run the images' Python"
+echo "check-images: CI builds exactly the images the install lists, Dependabot watches every Dockerfile, every NOTICE names its pinned versions and links no other, and the checks run the images' Python"
