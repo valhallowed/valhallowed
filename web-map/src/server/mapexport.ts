@@ -280,19 +280,18 @@ export class MapRenders {
     this.#log = log;
   }
 
-  /** Watch the generation's worlds: a new one, or one with a new path, starts with nothing; one
-   * listed again as it was keeps its render; a gone one is dropped. */
+  /** Watch the generation's worlds, in its order: a new one, or one with a new path, starts with
+   * nothing; one listed again as it was keeps its render; a gone one is dropped. */
   adopt(documents: Documents): void {
-    const listed = new Map(documents.generation.worlds.map((world) => [world.name, world.map_export]));
-    for (const [name, watched] of this.#worlds) {
-      if (listed.get(name) !== watched.path) {
-        this.#worlds.delete(name);
-      }
-    }
-    for (const [name, path] of listed) {
-      if (!this.#worlds.has(name)) {
-        this.#worlds.set(name, { path, stamp: undefined, digest: undefined, renderedAt: Number.NEGATIVE_INFINITY, render: undefined, bad: undefined });
-      }
+    const kept = [...this.#worlds];
+    this.#worlds.clear();
+    // Rebuilt in the generation's order, which names() keeps.
+    for (const { name, map_export: path } of documents.generation.worlds) {
+      const was = kept.find(([known]) => known === name)?.[1];
+      this.#worlds.set(
+        name,
+        was?.path === path ? was : { path, stamp: undefined, digest: undefined, renderedAt: Number.NEGATIVE_INFINITY, render: undefined, bad: undefined },
+      );
     }
   }
 

@@ -1,4 +1,4 @@
-// What the web map answers. Every route is a GET, and every file it serves is read once at start
+// What the web map answers. Every route is a GET (a HEAD gets the same answer without the body), and every file it serves is read once at start
 // from an allow-list, so no request path ever reaches the file system: a world's render is served
 // from memory, by a name matched exactly against the generation's worlds. No route reads a cookie
 // or the query, and the only header any reads is If-None-Match: the players and the worlds are
@@ -55,8 +55,8 @@ function worldsDocument(worlds: Worlds): string {
   });
 }
 
-/** The world a render path names, if the generation has it: the name is decoded once and compared
- * with the known names, so nothing of the path is used but as a key. */
+/** The render a path names, if its world has one: the name is decoded once and used only as a key
+ * into the generation's worlds, so nothing of the path reaches anything else. */
 function renderOf(worlds: Worlds, path: string): Render | undefined {
   const encoded = RENDER_PATH.exec(path)?.[1];
   if (encoded === undefined) {
@@ -68,7 +68,15 @@ function renderOf(worlds: Worlds, path: string): Render | undefined {
   } catch {
     return undefined;
   }
-  return worlds.names().includes(name) ? worlds.get(name) : undefined;
+  return worlds.get(name);
+}
+
+/** Whether an If-None-Match header holds the tag: any entry of its list, weak or not, or `*`. */
+function matches(header: string | undefined, etag: string): boolean {
+  return (header ?? "").split(",").some((entry) => {
+    const tag = entry.trim().replace(/^W\//, "");
+    return tag === "*" || tag === etag;
+  });
 }
 
 const TYPES: Record<string, string> = {
@@ -156,9 +164,8 @@ export function handler(
       // The ETag is the version B11 names, so a client that has the image is told so.
       const etag = `"${versionOf(render)}"`;
       const headers = { "Cache-Control": "no-cache", ETag: etag };
-      if (request.headers["if-none-match"] === etag) {
-        response.writeHead(304, { ...headers, "Content-Security-Policy": POLICY, "X-Content-Type-Options": "nosniff" });
-        response.end();
+      if (matches(request.headers["if-none-match"], etag)) {
+        answer(response, 304, "image/png", "", headers);
         return;
       }
       answer(response, 200, "image/png", render.png, headers);

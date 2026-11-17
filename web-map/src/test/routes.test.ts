@@ -7,10 +7,11 @@ import { Ajv2020 } from "ajv/dist/2020.js";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, test } from "node:test";
-import { MapRenders, metaValidator } from "../server/mapexport.js";
+import type { Documents } from "../server/documents.js";
+import { MapRenders, metaValidator, type Render } from "../server/mapexport.js";
 import { readPalette } from "../server/palette.js";
 import type { LivePlayers } from "../server/players.js";
-import { assets, handler } from "../server/routes.js";
+import { assets, handler, type Worlds } from "../server/routes.js";
 import { CONTRACTS, DESIGN, EXAMPLES, LEAFLET, PAGE, PUBLIC } from "./paths.js";
 
 const LIVE: LivePlayers = { contract: 1, worlds: [{ name: "Alpha", players: [{ name: "Asa", x: 1, y: 2, z: 3 }] }] };
@@ -23,6 +24,8 @@ let server: Server;
 let base: string;
 let scratch: string;
 let renders: MapRenders;
+// What the server reads its worlds from: the real renders, or a stub a test swaps in.
+let worlds: Worlds;
 let players: () => Promise<LivePlayers> = async () => LIVE;
 
 before(async () => {
@@ -40,9 +43,10 @@ before(async () => {
         { name: UNRENDERED, map_export: join(scratch, "absent") },
       ],
     },
-  } as never);
+  } as unknown as Documents);
   await renders.poll();
-  server = createServer(handler("abc1234", assets({ public: PUBLIC, page: PAGE, leaflet: LEAFLET, design: DESIGN }), () => players(), renders));
+  worlds = renders;
+  server = createServer(handler("abc1234", assets({ public: PUBLIC, page: PAGE, leaflet: LEAFLET, design: DESIGN }), () => players(), { names: () => worlds.names(), get: (name) => worlds.get(name) }));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -189,6 +193,8 @@ test("an unknown, unrendered or malformed world name is a 404", async () => {
     "/api/worlds//render.png",
     "/api/worlds/%E0%A4%A/render.png",
     "/api/worlds/%2e%2e/render.png",
+    "/api/worlds/%2e%2e%2fbuild/render.png",
+    "/api/worlds/%2E%2E%2Fweb-map.js/render.png",
     `/api/worlds/${RENDERED}%2F..%2F${RENDERED}/render.png`,
     `/api/worlds/${RENDERED}/render.png/`,
     `/api/worlds/${RENDERED}/raster.bin`,
@@ -232,5 +238,64 @@ test("the content security policy is the same on every route, an error and a 304
     const response = await fetch(`${base}${path}`, init);
     assert.equal(response.headers.get("content-security-policy"), POLICY, `${init?.method ?? "GET"} ${path} ${response.status}`);
     assert.equal(response.headers.get("x-content-type-options"), "nosniff", path);
+  }
+});
+
+function stub(entries: Record<string, Render>): Worlds {
+  return { names: () => Object.keys(entries), get: (name) => entries[name] };
+}
+
+function image(fill: number): Render {
+  return { png: Buffer.alloc(32, fill), size: 16, half_width: 100, water_level: 1 };
+}
+
+test("a world's name with a space round-trips through its URL, and its render is found by it", async () => {
+  worlds = stub({ "Ash Hollow": image(1), "Ash": image(2) });
+  try {
+    const response = await fetch(`${base}/api/worlds/${encodeURIComponent("Ash Hollow")}/render.png`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), Buffer.alloc(32, 1));
+    assert.equal((await fetch(`${base}/api/worlds/Ash%20Hollow/render.png`)).status, 200);
+    assert.equal((await fetch(`${base}/api/worlds/Ash+Hollow/render.png`)).status, 404);
+    const other = await fetch(`${base}/api/worlds/Ash/render.png`);
+    assert.deepEqual(Buffer.from(await other.arrayBuffer()), Buffer.alloc(32, 2));
+  } finally {
+    worlds = renders;
+  }
+});
+
+test("a new render changes the world's version and ETag", async () => {
+  const versionAndTag = async (): Promise<[string | undefined, string | null]> => {
+    const document = (await (await fetch(`${base}/api/worlds`)).json()) as { worlds: { render: { version: string } }[] };
+    const tag = (await fetch(`${base}/api/worlds/Moving/render.png`)).headers.get("etag");
+    return [document.worlds[0]?.render.version, tag];
+  };
+  try {
+    worlds = stub({ Moving: image(1) });
+    const [first, firstTag] = await versionAndTag();
+    worlds = stub({ Moving: image(2) });
+    const [second, secondTag] = await versionAndTag();
+    assert.notEqual(first, second);
+    assert.notEqual(firstTag, secondTag);
+    assert.equal(firstTag, `"${first}"`);
+    assert.equal(secondTag, `"${second}"`);
+  } finally {
+    worlds = renders;
+  }
+});
+
+test("If-None-Match matches any entry of a list, a weak tag and *, and nothing else", async () => {
+  const url = `${base}/api/worlds/${RENDERED}/render.png`;
+  const etag = (await fetch(url)).headers.get("etag") ?? "";
+  for (const [header, status] of [
+    [`"0000000000000000", ${etag}`, 304],
+    [`W/${etag}`, 304],
+    [`  "0000000000000000" ,W/${etag}  `, 304],
+    ["*", 304],
+    [`"0000000000000000", "1111111111111111"`, 200],
+    [etag.slice(1, -1), 200],
+    ["", 200],
+  ] as const) {
+    assert.equal((await fetch(url, { headers: { "If-None-Match": header } })).status, status, header);
   }
 });

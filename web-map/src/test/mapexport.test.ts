@@ -477,6 +477,21 @@ test("a world that leaves the generation is dropped, one listed as it was keeps 
   assert.equal(renders.get(WORLD), undefined);
 });
 
+test("the worlds keep the generation's order when one is added, and when a path changes", async () => {
+  const [a, c, elsewhere] = [directory(), directory(), directory()];
+  exportInto(a);
+  const { renders } = watching(a);
+  const world = (name: string, map_export: string) => ({ name, map_export });
+  renders.adopt(documents([world("A", a), world("C", c)]));
+  assert.deepEqual(renders.names(), ["A", "C"]);
+  renders.adopt(documents([world("A", a), world("B", a), world("C", c)]));
+  assert.deepEqual(renders.names(), ["A", "B", "C"]);
+  renders.adopt(documents([world("A", a), world("B", elsewhere), world("C", c)]));
+  assert.deepEqual(renders.names(), ["A", "B", "C"]);
+  renders.adopt(documents([world("C", c), world("A", a)]));
+  assert.deepEqual(renders.names(), ["C", "A"]);
+});
+
 test("every palette token reads, and a missing one fails", () => {
   const colours: Palette = palette;
   assert.equal(colours.biomes.size, 8);
