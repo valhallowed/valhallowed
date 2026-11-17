@@ -1,7 +1,11 @@
 // A minimal PNG encoder: 8-bit RGBA, no interlace, filter 0 on every row, one IDAT chunk. It
-// leans on node:zlib for the deflate stream and the CRC-32, so the web map takes no image library.
+// leans on node:zlib, off the event loop, for the deflate stream and the CRC-32, so the web map
+// takes no image library.
 
-import { crc32, deflateSync } from "node:zlib";
+import { promisify } from "node:util";
+import { crc32, deflate } from "node:zlib";
+
+const deflated = promisify(deflate);
 
 const SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -15,7 +19,7 @@ function chunk(type: string, data: Buffer): Buffer {
 }
 
 /** rgba holds width * height * 4 bytes, row 0 first. */
-export function encodePng(width: number, height: number, rgba: Uint8Array): Buffer {
+export async function encodePng(width: number, height: number, rgba: Uint8Array): Promise<Buffer> {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || rgba.length !== width * height * 4) {
     throw new RangeError("rgba does not fit width * height * 4");
   }
@@ -31,5 +35,5 @@ export function encodePng(width: number, height: number, rgba: Uint8Array): Buff
     raw[at] = 0;
     raw.set(rgba.subarray(row * stride, (row + 1) * stride), at + 1);
   }
-  return Buffer.concat([SIGNATURE, chunk("IHDR", header), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
+  return Buffer.concat([SIGNATURE, chunk("IHDR", header), chunk("IDAT", await deflated(raw)), chunk("IEND", Buffer.alloc(0))]);
 }

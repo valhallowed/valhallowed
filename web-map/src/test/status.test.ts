@@ -47,8 +47,20 @@ test("a failing report is logged once, and its recovery once", async () => {
 test("a refused map export fails the report with its reason, and a healthy one changes nothing", () => {
   assert.deepEqual(withProblems("running", undefined, []), { state: "running" });
   assert.deepEqual(withProblems("starting", "waiting for the database", []), { state: "starting", reason: "waiting for the database" });
-  const joined = withProblems("running", undefined, ["world A: map export refused: x", "world B: map export refused: y"]);
+  const joined = withProblems("running", undefined, [
+    { world: "A", reason: "x" },
+    { world: "B", reason: "y" },
+  ]);
   assert.deepEqual(joined, { state: "failing", reason: "world A: map export refused: x; world B: map export refused: y" });
   assert.ok(validate(report(2, joined.state, joined.reason)), JSON.stringify(validate.errors));
-  assert.equal(withProblems("starting", "waiting for the database", ["p"]).reason, "waiting for the database; p");
+  assert.equal(withProblems("starting", "waiting for the database", [{ world: "A", reason: "p" }]).reason, "waiting for the database; world A: map export refused: p");
+});
+
+test("a reason too long for the contract leads with the count and every refused world's name", () => {
+  const problems = ["Alpha", "Bravo", "Charlie"].map((world) => ({ world, reason: "r".repeat(300) }));
+  const cut = withProblems("running", undefined, problems);
+  assert.ok(cut.reason?.startsWith("map exports refused for 3 worlds: Alpha, Bravo, Charlie; world Alpha"));
+  assert.equal(cut.reason?.length, MAX_REASON);
+  assert.ok(validate(report(2, cut.state, cut.reason)));
+  assert.ok(withProblems("running", undefined, [{ world: "A", reason: "r".repeat(600) }]).reason?.startsWith("map export refused for 1 world: A; "));
 });

@@ -46,11 +46,8 @@ async function tick(): Promise<void> {
     players.adopt(documents);
     await players.tick();
     renders.adopt(documents);
-    try {
-      renders.poll();
-    } catch (error) {
-      log(`world render pass failed: ${String(error)}`);
-    }
+    // Not awaited: a render takes a while, and status and players go on meanwhile.
+    renders.poll().catch((error: unknown) => log(`world render pass failed: ${String(error)}`));
   }
   if (documents === undefined || Date.now() - reportedAt < documents.generation.status_interval_s * 1000) {
     return;
