@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Web map generation",
-  "description": "B1: the effective configuration of the web map service, as generation.json in its own directory of the generations volume. The web map adopts a new generation in place. Its host port is no part of it: vhd apply publishes that port when it creates the container (G13).",
+  "description": "B1: the effective configuration of the web map service, as generation.json in its own directory of the generations volume. The web map adopts a new generation in place, but a world added or removed changes the container itself, which mounts one map export per world, so that change waits for vhd apply (G13). Its host port is no part of it: vhd apply publishes that port when it creates the container (G13).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["contract", "generation", "status_url", "status_interval_s", "database"],
+  "required": ["contract", "generation", "status_url", "status_interval_s", "database", "worlds"],
   "properties": {
     "contract": {
       "description": "The version of this contract.",
-      "const": 2
+      "const": 3
     },
     "generation": {
       "description": "The generation number. A higher number replaces a lower one.",
@@ -29,6 +29,32 @@
     "database": {
       "description": "Where the web map signs in to the database, as its own read-only role.",
       "$ref": "database.generation.schema.json#/$defs/address"
+    },
+    "worlds": {
+      "description": "Each world the generation runs, with where its map export is mounted in the web map (B5). The web map names a world as its live players contract does: by save name.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/world"
+      }
+    }
+  },
+  "$defs": {
+    "world": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "map_export"],
+      "properties": {
+        "name": {
+          "description": "The world's save name, as the manifest takes it and web-map.players.schema.json names a world, so the two join on it. The pattern repeats that contract's, which the web map's reader cannot refer to: its own schemas load strictly, and that one refers on to contracts that do not.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9 _-]{0,62}[A-Za-z0-9])?$"
+        },
+        "map_export": {
+          "description": "An absolute path in the web map's container: the world's map export directory, read-only. It is the map-export directory of the world's data volume, which the plugin writes (B12).",
+          "type": "string",
+          "pattern": "^/[^\\u0000-\\u001f\\u007f]+$"
+        }
+      }
     }
   }
 }
