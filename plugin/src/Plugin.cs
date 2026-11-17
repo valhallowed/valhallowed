@@ -1,13 +1,16 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
-using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using BepInEx;
 using BepInEx.Configuration;
+using BepInEx.Logging;
 using UnityEngine;
 
 namespace Valhallowed.Plugin
@@ -18,8 +21,11 @@ namespace Valhallowed.Plugin
     // count and player count to the status file the runtime's supervisor reads:
     // that count is world truth. It also samples the world's players and sends
     // them to intake as telemetry (B2). It also writes the world's map export
-    // (B5), on a background thread, when the world's seed, world generator
-    // version or the raster's resolution differs from the export it finds.
+    // (B5), on a background thread, whenever the export it finds differs from
+    // what this world would produce: another world name, seed, world generator
+    // version, water level, resolution or extent, or a raster that is not the
+    // meta's. A game update that changes generation without bumping the world
+    // generator version leaves the export as it was.
     [BepInPlugin(Guid, Name, Version)]
     public sealed class Plugin : BaseUnityPlugin
     {
@@ -43,6 +49,18 @@ namespace Valhallowed.Plugin
         // shows needs, and a 10 MB raster of a million samples that one
         // background thread takes. A finer raster grows with the square.
         private const int MapSize = 1000;
+        // The export waits this long after the world loads, a fixed delay and not
+        // a detected end of start-up, so that the game's zone generation, which
+        // calls the same world generator, is mostly done first. The generator
+        // keeps one river cell behind one lock: the sweep replaces that cell about
+        // every third pixel, which evicts the game's and takes the write lock, so
+        // while both run each slows the other's lookups.
+        private const float MapExportDelaySeconds = 60f;
+        // A pause after each row of the raster, which spreads a million samples
+        // over about ten seconds more and gives the game thread the lock between
+        // rows. Thread priority would not: it has no effect on Linux without
+        // privileges.
+        private const int MapRowPauseMilliseconds = 10;
 
         private ConfigEntry<string> _statusPath;
         private ConfigEntry<int> _statusIntervalSeconds;
@@ -53,7 +71,15 @@ namespace Valhallowed.Plugin
         private float _nextStatusAt;
         // True once the map export is started, or needs none.
         private bool _mapExportHandled;
+        private float _mapExportAt;
+        // Set by the export's thread when the game replaced the world generator
+        // it was sampling, so that the game's thread starts the export again.
+        private volatile bool _mapExportRestart;
+        // Only OnDestroy cancels it, for good.
         private readonly CancellationTokenSource _mapExportCancel = new CancellationTokenSource();
+        // What the export's thread has to say, for the game's thread to log.
+        private readonly ConcurrentQueue<KeyValuePair<LogLevel, string>> _mapExportLog =
+            new ConcurrentQueue<KeyValuePair<LogLevel, string>>();
 
         private EventQueue _events;
         private Sender _sender;
@@ -94,6 +120,11 @@ namespace Valhallowed.Plugin
 
         private void Update()
         {
+            while (_mapExportLog.TryDequeue(out KeyValuePair<LogLevel, string> line))
+            {
+                Logger.Log(line.Key, line.Value);
+            }
+
             ZNet net = ZNet.instance;
             ZDOMan objects = ZDOMan.instance;
             if (net == null || objects == null || !net.IsServer())
@@ -105,12 +136,8 @@ namespace Valhallowed.Plugin
             {
                 _worldLoaded = true;
                 Logger.LogInfo($"world {net.GetWorldName()} loaded with {objects.NrOfObjects()} objects");
+                _mapExportAt = Time.unscaledTime + MapExportDelaySeconds;
                 StartTelemetry();
-            }
-
-            if (!_mapExportHandled)
-            {
-                StartMapExport();
             }
 
             if (_sender != null && Time.unscaledTime >= _nextSampleAt)
@@ -119,12 +146,14 @@ namespace Valhallowed.Plugin
                 SamplePlayers(net, objects);
             }
 
-            if (Time.unscaledTime < _nextStatusAt)
+            if (Time.unscaledTime >= _nextStatusAt)
             {
-                return;
+                _nextStatusAt = Time.unscaledTime + Math.Max(1, _statusIntervalSeconds.Value);
+                WriteStatus(net.GetWorldName(), objects.NrOfObjects(), net.GetPeers().Count);
             }
-            _nextStatusAt = Time.unscaledTime + Math.Max(1, _statusIntervalSeconds.Value);
-            WriteStatus(net.GetWorldName(), objects.NrOfObjects(), net.GetPeers().Count);
+
+            // After the status, which a failure of the export must not stop.
+            UpdateMapExport();
         }
 
         private void OnDestroy()
@@ -132,64 +161,112 @@ namespace Valhallowed.Plugin
             _sender?.Stop();
             _http?.Dispose();
             _mapExportCancel.Cancel();
+            _mapExportCancel.Dispose();
         }
 
-        // Starts the map export once the world generator is up, which is after
-        // the world loads, and reads what identifies the world on the game's
-        // thread; the sampling itself runs on a thread of its own.
-        private void StartMapExport()
+        // Starts the map export once the delay has passed and the world generator
+        // is up. Whatever the game's fields do, a failure here is logged and ends
+        // the export, and the status and the telemetry run on.
+        private void UpdateMapExport()
         {
+            if (_mapExportRestart)
+            {
+                _mapExportRestart = false;
+                _mapExportHandled = false;
+                _mapExportAt = Time.unscaledTime + MapExportDelaySeconds;
+            }
+            if (_mapExportHandled || Time.unscaledTime < _mapExportAt)
+            {
+                return;
+            }
             string directory = _mapExportDirectory.Value;
             if (string.IsNullOrEmpty(directory))
             {
                 _mapExportHandled = true;
                 return;
             }
-            WorldGenerator generator = WorldGenerator.instance;
+
+            try
+            {
+                if (!TryReadWorld(out WorldGenerator generator, out WorldIdentity identity))
+                {
+                    return;
+                }
+                _mapExportHandled = true;
+                CancellationToken cancel = _mapExportCancel.Token;
+                new Thread(() => ExportMap(directory, identity, generator, cancel))
+                {
+                    Name = "valhallowed-map-export",
+                    IsBackground = true,
+                }.Start();
+            }
+            catch (Exception error)
+            {
+                _mapExportHandled = true;
+                Logger.LogWarning($"cannot start the map export: {error.Message}");
+            }
+        }
+
+        // Every read of the game's fields for the export is here, on the game's
+        // thread, and not inlined, so that a game that renamed one fails when this
+        // is called, inside the caller's try, and not when the caller compiles.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool TryReadWorld(out WorldGenerator generator, out WorldIdentity identity)
+        {
+            generator = WorldGenerator.instance;
             ZoneSystem zones = ZoneSystem.instance;
+            identity = null;
             if (generator == null || zones == null)
             {
-                return;
+                return false;
             }
-            _mapExportHandled = true;
-
             World world = generator.m_world;
-            var identity = new WorldIdentity(world.m_name, world.m_seedName, world.m_seed, world.m_worldGenVersion, zones.m_waterLevel);
-            var thread = new Thread(() => ExportMap(directory, identity, generator))
-            {
-                Name = "valhallowed-map-export",
-                IsBackground = true,
-                Priority = System.Threading.ThreadPriority.BelowNormal,
-            };
-            thread.Start();
+            identity = new WorldIdentity(world.m_name, world.m_seedName, world.m_seed, world.m_worldGenVersion, zones.m_waterLevel);
+            return true;
+        }
+
+        // The game replaced the world generator the export was sampling.
+        private sealed class GeneratorReplaced : Exception
+        {
         }
 
         // Runs on the export's thread, never the game's. An observation fails
-        // soft: whatever goes wrong is logged and the world runs on.
-        private void ExportMap(string directory, WorldIdentity identity, WorldGenerator generator)
+        // soft: whatever goes wrong is logged and the world runs on. It logs
+        // through a queue the game's thread drains, since BepInEx's listeners are
+        // not known to take calls from another thread.
+        private void ExportMap(string directory, WorldIdentity identity, WorldGenerator generator, CancellationToken cancel)
         {
             try
             {
                 if (MapExport.IsCurrent(directory, identity, MapSize, MapHalfWidth))
                 {
-                    Logger.LogInfo($"map export in {directory} is current");
+                    Say(LogLevel.Info, $"map export in {directory} is current");
                     return;
                 }
-                Logger.LogInfo($"writing the map export to {directory}");
+                Say(LogLevel.Info, $"writing the map export to {directory}");
                 var clock = Stopwatch.StartNew();
-                ExportFiles files = MapExport.Build(identity, MapSize, MapHalfWidth, (x, z) => SampleWorld(generator, x, z), _mapExportCancel.Token);
+                ExportFiles files = MapExport.Build(identity, MapSize, MapHalfWidth, (x, z) => SampleWorld(generator, x, z), cancel,
+                    () => Thread.Sleep(MapRowPauseMilliseconds));
                 MapExport.Write(directory, files);
-                Logger.LogInfo($"wrote the map export in {clock.Elapsed.TotalSeconds:F1} s");
+                Say(LogLevel.Info, $"wrote the map export in {clock.Elapsed.TotalSeconds:F1} s");
             }
             catch (OperationCanceledException)
             {
-                Logger.LogInfo("map export stopped");
+                Say(LogLevel.Info, "map export stopped");
+            }
+            catch (GeneratorReplaced)
+            {
+                Say(LogLevel.Info, "the world generator was replaced; the map export starts again");
+                _mapExportRestart = true;
             }
             catch (Exception error)
             {
-                Logger.LogWarning($"cannot write the map export to {directory}: {error.Message}");
+                Say(LogLevel.Warning, $"cannot write the map export to {directory}: {error.Message}");
             }
         }
+
+        private void Say(LogLevel level, string message) =>
+            _mapExportLog.Enqueue(new KeyValuePair<LogLevel, string>(level, message));
 
         // The world generator's own answer at a point: its biome, the height it
         // gives that biome, and its forest factor. These methods read the
@@ -197,17 +274,22 @@ namespace Valhallowed.Plugin
         // and Mathf.PerlinNoise, which Unity marks thread safe, so they run off
         // the game's thread; the game's own threads call them too (the river
         // cache is behind a lock for that). A generator the game has since
-        // replaced would sample another world, so the export stops.
+        // replaced would sample another world, so the export stops and starts again.
         private static Sample SampleWorld(WorldGenerator generator, float x, float z)
         {
             if (WorldGenerator.instance != generator)
             {
-                throw new OperationCanceledException();
+                throw new GeneratorReplaced();
             }
             Heightmap.Biome biome = generator.GetBiome(x, z);
             float height = generator.GetBiomeHeight(biome, x, z, out Color _);
             float forest = WorldGenerator.GetForestFactor(new Vector3(x, 0f, z));
-            return new Sample((ushort)biome, height, forest);
+            int flag = (int)biome;
+            if (flag < 0 || flag > ushort.MaxValue)
+            {
+                throw new InvalidOperationException($"the world generator gave biome {flag} at ({x}, {z}), which B5 does not name");
+            }
+            return new Sample((ushort)flag, height, forest);
         }
 
         // One load of the world is one session, started when the world loads.
