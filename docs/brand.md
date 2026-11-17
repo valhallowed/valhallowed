@@ -53,6 +53,7 @@ player reads in game always does.
 | External | grey | Outside services and third-party dependencies |
 | Neutral | the line colour | The pipeline's own steps and gates, and the host |
 
+- **Map colours:** the `--map-*` tokens colour a world's base image: water and one colour per biome. The image is not themed, so they have no light variant.
 - **Type:** Alegreya SC for display, Alegreya Sans for text,
   IBM Plex Mono for code and identifiers. The Alegreya family's book-and-saga
   feel fits the subject while staying readable in dense technical pages.
