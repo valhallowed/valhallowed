@@ -3,16 +3,16 @@
 # scripts/check-delivery.sh. The merge gate requires the job below by its name,
 # so renaming it here means renaming it in the ruleset.
 #
-# On a pull request it runs on pull_request_target, so that this workflow and
-# the script come from main's own definition: a pull request cannot change the
-# check that judges it. In the merge queue GitHub runs the queued merge's copy
-# of this workflow, which checks out main and runs main's script on the pull
-# request the queued merge holds; a pull request that changes this workflow
-# decides what runs there, which is why it waits for a maintainer's approval
-# (.github/CODEOWNERS). Either way the job checks out main,
-# never the pull request's code, and only reads the pull request through the
-# API. Keep it so: no checkout of the pull request's ref, and no title or body
-# in a run: line.
+# On a pull request and in the merge queue alike, GitHub runs the pull
+# request's own copy of this workflow, which checks out main and runs main's
+# script on the pull request: a pull request cannot change the check that
+# judges it, except by changing this workflow, which waits for a maintainer's
+# approval (.github/CODEOWNERS). It runs on pull_request, not
+# pull_request_target, which GitHub blocks by default in public repositories
+# from 2026-12-02. The job checks out main, never the pull request's
+# code, and only reads the pull request through the API. Keep it so: the
+# checkout names main's ref, since on pull_request the default would be the
+# pull request's merge commit, and no title or body goes in a run: line.
 #
 # A verdict on the pull request holds as of the event that ran it: a push to an
 # older pull request, or an issue linked in the sidebar, runs nothing here. The
@@ -23,7 +23,7 @@
 name: delivery
 
 on:
-  pull_request_target:
+  pull_request:
     branches: [main]
     types: [opened, edited, reopened, synchronize, ready_for_review, converted_to_draft]
   merge_group:
@@ -45,7 +45,7 @@ jobs:
       # main, the base of the pull request or of the queue, never the pull request's code.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.merge_group.base_ref }}
+          ref: ${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref }}
           persist-credentials: false
       # A queued merge's branch is gh-readonly-queue/<base>/pr-<number>-<commit>.
       - id: queued
