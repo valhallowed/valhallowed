@@ -1,8 +1,9 @@
 // The web map service, run by tini as its container's init. It serves its page from the moment it
 // starts, and reports status once a generation arrives, adopting each new one in place. The live
 // players need the database: until the web map reaches it its state is `starting`, after a read
-// fails it is `failing`, and in both the players answer 503, while the page and /build, which the
-// healthcheck reads, are served all the same.
+// fails it is `failing`, and in both the players answer 503, while the page, /build, which the
+// healthcheck reads, /api/worlds and the worlds' renders, which need no database, are served all
+// the same.
 
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -60,7 +61,7 @@ async function tick(): Promise<void> {
 
 const server = createServer(
   { headersTimeout: HEADERS_TIMEOUT_MS, requestTimeout: REQUEST_TIMEOUT_MS },
-  handler(process.env.VHD_BUILD ?? "unknown", assets({ public: PUBLIC, page: PAGE, leaflet: LEAFLET, design: DESIGN }), () => players.read()),
+  handler(process.env.VHD_BUILD ?? "unknown", assets({ public: PUBLIC, page: PAGE, leaflet: LEAFLET, design: DESIGN }), () => players.read(), renders),
 );
 server.maxConnections = MAX_CONNECTIONS;
 server.listen(PORT, () => log(`serving on ${PORT}`));

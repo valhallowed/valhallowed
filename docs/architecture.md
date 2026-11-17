@@ -230,8 +230,20 @@ markers and journal entries are records, never commands.
   costs nothing, and a world renders at most once a minute, one world at a time.
   A missing export is no export yet; a refused one leaves the last good render
   and shows in the web map's status as `failing`, with the world and the
-  reason. The web map serves nothing of the meta that names the seed. The web
-  map's generation (B1) lists each world by save name, as its live players do,
+  reason. The web map serves each world's render as a PNG, and, in a document of
+  its own (B11), the world's name and its render's geometry, extent and
+  resolution, with a version that names the image, so a page fetches it again
+  only when it changes. It serves nothing else of the meta, so never the seed or
+  the water level, and no request path reaches the file system: a render is
+  served from memory, by a name matched exactly against the generation's worlds.
+  The page lays the render under its players in world coordinates, north up,
+  its edges at the geometry's extent, as B5's frame has them, and its zoom
+  limits following the render's pixel. The public map shows every world, with
+  its render, whether or not anyone is playing: the web map lists every world by
+  save name to anyone, so the map stays up when the last player leaves or the
+  database is down. Only the live players depend on the database, and
+  `/api/players` still shows a world only while it has a live player. The web map's
+  generation (B1) lists each world by save name, as its live players do,
   with where its export is mounted. Only the `map-export` subpath is mounted,
   so a world's saves and secrets never reach the web map.
   `vhd apply` makes the directory first, as the game runtime's own user in a
@@ -291,7 +303,7 @@ boundary, and every boundary follows one standard. Each contract lives in
 | B8 | Chat relay ↔ chat service | Events out; commands in | Adapter; inbound authors allow-listed; commands go through the broker | The relay switches off; the game is unaffected |
 | B9 | Web map ↔ Steam | Sign-in | OpenID; server-side sessions | The web map stays public and read-only |
 | B10 | Players → game runtime | Game traffic and chat lines | Game protocol (not ours); chat commands parsed and rate-limited by the plugin, issued through the broker | The command is refused and audited |
-| B11 | Players → web map | Web requests | Web map API schema; identity from the session only | The request is rejected; while the web map cannot read the database, the live players answer 503 |
+| B11 | Players → web map | Web requests | Web map API schemas (live players; worlds and their render geometry); identity from the session only | The request is rejected; while the web map cannot read the database, the live players answer 503, and the worlds and their renders are still served |
 | B12 | Supervisor ↔ plugin | The plugin's generated config; the world status file back | Plugin config schema, world status schema | The report counts as absent, and world truth decides what that means for the world |
 
 ### Exposure

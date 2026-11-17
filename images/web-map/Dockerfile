@@ -32,7 +32,7 @@ COPY web-map/tsconfig.json web-map/tsconfig.page.json ./
 COPY web-map/src/ src/
 COPY web-map/public/ public/
 COPY contracts/*.schema.json /src/contracts/
-# The synthesized map export the render test reads; the final stage copies none of it.
+# The synthesized map export the render and routes tests read; the final stage copies none of it.
 COPY contracts/examples/valid/plugin.map-export-synthetic.* /src/contracts/examples/valid/
 COPY design/tokens.css /src/design/
 COPY design/fonts/ /src/design/fonts/

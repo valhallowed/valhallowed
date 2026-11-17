@@ -87,6 +87,7 @@ test("a world is named as the live players contract names it", () => {
   const pattern = (file: string): string =>
     (JSON.parse(readFileSync(join(CONTRACTS, file), "utf8")) as Contract).$defs.world.properties.name.pattern;
   assert.equal(pattern("web-map.generation.schema.json"), pattern("web-map.players.schema.json"));
+  assert.equal(pattern("web-map.generation.schema.json"), pattern("web-map.worlds.schema.json"));
 });
 
 test("two worlds that share a name or a map export path are refused", () => {
