@@ -3,27 +3,31 @@
 # scripts/check-delivery.sh. The merge gate requires the job below by its name,
 # so renaming it here means renaming it in the ruleset.
 #
-# On a pull request it runs on pull_request_target, so that this workflow and
-# the script come from main's own definition: a pull request cannot change the
-# check that judges it. In the merge queue GitHub runs the queued merge's copy
-# of this workflow, which checks out main and runs main's script on the pull
-# request the queued merge holds; a pull request that changes this workflow
-# decides what runs there, which is why it waits for a maintainer's approval
-# (.github/CODEOWNERS). Either way the job checks out main,
-# never the pull request's code, and only reads the pull request through the
-# API. Keep it so: no checkout of the pull request's ref, and no title or body
-# in a run: line.
+# On a pull request and in the merge queue alike, GitHub runs this workflow as
+# it stands in the pull request merged with main. The job checks out main by
+# name, never the pull request's code, runs main's script, and reads the pull
+# request only through the API. So a pull request changes the check that judges
+# it only by changing a workflow, and a change to any workflow waits for a
+# maintainer's approval (.github/CODEOWNERS), which a later push dismisses:
+# until then a passing delivery on such a pull request means nothing. Keep it
+# so: the checkout names main's ref, since on pull_request the default would be
+# the pull request's merge commit, and no title or body goes in a run: line.
+# It runs on pull_request, not pull_request_target, which GitHub blocks by
+# default in a public repository without an Actions event policy that allows
+# it. So a first-time contributor's fork waits for a maintainer to approve its
+# workflow runs, this one included.
 #
 # A verdict on the pull request holds as of the event that ran it: a push to an
-# older pull request, or an issue linked in the sidebar, runs nothing here. The
-# queue reads the pull request again before it merges. A check run belongs to a
-# commit, not to a pull request, so a job named delivery in another branch's
-# workflow can report on the same commit; this guards against mistakes, not
-# against someone with write access who means harm.
+# older pull request, an issue linked in the sidebar, and anything on a pull
+# request that conflicts with main run nothing here. The queue reads the pull
+# request again before it merges. A check run belongs to a commit, not to a
+# pull request, so a job named delivery in another workflow can report on the
+# same commit; this guards against mistakes, not against someone with write
+# access who means harm.
 name: delivery
 
 on:
-  pull_request_target:
+  pull_request:
     branches: [main]
     types: [opened, edited, reopened, synchronize, ready_for_review, converted_to_draft]
   merge_group:
@@ -45,7 +49,7 @@ jobs:
       # main, the base of the pull request or of the queue, never the pull request's code.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.merge_group.base_ref }}
+          ref: ${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref }}
           persist-credentials: false
       # A queued merge's branch is gh-readonly-queue/<base>/pr-<number>-<commit>.
       - id: queued

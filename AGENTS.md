@@ -121,13 +121,14 @@ and lands through pull requests.
   one is due, and no older open pull request changes the same file, docs
   apart. A dependency update, every commit of it Dependabot's, is exempt. It
   runs `main`'s own script, so a pull request cannot change the check that
-  judges it, unless it changes the workflow, which waits for a maintainer.
+  judges it, unless it changes a workflow, which waits for a maintainer.
 - **A change to a workflow or to the delivery check waits for a maintainer.**
   `.github/CODEOWNERS` gives `.github/workflows/`, the delivery check's script
   and tests, and itself to the maintainers. A pull request that changes any of
   them is not switched to auto-merge, and merges only once a maintainer has
-  approved it. Every other change, the rest of `scripts/` included, merges
-  itself through the gates and its second reader.
+  approved it; a push after the approval dismisses it. Every other change, the
+  rest of `scripts/` included, merges itself through the gates and its second
+  reader.
 - **A retro before it is marked ready.** Review its whole diff for defects,
   simplification, performance and hygiene, and check every doc and comment it
   touches against the code, the glossary and docs/architecture.md, and that
