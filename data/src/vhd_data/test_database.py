@@ -19,6 +19,7 @@ from vhd_data.database import Database, Paths
 from vhd_data.documents import Reader
 from vhd_data.intake import ForeignSession, Telemetry, Unavailable
 from vhd_data.test_documents import CONTRACTS, PASSWORD, STATUS_URL, write
+from vhd_data.test_sessions import EACH, Recorded
 
 BIN = Paths().bin
 pytestmark = pytest.mark.skipif(not (BIN / "initdb").exists(), reason="no PostgreSQL here")
@@ -322,6 +323,40 @@ def test_the_web_maps_read_drops_a_player_not_seen_for_three_position_intervals(
     # The web map groups the rows as they come, so a world's rows come together.
     worlds = [world for world, _ in itertools.groupby(row[0] for row in rows)]
     assert len(worlds) == len(set(worlds)) > 1
+
+
+def replay(running: Running, recorded: Recorded) -> None:
+    """Take a recorded session's batches through intake into its own world, then backdate what each
+    batch put in position.received_at to the age the material gives it."""
+    telemetry = running.intake()
+    for age, batch in recorded.batches:
+        with running.owner() as owner:
+            row = owner.execute("SELECT clock_timestamp()").fetchone()
+        assert row is not None
+        telemetry.take(recorded.name, batch["session"], batch["events"])
+        with running.owner() as owner:
+            owner.execute(
+                "UPDATE position SET received_at = now() - make_interval(secs => %s::float8) "
+                "WHERE session_id = %s AND received_at >= %s",
+                (age, batch["session"], row[0]),
+            )
+    telemetry.reset()
+
+
+def by_name(players: list[tuple[str | None, float]]) -> list[tuple[str | None, float]]:
+    return sorted(players, key=lambda player: (player[0] is None, player[0] or "", player[1]))
+
+
+@EACH
+def test_a_recorded_session_leaves_the_live_players_its_material_says(
+    running: Running, web_map: psycopg.Connection[Any], recorded: Recorded
+) -> None:
+    replay(running, recorded)
+    with running.owner() as owner:
+        rows = owner.execute("SELECT name, x FROM live_player WHERE world = %s", (recorded.name,)).fetchall()
+    assert by_name([(name, x) for name, x in rows]) == by_name(recorded.view)
+    seen = web_map.execute(WEB_MAP_READ, ("90",)).fetchall()
+    assert by_name([(name, x) for world, name, x, _, _ in seen if world == recorded.name]) == by_name(recorded.web_map)
 
 
 def test_the_web_maps_check_reads_no_row_and_is_still_refused_without_the_grant(
