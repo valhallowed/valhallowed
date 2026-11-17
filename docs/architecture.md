@@ -223,8 +223,12 @@ markers and journal entries are records, never commands.
   one-off container of its image, since Compose cannot mount a subpath that does
   not exist; that also lets a new world's data volume take the image's `/data`
   and its owner on its first mount. A world added or removed changes the web
-  map's container, so status shows its new generation as pending until `vhd
-  apply`.
+  map's container, so status shows its new generation as pending until
+  `vhd apply`. A subpath mount pins the directory present when the web map
+  starts, and a missing one stops the web map from starting, for every world. So
+  nothing replaces or removes a world's `map-export` directory: the plugin
+  writes inside it, and the hold and restore actions keep it. `vhd apply` and
+  the game runtime's supervisor both create it, the supervisor at each start.
 - **Intake knows a world by its address.** It attributes a batch to the world
   whose container sent it, as the control plane's status listener does. No
   child can forge its address on the install network, so worlds hold no token.
