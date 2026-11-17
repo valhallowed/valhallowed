@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
+using System.Diagnostics;
 using System.Reflection;
 using System.Text;
+using System.Threading;
 using BepInEx;
 using BepInEx.Configuration;
 using UnityEngine;
@@ -15,7 +17,9 @@ namespace Valhallowed.Plugin
     // load. Once the server's world has loaded, it writes the world's object
     // count and player count to the status file the runtime's supervisor reads:
     // that count is world truth. It also samples the world's players and sends
-    // them to intake as telemetry (B2).
+    // them to intake as telemetry (B2). It also writes the world's map export
+    // (B5), on a background thread, when the world's seed, world generator
+    // version or the raster's resolution differs from the export it finds.
     [BepInPlugin(Guid, Name, Version)]
     public sealed class Plugin : BaseUnityPlugin
     {
@@ -31,6 +35,14 @@ namespace Valhallowed.Plugin
         private const int QueueCapacity = 2000;
         // Intake's own request timeout.
         private const int PostTimeoutSeconds = 5;
+        // The map export covers the whole world to its edge, where the world
+        // generator ends the sea.
+        private const float MapHalfWidth = WorldGenerator.waterEdge;
+        // About 1000 pixels across, which is 21 m a pixel over the world's 21 km:
+        // about three pixels to a 64 m zone, finer than the base image a map
+        // shows needs, and a 10 MB raster of a million samples that one
+        // background thread takes. A finer raster grows with the square.
+        private const int MapSize = 1000;
 
         private ConfigEntry<string> _statusPath;
         private ConfigEntry<int> _statusIntervalSeconds;
@@ -39,6 +51,9 @@ namespace Valhallowed.Plugin
         private bool _worldLoaded;
         private bool _statusFailing;
         private float _nextStatusAt;
+        // True once the map export is started, or needs none.
+        private bool _mapExportHandled;
+        private readonly CancellationTokenSource _mapExportCancel = new CancellationTokenSource();
 
         private EventQueue _events;
         private Sender _sender;
@@ -93,6 +108,11 @@ namespace Valhallowed.Plugin
                 StartTelemetry();
             }
 
+            if (!_mapExportHandled)
+            {
+                StartMapExport();
+            }
+
             if (_sender != null && Time.unscaledTime >= _nextSampleAt)
             {
                 _nextSampleAt = Time.unscaledTime + SampleSeconds;
@@ -111,6 +131,83 @@ namespace Valhallowed.Plugin
         {
             _sender?.Stop();
             _http?.Dispose();
+            _mapExportCancel.Cancel();
+        }
+
+        // Starts the map export once the world generator is up, which is after
+        // the world loads, and reads what identifies the world on the game's
+        // thread; the sampling itself runs on a thread of its own.
+        private void StartMapExport()
+        {
+            string directory = _mapExportDirectory.Value;
+            if (string.IsNullOrEmpty(directory))
+            {
+                _mapExportHandled = true;
+                return;
+            }
+            WorldGenerator generator = WorldGenerator.instance;
+            ZoneSystem zones = ZoneSystem.instance;
+            if (generator == null || zones == null)
+            {
+                return;
+            }
+            _mapExportHandled = true;
+
+            World world = generator.m_world;
+            var identity = new WorldIdentity(world.m_name, world.m_seedName, world.m_seed, world.m_worldGenVersion, zones.m_waterLevel);
+            var thread = new Thread(() => ExportMap(directory, identity, generator))
+            {
+                Name = "valhallowed-map-export",
+                IsBackground = true,
+                Priority = System.Threading.ThreadPriority.BelowNormal,
+            };
+            thread.Start();
+        }
+
+        // Runs on the export's thread, never the game's. An observation fails
+        // soft: whatever goes wrong is logged and the world runs on.
+        private void ExportMap(string directory, WorldIdentity identity, WorldGenerator generator)
+        {
+            try
+            {
+                if (MapExport.IsCurrent(directory, identity, MapSize, MapHalfWidth))
+                {
+                    Logger.LogInfo($"map export in {directory} is current");
+                    return;
+                }
+                Logger.LogInfo($"writing the map export to {directory}");
+                var clock = Stopwatch.StartNew();
+                ExportFiles files = MapExport.Build(identity, MapSize, MapHalfWidth, (x, z) => SampleWorld(generator, x, z), _mapExportCancel.Token);
+                MapExport.Write(directory, files);
+                Logger.LogInfo($"wrote the map export in {clock.Elapsed.TotalSeconds:F1} s");
+            }
+            catch (OperationCanceledException)
+            {
+                Logger.LogInfo("map export stopped");
+            }
+            catch (Exception error)
+            {
+                Logger.LogWarning($"cannot write the map export to {directory}: {error.Message}");
+            }
+        }
+
+        // The world generator's own answer at a point: its biome, the height it
+        // gives that biome, and its forest factor. These methods read the
+        // generator's fixed state and use only managed maths, Unity's value types
+        // and Mathf.PerlinNoise, which Unity marks thread safe, so they run off
+        // the game's thread; the game's own threads call them too (the river
+        // cache is behind a lock for that). A generator the game has since
+        // replaced would sample another world, so the export stops.
+        private static Sample SampleWorld(WorldGenerator generator, float x, float z)
+        {
+            if (WorldGenerator.instance != generator)
+            {
+                throw new OperationCanceledException();
+            }
+            Heightmap.Biome biome = generator.GetBiome(x, z);
+            float height = generator.GetBiomeHeight(biome, x, z, out Color _);
+            float forest = WorldGenerator.GetForestFactor(new Vector3(x, 0f, z));
+            return new Sample((ushort)biome, height, forest);
         }
 
         // One load of the world is one session, started when the world loads.

@@ -209,7 +209,10 @@ markers and journal entries are records, never commands.
   map, which turns a new export into that world's base image and keeps its last
   good render when an export is bad. An export changes only with its world's
   seed, world generator version or resolution, so the render is rare work and
-  needs no child of its own.
+  needs no child of its own. The plugin writes the export off the game thread,
+  and only files inside `map-export`, never the directory itself, which the web
+  map mounts. It writes the raster first and the meta last, and the meta names
+  the raster's length and SHA-256, so a reader never takes a partial export.
 - **Intake knows a world by its address.** It attributes a batch to the world
   whose container sent it, as the control plane's status listener does. No
   child can forge its address on the install network, so worlds hold no token.
