@@ -31,7 +31,7 @@
       "$ref": "database.generation.schema.json#/$defs/address"
     },
     "worlds": {
-      "description": "Each world the generation runs, with where its map export is mounted in the web map (B5). The web map names a world as its live players contract does: by save name.",
+      "description": "Each world the generation runs, with where its map export is mounted in the web map. No two worlds share a name or a path, and the reader refuses a generation where they do. The web map names a world as its live players contract does: by save name.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/world"
@@ -50,9 +50,9 @@
           "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9 _-]{0,62}[A-Za-z0-9])?$"
         },
         "map_export": {
-          "description": "An absolute path in the web map's container: the world's map export directory, read-only. It is the map-export directory of the world's data volume, which the plugin writes (B12).",
+          "description": "An absolute path in the web map's container: the world's map export directory, mounted read-only, in its normal form (no empty or . or .. segment, no trailing slash). It is the map-export directory of the world's data volume, which the plugin writes (B12 names where), with the export's content as B5 states it. The directory may be absent or empty, and the web map treats either as no export yet: a generation reaches the web map before Compose recreates its container with the mount.",
           "type": "string",
-          "pattern": "^/[^\\u0000-\\u001f\\u007f]+$"
+          "pattern": "^/(?:(?!\\.{1,2}(?:/|$))[^/\\u0000-\\u001f\\u007f]+(?:/|$))+(?<!/)$"
         }
       }
     }
