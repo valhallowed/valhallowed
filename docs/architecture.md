@@ -204,6 +204,11 @@ markers and journal entries are records, never commands.
 - **One image, a container per service.** The `data-layer` image runs both the
   database and intake, each as its own child. The web map, in TypeScript (G19),
   has an image of its own.
+- **World render runs in the web map.** Each world's map export directory is
+  mounted read-only into the web map, which turns a new export into that
+  world's base image and keeps its last good render when an export is bad. An
+  export changes only with its world's seed, world generator version or
+  resolution, so the render is rare work and needs no child of its own.
 - **Intake knows a world by its address.** It attributes a batch to the world
   whose container sent it, as the control plane's status listener does. No
   child can forge its address on the install network, so worlds hold no token.
@@ -245,7 +250,7 @@ boundary, and every boundary follows one standard. Each contract lives in
 | B2 | Plugin → intake | Telemetry events | Event schema | Fail soft |
 | B3 | Broker ↔ plugin | Commands and their outcomes | Command verbs, limits, idempotency key | Fail closed |
 | B4 | Services → database | Reads and writes | Schema owned by the data layer; one role per service | The capability degrades; nothing else migrates the schema |
-| B5 | Plugin → world render | Map export file | Export file format | The web map keeps its last good render |
+| B5 | Plugin → world render | Map export file, in the directory the plugin config names (B12) | Export file format | The web map keeps its last good render |
 | B6 | Web map → data | Reads, record writes, chat sends | Read-only role, record constraints, chat-scoped token through the broker | The web map stays read-only |
 | B7 | Assistant → LLM provider | World digest and question; answer | Provider adapter with timeout and budget | The assistant reports itself unavailable |
 | B8 | Chat relay ↔ chat service | Events out; commands in | Adapter; inbound authors allow-listed; commands go through the broker | The relay switches off; the game is unaffected |
@@ -335,7 +340,9 @@ Follows from G4 and G12.
    on a clean host, and see one live player on the web map. The walking
    skeleton runs on built-in defaults.
 3. **Acceptance material.** Recorded sessions, world saves and contracts that
-   every capability must keep, synthesized or anonymized.
+   every capability must keep, synthesized or anonymized. Material for what
+   is already built comes first; the rest lands with the capability or
+   control-plane work that keeps it, before that work's code.
 4. **Capabilities, one release at a time,** each passing its acceptance
    material and each shipping with its bring-your-own settings (G3).
 5. **Control-plane work, one release at a time, beside the capabilities:**
