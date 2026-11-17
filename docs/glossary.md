@@ -139,7 +139,9 @@ and what applies it. With the secrets schema, it produces validation, defaults,
 each child's configuration and the settings reference.
 
 **Map export** — What the plugin writes with a world's map, into the map
-export directory in the world's data volume that its config names (B12): the
+export directory in the world's data volume that its config names (B12): a
+raster of the world as the game's world generator samples it, and the meta that
+says which world, seed, generator version, resolution and extent it covers. The
 input to world render (B5).
 
 **Merge queue** — GitHub's queue in front of `main`. It takes one ready pull

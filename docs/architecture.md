@@ -251,7 +251,7 @@ boundary, and every boundary follows one standard. Each contract lives in
 | B2 | Plugin → intake | Telemetry events | Event schema | Fail soft |
 | B3 | Broker ↔ plugin | Commands and their outcomes | Command verbs, limits, idempotency key | Fail closed |
 | B4 | Services → database | Reads and writes | Schema owned by the data layer; one role per service | The capability degrades; nothing else migrates the schema |
-| B5 | Plugin → world render | The map export, in the directory the plugin config names (B12) | Export file format | The web map keeps its last good render |
+| B5 | Plugin → world render | The map export, in the directory the plugin config names (B12) | Export schema and raster layout, `contracts/plugin.map-export.schema.json` | The web map keeps its last good render |
 | B6 | Web map → data | Reads, record writes, chat sends | Read-only role, record constraints, chat-scoped token through the broker | The web map stays read-only |
 | B7 | Assistant → LLM provider | World digest and question; answer | Provider adapter with timeout and budget | The assistant reports itself unavailable |
 | B8 | Chat relay ↔ chat service | Events out; commands in | Adapter; inbound authors allow-listed; commands go through the broker | The relay switches off; the game is unaffected |

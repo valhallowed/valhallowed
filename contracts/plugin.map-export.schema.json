@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Map export",
+  "description": "B5: a world's map export, which the plugin writes into the directory its config names (B12) and world render reads. The directory holds two files: raster.bin, the map, and meta.json, this document, which says which world the raster shows and how to read it. The plugin writes each to a temporary file in the directory, then renames it into place: raster.bin first and meta.json last, so a meta.json always follows the raster it describes. A reader trusts a raster only when its length and SHA-256 match meta.json's raster; a mismatch means it was taken while the export was being rewritten, and the reader treats the export as bad and keeps its last good render. RASTER LAYOUT: the frame is world space, so a position maps to a pixel with no projection. The raster is square, size by size pixels, covering x and z from -half_width to +half_width metres. Row 0 is north, the largest z, and column 0 is west, the smallest x. Pixel (column, row) samples the world at its centre: x = -half_width + (column + 0.5) * pitch and z = half_width - (row + 0.5) * pitch, where pitch = 2 * half_width / size. A position (x, z) falls in column floor((x + half_width) / pitch) and row floor((half_width - z) / pitch). The file is planar, little-endian and row-major, with three planes one after the other, each size * size values in row order: biome as uint16, then height as float32 in metres, then forest factor as float32. Its length is size * size * 10 bytes. Biome holds the game's biome flag value: see $defs/biome. Height is the world generator's terrain height; a pixel at or below water_level is water. Forest factor is the world generator's own, in which a lower value is denser forest, and forest is where it is below 1.15.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "world", "seed", "generator_version", "water_level", "geometry", "raster"],
+  "properties": {
+    "contract": {
+      "description": "The version of this contract.",
+      "const": 1
+    },
+    "world": {
+      "description": "The world's save name.",
+      "type": "string",
+      "minLength": 1
+    },
+    "seed": {
+      "description": "What identifies the world's terrain: the game keeps the seed as a string and as the integer the world generator uses, and the plugin writes both.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value"],
+      "properties": {
+        "name": {
+          "description": "The seed string, which may be empty.",
+          "type": "string"
+        },
+        "value": {
+          "description": "The seed the world generator uses.",
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "generator_version": {
+      "description": "The world generator's version, the game's world generation version number: the same seed gives a different map under another version.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "water_level": {
+      "description": "The water level in metres, as the game states it: a height at or below it is water.",
+      "type": "number"
+    },
+    "geometry": {
+      "description": "What the raster covers.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["size", "half_width"],
+      "properties": {
+        "size": {
+          "description": "The raster's width and height in pixels.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "half_width": {
+          "description": "Half the raster's width in metres: it covers x and z from -half_width to +half_width, centred on the origin.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "raster": {
+      "description": "The raster file this document describes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "bytes", "sha256"],
+      "properties": {
+        "file": {
+          "description": "The raster's file name, in the same directory.",
+          "const": "raster.bin"
+        },
+        "bytes": {
+          "description": "The raster's length in bytes: size * size * 10.",
+          "type": "integer",
+          "minimum": 10
+        },
+        "sha256": {
+          "description": "The SHA-256 of the raster's bytes, in lower-case hex.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "biome": {
+      "description": "The values of the raster's biome plane: the game's biome flags, by the game's names. A raster holds no other value.",
+      "oneOf": [
+        { "title": "Meadows", "const": 1 },
+        { "title": "Swamp", "const": 2 },
+        { "title": "Mountain", "const": 4 },
+        { "title": "BlackForest", "const": 8 },
+        { "title": "Plains", "const": 16 },
+        { "title": "AshLands", "const": 32 },
+        { "title": "DeepNorth", "const": 64 },
+        { "title": "Ocean", "const": 256 },
+        { "title": "Mistlands", "const": 512 }
+      ]
+    }
+  }
+}
