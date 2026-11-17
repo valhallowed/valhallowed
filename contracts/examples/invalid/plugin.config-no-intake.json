@@ -1,1 +1,1 @@
-{"Status": {"Path": "/run/vhd/world.json", "IntervalSeconds": 5}}
+{"Status": {"Path": "/run/vhd/world.json", "IntervalSeconds": 5}, "MapExport": {"Directory": "/data/map-export"}}

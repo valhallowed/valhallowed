@@ -4,7 +4,7 @@
   "description": "B12, config down: every key of the plugin's BepInEx config, stated once. The supervisor generates the config from the runtime's generation, as BepInEx/config/com.valhallowed.plugin.cfg: one [Section] for each property here, and one Key = value line for each property inside it. The supervisor's tests check what it generates against this contract, and the runtime's tests check that the plugin binds exactly these keys, each with the type named here. A value is one line, since BepInEx reads one value per line.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["Status", "Intake"],
+  "required": ["Status", "Intake", "MapExport"],
   "properties": {
     "Status": {
       "type": "object",
@@ -33,6 +33,18 @@
           "description": "Where the plugin posts telemetry batches (B2).",
           "type": "string",
           "pattern": "^http://[A-Za-z0-9.-]+(:[0-9]{1,5})?/[A-Za-z0-9/._-]*$"
+        }
+      }
+    },
+    "MapExport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["Directory"],
+      "properties": {
+        "Directory": {
+          "description": "Where the plugin writes the world's map export (B5): a directory in the world's data volume, which the web map reads.",
+          "type": "string",
+          "pattern": "^/[^\\u0000-\\u001f\\u007f]*$"
         }
       }
     }
