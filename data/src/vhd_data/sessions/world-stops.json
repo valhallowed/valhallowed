@@ -1,0 +1,25 @@
+{
+  "description": "The world stops sending over 200 s ago, with no leaves. Kolbjorn and a nameless player (positions, no join) are both in the view, and the web map shows nobody.",
+  "batches": [
+    {
+      "age_s": 236,
+      "batch": {"contract": 1, "session": "e72a05d8-4b19-4c6f-8d3b-52f0a1c9e6b7", "sent_at": "2026-11-03T18:56:04Z", "events": [
+        {"kind": "session.start", "at": "2026-11-03T18:55:58Z"},
+        {"kind": "player.join", "at": "2026-11-03T18:56:02Z", "player": {"id": "Steam_76561190000000401", "name": "Kolbjorn"}},
+        {"kind": "player.position", "at": "2026-11-03T18:56:04Z", "player": {"id": "Steam_76561190000000401"}, "x": -210.0, "y": 40.0, "z": 330.0},
+        {"kind": "player.position", "at": "2026-11-03T18:56:04Z", "player": {"id": "Steam_76561190000000402"}, "x": -190.0, "y": 41.0, "z": 320.0}
+      ]}
+    },
+    {
+      "age_s": 201,
+      "batch": {"contract": 1, "session": "e72a05d8-4b19-4c6f-8d3b-52f0a1c9e6b7", "sent_at": "2026-11-03T18:56:39Z", "events": [
+        {"kind": "player.position", "at": "2026-11-03T18:56:39Z", "player": {"id": "Steam_76561190000000401"}, "x": -214.0, "y": 40.5, "z": 336.0},
+        {"kind": "player.position", "at": "2026-11-03T18:56:39Z", "player": {"id": "Steam_76561190000000402"}, "x": -190.0, "y": 41.0, "z": 320.0}
+      ]}
+    }
+  ],
+  "live": {
+    "view": [{"name": "Kolbjorn", "x": -214.0}, {"name": null, "x": -190.0}],
+    "web_map": []
+  }
+}
