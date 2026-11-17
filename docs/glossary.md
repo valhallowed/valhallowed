@@ -141,13 +141,18 @@ each child's configuration and the settings reference.
 **Map export** — What the plugin writes with a world's map, into the map
 export directory in the world's data volume that its config names (B12): a
 raster of the world as the game's world generator samples it, and the meta that
-says which world, seed, generator version, resolution and extent it covers. The
-input to world render (B5).
+says which world, seed, generator version, water level, resolution and extent it
+covers. The input to world render (B5).
 
 **Merge queue** — GitHub's queue in front of `main`. It takes one ready pull
 request at a time and merges it once the merge gate passes again on it merged
 with the newest `main`, so no branch is rebased only to catch up, and every
 merge is a commit build.
+
+**Meta** — The map export's `meta.json`: the world's name, seed, generator
+version, water level and the raster's geometry, with the raster's length and
+SHA-256. The plugin writes it last, so a meta always follows the raster it
+names.
 
 **Milestone** — A set of slices that together reach a point in the delivery
 order, tracked as a GitHub milestone. It lands in one or more pull requests.
@@ -176,6 +181,10 @@ three of them.
 
 **Promotion** — Applying a version tag to images already in the registry.
 Candidates and releases are promoted, never rebuilt (G12).
+
+**Raster** — The map export's `raster.bin`: a square, top-down grid of the world
+in world space, each pixel holding its biome, height and forest factor, as the
+world generator samples them.
 
 **Reconcile** — The control-plane step that merges the manifest, secrets and
 defaults into a new generation.
