@@ -1,6 +1,6 @@
 """Names and paths an install's containers share."""
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 # The control plane's Compose service, which every child reaches on the install network.
 CONTROL_PLANE = "control-plane"
@@ -16,6 +16,11 @@ SERVICES = (DATABASE, INTAKE, WEB_MAP)
 DATABASE_PORT = 5432
 INTAKE_PORT = 9458
 WEB_MAP_PORT = 8456
+# The directory the plugin writes each world's map export into, in the world's data volume (B12),
+# and where the web map mounts each one read-only, one directory per world (B1). The runtime
+# names the same directory in runtime/src/vhd_runtime/supervisor.py, Paths.map_export.
+MAP_EXPORT = "map-export"
+WEB_MAP_EXPORTS = PurePosixPath("/map-export")
 # The database the services share, and the role each service signs in as.
 DATABASE_NAME = "vhd"
 INTAKE_ROLE = "intake"

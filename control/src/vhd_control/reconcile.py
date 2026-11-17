@@ -14,6 +14,7 @@ import secrets
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from itertools import pairwise
+from pathlib import PurePosixPath
 from typing import cast
 
 from vhd_control import layout
@@ -75,6 +76,9 @@ class Service:
     # The host port vhd apply publishes for the service, which no document carries: a change to it
     # waits for vhd apply (G13). None for a service the host never reaches.
     port: int | None = None
+    # The child ids whose data volumes the service's container mounts, which a change to waits for
+    # vhd apply, since only a new container mounts them.
+    mounts: tuple[str, ...] = ()
 
     def numbered(self, number: int) -> tuple[dict[str, object], dict[str, object]]:
         """The generation and secrets documents as the service reads them."""
@@ -103,6 +107,11 @@ def reconcile(settings: Settings, previous: Generation | None, token: Token = _t
     if previous is not None and dict(previous.children) == children and dict(previous.services) == services:
         return previous
     return Generation(number=1 if previous is None else previous.number + 1, children=children, services=services)
+
+
+def web_map_export(child_id: str) -> PurePosixPath:
+    """Where the web map mounts a world's map export, read-only."""
+    return layout.WEB_MAP_EXPORTS / child_id
 
 
 def _child(world: World) -> Child:
@@ -151,9 +160,18 @@ def _services(children: Mapping[str, Child], passwords: Mapping[str, str], web_m
         ),
         layout.WEB_MAP: Service(
             name=layout.WEB_MAP,
-            generation={"contract": 2, **reporting, "database": _database(layout.WEB_MAP_ROLE)},
+            generation={
+                "contract": 3,
+                **reporting,
+                "database": _database(layout.WEB_MAP_ROLE),
+                "worlds": [
+                    {"name": child.world, "map_export": str(web_map_export(cid))}
+                    for cid, child in sorted(children.items())
+                ],
+            },
             secrets={"contract": 2, "password": passwords[layout.WEB_MAP_ROLE]},
             port=web_map_port,
+            mounts=tuple(sorted(children)),
         ),
     }
 

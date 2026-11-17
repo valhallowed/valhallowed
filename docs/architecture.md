@@ -207,16 +207,28 @@ markers and journal entries are records, never commands.
 - **World render runs in the web map.** Each world's map export directory,
   `map-export` in the world's data volume, is mounted read-only into the web
   map, which turns a new export into that world's base image and keeps its last
-  good render when an export is bad. The plugin writes an export again only
-  when it differs from what its world would produce: another world name, seed,
-  world generator version, water level, resolution or extent, or a raster that
-  is not its meta's. That is rare, so the render is rare work and needs no child
-  of its own. A game update that changes generation without bumping the world
-  generator version leaves the export as it was. The plugin writes the export
-  off the game thread,
-  and only files inside `map-export`, never the directory itself, which the web
-  map mounts. It writes the raster first and the meta last, and the meta names
-  the raster's length and SHA-256, so a reader never takes a partial export.
+  good render when an export is bad. The plugin writes an export again only when
+  it differs from what its world would produce: another world name, seed, world
+  generator version, water level, resolution or extent, or a raster that is not
+  its meta's. That is rare, so the render is rare work and needs no child of its
+  own. A game update that changes generation without bumping the world generator
+  version leaves the export as it was. The plugin writes the export off the game
+  thread, and only files inside `map-export`, never the directory itself, which
+  the web map mounts. It writes the raster first and the meta last, and the meta
+  names the raster's length and SHA-256, so a reader never takes a partial
+  export. The web map's generation (B1) lists each world by save name, as its
+  live players do, with where its export is mounted. Only the `map-export`
+  subpath is mounted, so a world's saves and secrets never reach the web map.
+  `vhd apply` makes the directory first, as the game runtime's own user in a
+  one-off container of its image, since Compose cannot mount a subpath that does
+  not exist; that also lets a new world's data volume take the image's `/data`
+  and its owner on its first mount. A world added or removed changes the web
+  map's container, so status shows its new generation as pending until
+  `vhd apply`. A subpath mount pins the directory present when the web map
+  starts, and a missing one stops the web map from starting, for every world. So
+  nothing replaces or removes a world's `map-export` directory: the plugin
+  writes inside it, and the hold and restore actions keep it. `vhd apply` and
+  the game runtime's supervisor both create it, the supervisor at each start.
 - **Intake knows a world by its address.** It attributes a batch to the world
   whose container sent it, as the control plane's status listener does. No
   child can forge its address on the install network, so worlds hold no token.

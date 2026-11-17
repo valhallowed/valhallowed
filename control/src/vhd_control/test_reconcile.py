@@ -132,6 +132,26 @@ def test_a_generation_from_before_the_web_map_role_keeps_intake_and_gains_web_ma
     assert after.services["web-map"].secrets == {"contract": 2, "password": "n" * 32}
 
 
+def test_the_web_map_lists_each_world_with_where_its_map_export_is_mounted() -> None:
+    generation = reconcile(settings(World("Meadowfold", 2456, None), World("Ashwake", 2459, None)), None)
+
+    web_map = generation.services["web-map"]
+    assert web_map.generation["contract"] == 3
+    assert web_map.generation["worlds"] == [
+        {"name": "Ashwake", "map_export": f"/map-export/{child_id('Ashwake')}"},
+        {"name": "Meadowfold", "map_export": f"/map-export/{child_id('Meadowfold')}"},
+    ]
+    assert web_map.mounts == tuple(sorted(generation.children))
+    assert generation.services["intake"].mounts == ()
+
+
+def test_a_world_added_changes_the_web_maps_documents() -> None:
+    first = reconcile(settings(World("Meadowfold", 2456, None)), None)
+    second = reconcile(settings(World("Meadowfold", 2456, None), World("Ashwake", 2459, None)), first)
+    assert second.number == first.number + 1
+    assert second.services["web-map"].mounts != first.services["web-map"].mounts
+
+
 def test_the_web_map_signs_in_to_the_database_as_its_own_role() -> None:
     generation = reconcile(settings(World("Meadowfold", 2456, None)), None)
     address = {"host": "database", "port": 5432, "name": "vhd"}

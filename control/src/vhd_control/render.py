@@ -7,7 +7,7 @@ vhd and hands the paths to the host's Docker.
 from dataclasses import dataclass
 
 from vhd_control import layout
-from vhd_control.reconcile import Generation, last_port
+from vhd_control.reconcile import Generation, last_port, web_map_export
 
 # The release's images, by their keys in compose.yaml's x-vhd block.
 CONTROL_PLANE_IMAGE = "control-plane"
@@ -24,6 +24,11 @@ LOCKED_DOWN = {"cap_drop": ["ALL"], "security_opt": ["no-new-privileges:true"]}
 # Docker's local driver rotates by default, so no container's log can fill the host's disk.
 LOGGING = {"logging": {"driver": "local"}}
 NOTE = "Rendered by vhd apply from manifest.toml and the release's compose.yaml. vhd apply rewrites it."
+
+
+def data_volume(child_id: str) -> str:
+    """The name of a world's data volume in the compose file; Compose prefixes the project's."""
+    return f"{child_id}-data"
 
 
 @dataclass(frozen=True)
@@ -77,10 +82,10 @@ def render(generation: Generation, host: Host) -> dict[str, object]:
                     "read_only": True,
                     "volume": {"subpath": f"{cid}/{child.port}"},
                 },
-                {"type": "volume", "source": f"{cid}-data", "target": "/data"},
+                {"type": "volume", "source": data_volume(cid), "target": "/data"},
             ],
         }
-        volumes[f"{cid}-data"] = {}
+        volumes[data_volume(cid)] = {}
     # The data layer's services, on the install network. Only the web map's port is published, on
     # the host port its service carries (G9).
     for name, spec in sorted(generation.services.items()):
@@ -101,6 +106,18 @@ def render(generation: Generation, host: Host) -> dict[str, object]:
             service["image"] = host.images[WEB_MAP_IMAGE]
             del service["command"]
             service["ports"] = [f"{spec.port}:{layout.WEB_MAP_PORT}"]
+            # Each world's map export, read-only: Compose mounts only the subpath, so the world's
+            # runtime state and secrets never reach the web map.
+            mounts.extend(
+                {
+                    "type": "volume",
+                    "source": data_volume(cid),
+                    "target": str(web_map_export(cid)),
+                    "read_only": True,
+                    "volume": {"subpath": layout.MAP_EXPORT},
+                }
+                for cid in spec.mounts
+            )
         if name == layout.DATABASE:
             service["stop_grace_period"] = DATABASE_STOP_GRACE
             mounts.append({"type": "volume", "source": DATABASE_VOLUME, "target": "/data"})

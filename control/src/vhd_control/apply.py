@@ -19,7 +19,7 @@ from vhd_control import client, layout, manifest
 from vhd_control.docker import Docker, DockerError
 from vhd_control.manifest import Settings
 from vhd_control.reconcile import Child, Generation, Service, reconcile
-from vhd_control.render import IMAGES, Host, render
+from vhd_control.render import GAME_RUNTIME_IMAGE, IMAGES, LOCKED_DOWN, Host, data_volume, render
 from vhd_control.schemas import Schemas
 from vhd_control.status import WorldView
 from vhd_control.store import Handed, State, Store
@@ -28,6 +28,7 @@ from vhd_control.store import Handed, State, Store
 MIN_ENGINE_API = (1, 45)
 PROJECT_LABEL = "com.docker.compose.project"
 SERVICE_LABEL = "com.docker.compose.service"
+VOLUME_LABEL = "com.docker.compose.volume"
 # How long Compose waits for the containers it starts to run.
 WAIT_TIMEOUT_S = 300
 APPLY_LOCK = ".apply.lock"
@@ -109,6 +110,8 @@ class Apply:
             recreated = _recreated(rendered, previous)
             restarts = _restarts(generation, state, recreated, running, worlds)
             override = self._confirm(restarts, disconnect_players, worlds) if restarts else None
+            # After the players check, so a refused apply creates no volume.
+            self._make_map_exports(host, generation)
             confirmed = {cid for cid, restart in restarts.items() if override and restart.world in override}
             self._write(next_file, rendered, host.owner)
             try:
@@ -138,6 +141,38 @@ class Apply:
         next_file.replace(self._applied)
         with self.store.locked():
             self._commit(self.store.load(), generation, moving, override)
+
+    def _make_map_exports(self, host: Host, generation: Generation) -> None:
+        """Make each world's map export directory in its data volume, before Compose mounts it:
+        Compose cannot mount a subpath that does not exist. A one-off container of the game
+        runtime's image makes it, as that image's own user (its USER, so the uid is written in
+        the Dockerfile alone), so that the plugin can write it, and so that a volume new to the
+        install still takes the image's /data and its owner on this first mount: Docker copies an
+        image's content into an empty named volume only then. The runtime's supervisor makes the
+        same directory at each start (runtime/src/vhd_runtime/supervisor.py, Paths.map_export).
+        The volume carries Compose's labels, so Compose takes it as its own. Safe to repeat."""
+        # Compose's own keys for the same limits, as docker run's flags.
+        locked_down = [f"--{key.replace('_', '-')}={value}" for key, values in LOCKED_DOWN.items() for value in values]
+        for cid in sorted(generation.children):
+            volume = f"{host.project}_{data_volume(cid)}"
+            labels = [f"{PROJECT_LABEL}={host.project}", f"{VOLUME_LABEL}={data_volume(cid)}"]
+            try:
+                self.docker.output(["volume", "create", *(f"--label={label}" for label in labels), volume])
+                self.docker.output(
+                    [
+                        "run", "--rm", "--pull", "never", "--network", "none", "--entrypoint", "mkdir",
+                        *locked_down,
+                        "--volume", f"{volume}:/data",
+                        host.images[GAME_RUNTIME_IMAGE], "-p", f"/data/{layout.MAP_EXPORT}",
+                    ]
+                )  # fmt: skip
+            except DockerError as error:
+                raise Refused(
+                    f"vhd apply could not make the map export directory of world {generation.children[cid].world!r} "
+                    f"({error}). Nothing was applied. Check that Docker can run the game runtime image, that the "
+                    "volume's /data is owned by the runtime's user, and that /data/map-export, if it exists, is a "
+                    "directory; then run vhd apply again."
+                ) from error
 
     def _quiet_orphans(self, owner: tuple[int, int]) -> None:
         """The host's Compose sees the containers vhd apply renders as orphans of compose.yaml,
@@ -364,6 +399,7 @@ class Apply:
             del state.handed[cid]
         state.applied = {cid: child.port for cid, child in generation.children.items()}
         state.services_applied = {name: service.port for name, service in sorted(generation.services.items())}
+        state.mounts_applied = {name: service.mounts for name, service in sorted(generation.services.items())}
         self.store.save(state)
         self.store.prune(state.applied, removed)
 

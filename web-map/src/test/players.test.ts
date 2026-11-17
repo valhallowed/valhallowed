@@ -32,11 +32,12 @@ function documents(password = "pw", host = "db"): Documents {
   return {
     number: 1,
     generation: {
-      contract: 1,
+      contract: 3,
       generation: 1,
       status_url: "http://control-plane:9457/status",
       status_interval_s: 5,
       database: { host, port: 5432, name: "vhd", user: "web_map" },
+      worlds: [],
     },
     secrets: { contract: 1, generation: 1, password: new Secret(password) },
   };

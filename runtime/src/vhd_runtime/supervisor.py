@@ -78,7 +78,8 @@ class Paths:
     @property
     def map_export(self) -> Path:
         """Where the plugin writes the world's map export (B5), in the data volume. The web map
-        mounts it read-only by this name, map-export, under the volume (docs/architecture.md)."""
+        mounts it read-only by this name, map-export, under the volume (docs/architecture.md), and
+        vhd apply makes it too: control/src/vhd_control/layout.py, MAP_EXPORT."""
         return self.data / "map-export"
 
     @property

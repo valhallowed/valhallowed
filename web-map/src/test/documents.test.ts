@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -8,11 +8,12 @@ import { Adopter, IncompleteDocuments, InvalidDocuments, Reader, Secret } from "
 import { CONTRACTS } from "./paths.js";
 
 const GENERATION = {
-  contract: 2,
+  contract: 3,
   generation: 2,
   status_url: "http://control-plane:9457/status",
   status_interval_s: 5,
   database: { host: "database", port: 5432, name: "vhd", user: "web_map" },
+  worlds: [{ name: "Meadowfold", map_export: "/map-export/world-meadowfold-3f2a1c" }],
 };
 const PASSWORD = "Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6cXV4Zm9vYmFy";
 
@@ -46,6 +47,7 @@ test("a generation and its secrets read together", () => {
   assert.equal(read?.number, 2);
   assert.equal(read?.generation.status_interval_s, 5);
   assert.deepEqual(read?.generation.database, GENERATION.database);
+  assert.deepEqual(read?.generation.worlds, GENERATION.worlds);
   assert.equal(read?.secrets.password.reveal(), PASSWORD);
 });
 
@@ -67,6 +69,58 @@ test("a generation that breaks its contract is refused, and says where", () => {
   assert.throws(() => new Reader("web-map", dir, CONTRACTS).read(), (error: unknown) => {
     return error instanceof InvalidDocuments && error.message.includes("additional properties");
   });
+});
+
+test("a generation of the previous contract is refused, and a world without its mount too", () => {
+  const dir = directory();
+  write(dir, "secrets.json", secrets(2));
+  write(dir, "generation.json", { ...GENERATION, contract: 2 });
+  assert.throws(() => new Reader("web-map", dir, CONTRACTS).read(), InvalidDocuments);
+  write(dir, "generation.json", { ...GENERATION, worlds: [{ name: "Meadowfold" }] });
+  assert.throws(() => new Reader("web-map", dir, CONTRACTS).read(), (error: unknown) => {
+    return error instanceof InvalidDocuments && error.message.includes("map_export");
+  });
+});
+
+test("a world is named as the live players contract names it", () => {
+  type Contract = { $defs: { world: { properties: { name: { pattern: string } } } } };
+  const pattern = (file: string): string =>
+    (JSON.parse(readFileSync(join(CONTRACTS, file), "utf8")) as Contract).$defs.world.properties.name.pattern;
+  assert.equal(pattern("web-map.generation.schema.json"), pattern("web-map.players.schema.json"));
+});
+
+test("two worlds that share a name or a map export path are refused", () => {
+  const dir = directory();
+  write(dir, "secrets.json", secrets(2));
+  const other = { name: "Ashwake", map_export: "/map-export/world-ashwake-9b01de" };
+  const reader = new Reader("web-map", dir, CONTRACTS);
+  for (const repeated of [
+    { ...other, name: "Meadowfold" },
+    { ...other, map_export: "/map-export/world-meadowfold-3f2a1c" },
+  ]) {
+    write(dir, "generation.json", { ...GENERATION, worlds: [...GENERATION.worlds, repeated] });
+    assert.throws(() => reader.read(), (error: unknown) => {
+      return error instanceof InvalidDocuments && error.message.includes("share a");
+    });
+  }
+  write(dir, "generation.json", { ...GENERATION, worlds: [...GENERATION.worlds, other] });
+  assert.equal(reader.read()?.generation.worlds.length, 2);
+});
+
+test("a map export path that leaves its directory is refused", () => {
+  const dir = directory();
+  write(dir, "secrets.json", secrets(2));
+  for (const path of ["/map-export/../generations", "/map-export//x", "/map-export/x/"]) {
+    write(dir, "generation.json", { ...GENERATION, worlds: [{ name: "Meadowfold", map_export: path }] });
+    assert.throws(() => new Reader("web-map", dir, CONTRACTS).read(), InvalidDocuments);
+  }
+});
+
+test("a generation with no worlds reads as an empty list", () => {
+  const dir = directory();
+  write(dir, "secrets.json", secrets(2));
+  write(dir, "generation.json", { ...GENERATION, worlds: [] });
+  assert.deepEqual(new Reader("web-map", dir, CONTRACTS).read()?.generation.worlds, []);
 });
 
 test("secrets that are not JSON are refused without their text", () => {

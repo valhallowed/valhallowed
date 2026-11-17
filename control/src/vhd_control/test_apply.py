@@ -31,6 +31,12 @@ class FakeDocker:
         self.running: list[str] = []
         self.mounts = {"/install": "/srv/vhd", "/var/run/docker.sock": "/var/run/docker.sock"}
         self.streamed: list[list[str]] = []
+        # The volume and one-off container commands that prepare each world's map export directory,
+        # and whether the one-off container fails.
+        self.prepared: list[list[str]] = []
+        # How many of them had run when each Compose command did.
+        self.compose_after_prepared: list[int] = []
+        self.fail_prepare = False
         # Images the host lacks.
         self.missing: set[str] = set()
         # How many coming Compose runs fail, and whether the next is interrupted.
@@ -48,6 +54,11 @@ class FakeDocker:
             return json.dumps([{"Mounts": mounts, "Config": {"Labels": {"com.docker.compose.project": "valhallowed"}}}])
         if args[:2] == ["compose", "-f"]:
             return json.dumps({"name": "valhallowed", "x-vhd": {"images": self.images}})
+        if args[0] in ("volume", "run"):
+            if self.fail_prepare and args[0] == "run":
+                raise DockerError("docker run: mkdir: Permission denied")
+            self.prepared.append(args)
+            return ""
         if args[0] == "ps":
             return "".join(f"{service}\n" for service in self.running)
         if args[:2] == ["image", "inspect"]:
@@ -59,6 +70,8 @@ class FakeDocker:
     def stream(self, args: list[str]) -> None:
         self.hook(args)
         self.streamed.append(args)
+        if args[0] == "compose":
+            self.compose_after_prepared.append(len(self.prepared))
         if args[0] == "pull":
             self.missing.discard(args[1])
             return
@@ -190,6 +203,82 @@ def test_the_rendered_install_mounts_each_world_only_its_own_generation(setup: S
     assert "ports" not in control_plane
     assert services["vhd"] == {"image": IMAGES["control-plane"], "profiles": ["tools"]}
     assert services["web-map"]["ports"] == ["8456:8456"]
+
+
+def test_each_world_gets_its_map_export_directory_made_by_the_runtime_image_and_user(setup: Setup) -> None:
+    setup.apply()
+
+    assert [args[0] for args in setup.docker.prepared] == ["volume", "run", "volume", "run"]
+    # Before Compose runs, which cannot mount a subpath that is not there.
+    assert setup.docker.compose_after_prepared == [4]
+    volumes = [args for args in setup.docker.prepared if args[0] == "volume"]
+    assert volumes == [
+        [
+            "volume", "create", "--label=com.docker.compose.project=valhallowed",
+            f"--label=com.docker.compose.volume={cid}-data", f"valhallowed_{cid}-data",
+        ]
+        for cid in (ASHWAKE, MEADOWFOLD)
+    ]  # fmt: skip
+    runs = [args for args in setup.docker.prepared if args[0] == "run"]
+    assert runs[0] == [
+        # No --user: the image's own USER makes the directory, so its uid is written in the Dockerfile alone.
+        "run", "--rm", "--pull", "never", "--network", "none", "--entrypoint", "mkdir",
+        "--cap-drop=ALL", "--security-opt=no-new-privileges:true",
+        "--volume", f"valhallowed_{ASHWAKE}-data:/data",
+        IMAGES["game-runtime"], "-p", "/data/map-export",
+    ]  # fmt: skip
+    assert len(runs) == 2
+
+
+def test_a_map_export_directory_that_cannot_be_made_refuses_the_apply_before_anything_changes(setup: Setup) -> None:
+    setup.docker.fail_prepare = True
+    with pytest.raises(Refused, match=r"could not make the map export directory of world 'Ashwake'.*apply again"):
+        setup.apply()
+
+    assert setup.docker.streamed == []
+    assert not (setup.install / layout.RENDERED).exists()
+    assert not (setup.install / layout.NEXT).exists()
+    assert Store(setup.volume).load().applied is None
+
+
+def test_a_refused_players_check_makes_no_map_export_calls(setup: Setup) -> None:
+    setup.apply()
+    setup.docker.prepared.clear()
+    setup.docker.running = [MEADOWFOLD, ASHWAKE]
+    setup.players("Meadowfold", 2)
+    (setup.install / "secrets.toml").write_text(PASSWORD)
+
+    with pytest.raises(Refused, match="players may be online"):
+        setup.apply()
+    assert setup.docker.prepared == []
+
+
+def test_a_removed_world_gets_no_volume_and_no_map_export_directory(setup: Setup) -> None:
+    setup.apply()
+    setup.docker.prepared.clear()
+    (setup.install / "manifest.toml").write_text("schema = 1\n\n[world.Meadowfold]\n")
+    setup.apply()
+
+    assert [args[-1] for args in setup.docker.prepared if args[0] == "volume"] == [f"valhallowed_{MEADOWFOLD}-data"]
+    assert all(ASHWAKE not in " ".join(args) for args in setup.docker.prepared)
+    assert len([args for args in setup.docker.prepared if args[0] == "run"]) == 1
+
+
+def test_the_web_map_mounts_each_worlds_map_export_read_only(setup: Setup) -> None:
+    setup.apply()
+    web_map = setup.rendered()["services"]["web-map"]
+
+    for cid in (MEADOWFOLD, ASHWAKE):
+        assert {
+            "type": "volume", "source": f"{cid}-data", "target": f"/map-export/{cid}",
+            "read_only": True, "volume": {"subpath": "map-export"},
+        } in web_map["volumes"]  # fmt: skip
+    # Only the map export: the runtime's /data is never mounted whole.
+    assert not any(v["target"] == "/data" for v in web_map["volumes"])
+    generation = json.loads((setup.volume / "web-map" / "generation.json").read_text())
+    assert SCHEMAS.problem("contracts/web-map.generation.schema.json", generation) is None
+    assert {w["map_export"] for w in generation["worlds"]} == {f"/map-export/{MEADOWFOLD}", f"/map-export/{ASHWAKE}"}
+    assert Store(setup.volume).load().mounts_applied["web-map"] == tuple(sorted([MEADOWFOLD, ASHWAKE]))
 
 
 def test_the_data_layer_runs_on_the_install_network_alone_with_its_own_documents(setup: Setup) -> None:

@@ -52,6 +52,9 @@ class State:
     # The services vhd apply has created containers for, each with the host port it published, if
     # any. None until vhd apply has run with them.
     services_applied: dict[str, int | None] | None = None
+    # The child ids whose data volumes each service's container mounts, by service name, as vhd
+    # apply created it. Missing for a service until vhd apply has run since the web map mounts them.
+    mounts_applied: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 class Store:
@@ -89,6 +92,7 @@ class Store:
             applied=document.get("applied"),
             override=document.get("override"),
             services_applied=_services_applied(document.get("services_applied")),
+            mounts_applied={name: tuple(ids) for name, ids in document.get("mounts_applied", {}).items()},
         )
 
     def save(self, state: State) -> None:
@@ -101,6 +105,7 @@ class Store:
             "applied": state.applied,
             "override": state.override,
             "services_applied": state.services_applied,
+            "mounts_applied": state.mounts_applied,
         }
         # It holds every world's secrets, so only its owner reads it.
         self._write(self.root / STATE_FILE, document, 0o600)
@@ -203,7 +208,13 @@ def _child(document: Mapping[str, Any]) -> Child:
 
 
 def _service_document(service: Service) -> dict[str, object]:
-    return {"name": service.name, "generation": service.generation, "secrets": service.secrets, "port": service.port}
+    return {
+        "name": service.name,
+        "generation": service.generation,
+        "secrets": service.secrets,
+        "port": service.port,
+        "mounts": list(service.mounts),
+    }
 
 
 def _service(document: Mapping[str, Any]) -> Service:
@@ -212,6 +223,7 @@ def _service(document: Mapping[str, Any]) -> Service:
         generation=cast(dict[str, object], document["generation"]),
         secrets=cast(dict[str, object], document["secrets"]),
         port=cast(int | None, document.get("port")),
+        mounts=tuple(cast(list[str], document.get("mounts", []))),
     )
 
 
