@@ -17,11 +17,10 @@ DATABASE_PORT = 5432
 INTAKE_PORT = 9458
 WEB_MAP_PORT = 8456
 # The directory the plugin writes each world's map export into, in the world's data volume (B12),
-# and where the web map mounts each one read-only, one directory per world (B1).
+# and where the web map mounts each one read-only, one directory per world (B1). The runtime
+# names the same directory in runtime/src/vhd_runtime/supervisor.py, Paths.map_export.
 MAP_EXPORT = "map-export"
 WEB_MAP_EXPORTS = PurePosixPath("/map-export")
-# The game runtime's user, which owns /data in its image and so each world's data volume.
-RUNTIME_UID = 10001
 # The database the services share, and the role each service signs in as.
 DATABASE_NAME = "vhd"
 INTAKE_ROLE = "intake"

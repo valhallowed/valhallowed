@@ -57,7 +57,7 @@ class Install:
                 for service in generation.services.values():
                     self.store.serve(state, service, generation.number)
                 state.services_applied = {name: service.port for name, service in generation.services.items()}
-                state.mounts_applied = {name: list(service.mounts) for name, service in generation.services.items()}
+                state.mounts_applied = {name: service.mounts for name, service in generation.services.items()}
             state.generation = generation
             state.applied = {cid: child.port for cid, child in generation.children.items()}
             self.store.save(state)
@@ -306,6 +306,26 @@ def test_a_world_added_or_removed_changes_the_web_maps_container_and_waits_for_v
     assert status is not None
     assert status["services"]["web-map"]["pending"] == {"generation": 3, "waits_for": WAITS_FOR_APPLY}
     assert SCHEMAS.problem("contracts/control.status.schema.json", status) is None
+
+
+def test_an_install_applied_before_the_web_map_mounted_exports_waits_for_vhd_apply_for_the_web_map_alone(
+    install: Install,
+) -> None:
+    # What a release before the mounts left: services applied, no mounts recorded, worlds present.
+    with install.store.locked():
+        state = install.store.load()
+        state.mounts_applied = {}
+        install.store.save(state)
+    install.write(TWO_WORLDS + "\n[world.Emberfjord]\nport = 2462\n")
+    install.daemon.step()
+
+    status = install.daemon.status()
+    assert status is not None
+    assert status["services"]["web-map"]["pending"] == {"generation": 2, "waits_for": WAITS_FOR_APPLY}
+    for name in ("database", "intake"):
+        assert "pending" not in status["services"][name]
+        assert served(install, name)["generation"] == 2
+    assert served(install, "web-map")["generation"] == 1
 
 
 def test_a_service_report_shows_in_status(install: Install) -> None:

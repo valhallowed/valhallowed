@@ -221,8 +221,9 @@ def test_each_world_gets_its_map_export_directory_made_by_the_runtime_image_and_
     ]  # fmt: skip
     runs = [args for args in setup.docker.prepared if args[0] == "run"]
     assert runs[0] == [
-        "run", "--rm", "--pull", "never", "--network", "none", "--user", "10001", "--entrypoint", "mkdir",
-        "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+        # No --user: the image's own USER makes the directory, so its uid is written in the Dockerfile alone.
+        "run", "--rm", "--pull", "never", "--network", "none", "--entrypoint", "mkdir",
+        "--cap-drop=ALL", "--security-opt=no-new-privileges:true",
         "--volume", f"valhallowed_{ASHWAKE}-data:/data",
         IMAGES["game-runtime"], "-p", "/data/map-export",
     ]  # fmt: skip
@@ -240,6 +241,29 @@ def test_a_map_export_directory_that_cannot_be_made_refuses_the_apply_before_any
     assert Store(setup.volume).load().applied is None
 
 
+def test_a_refused_players_check_makes_no_map_export_calls(setup: Setup) -> None:
+    setup.apply()
+    setup.docker.prepared.clear()
+    setup.docker.running = [MEADOWFOLD, ASHWAKE]
+    setup.players("Meadowfold", 2)
+    (setup.install / "secrets.toml").write_text(PASSWORD)
+
+    with pytest.raises(Refused, match="players may be online"):
+        setup.apply()
+    assert setup.docker.prepared == []
+
+
+def test_a_removed_world_gets_no_volume_and_no_map_export_directory(setup: Setup) -> None:
+    setup.apply()
+    setup.docker.prepared.clear()
+    (setup.install / "manifest.toml").write_text("schema = 1\n\n[world.Meadowfold]\n")
+    setup.apply()
+
+    assert [args[-1] for args in setup.docker.prepared if args[0] == "volume"] == [f"valhallowed_{MEADOWFOLD}-data"]
+    assert all(ASHWAKE not in " ".join(args) for args in setup.docker.prepared)
+    assert len([args for args in setup.docker.prepared if args[0] == "run"]) == 1
+
+
 def test_the_web_map_mounts_each_worlds_map_export_read_only(setup: Setup) -> None:
     setup.apply()
     web_map = setup.rendered()["services"]["web-map"]
@@ -254,7 +278,7 @@ def test_the_web_map_mounts_each_worlds_map_export_read_only(setup: Setup) -> No
     generation = json.loads((setup.volume / "web-map" / "generation.json").read_text())
     assert SCHEMAS.problem("contracts/web-map.generation.schema.json", generation) is None
     assert {w["map_export"] for w in generation["worlds"]} == {f"/map-export/{MEADOWFOLD}", f"/map-export/{ASHWAKE}"}
-    assert Store(setup.volume).load().mounts_applied["web-map"] == sorted([MEADOWFOLD, ASHWAKE])
+    assert Store(setup.volume).load().mounts_applied["web-map"] == tuple(sorted([MEADOWFOLD, ASHWAKE]))
 
 
 def test_the_data_layer_runs_on_the_install_network_alone_with_its_own_documents(setup: Setup) -> None:

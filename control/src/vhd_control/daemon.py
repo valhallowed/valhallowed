@@ -5,9 +5,10 @@ What a runtime may have depends on what the change costs it (Change cost):
 - anything else restarts its game, so it waits while players may be online (an empty world);
 - a new world or a new port changes its container, so it waits for vhd apply.
 A data-layer service takes every generation at once: it faces no players, and adopts its
-documents in place. Only a service vhd apply has not yet created a container for waits for it,
-or one whose container mounts other worlds' volumes than the generation's: the web map, when a
-world is added or removed.
+documents in place. Only a service whose container vhd apply has not created as the generation
+needs it waits for it: one with no container yet, one published on another host port (the web
+map), or one mounting other worlds' volumes than the generation's (the web map, when a world is
+added or removed).
 vhd apply hands every child its documents itself, once the server manager has confirmed
 any restart, so it is also how a waiting change is applied now.
 """
@@ -116,8 +117,8 @@ class Daemon:
         served = False
         applied = state.services_applied or {}
         for name, service in generation.services.items():
-            mounted = state.mounts_applied.get(name, [])
-            if name not in applied or applied[name] != service.port or mounted != list(service.mounts):
+            mounted = state.mounts_applied.get(name, ())
+            if name not in applied or applied[name] != service.port or mounted != service.mounts:
                 pending[name] = generation.number
             elif name not in state.services or state.services[name].number != generation.number:
                 self.store.serve(state, service, generation.number)

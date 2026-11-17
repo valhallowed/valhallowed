@@ -52,9 +52,9 @@ class State:
     # The services vhd apply has created containers for, each with the host port it published, if
     # any. None until vhd apply has run with them.
     services_applied: dict[str, int | None] | None = None
-    # The worlds' data volumes each service's container mounts, by service name, as vhd apply
-    # created it. Missing for a service until vhd apply has run since the web map mounts them.
-    mounts_applied: dict[str, list[str]] = field(default_factory=dict)
+    # The child ids whose data volumes each service's container mounts, by service name, as vhd
+    # apply created it. Missing for a service until vhd apply has run since the web map mounts them.
+    mounts_applied: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 class Store:
@@ -92,7 +92,7 @@ class Store:
             applied=document.get("applied"),
             override=document.get("override"),
             services_applied=_services_applied(document.get("services_applied")),
-            mounts_applied=document.get("mounts_applied", {}),
+            mounts_applied={name: tuple(ids) for name, ids in document.get("mounts_applied", {}).items()},
         )
 
     def save(self, state: State) -> None:

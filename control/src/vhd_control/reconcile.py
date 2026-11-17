@@ -77,7 +77,7 @@ class Service:
     # waits for vhd apply (G13). None for a service the host never reaches.
     port: int | None = None
     # The child ids whose data volumes the service's container mounts, which a change to waits for
-    # vhd apply too, since only a new container mounts them.
+    # vhd apply, since only a new container mounts them.
     mounts: tuple[str, ...] = ()
 
     def numbered(self, number: int) -> tuple[dict[str, object], dict[str, object]]:
