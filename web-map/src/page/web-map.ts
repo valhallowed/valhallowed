@@ -1,5 +1,5 @@
-// The web map's page: the live players of one world over its world render, polled from /api/players
-// and /api/worlds (B11). A classic script, not a module: Leaflet 1.x is the global L, which
+// The web map's page: one world's render, listed from /api/worlds whether or not anyone plays, with
+// its live players over it, polled from /api/players (B11). A classic script, not a module: Leaflet 1.x is the global L, which
 // /leaflet/leaflet.js defines, worldToLatLng and renderBounds are world-coordinates.ts's, and the
 // page's content security policy allows only scripts the web map serves itself.
 
@@ -78,13 +78,16 @@ let fitMaxZoom = FIT_MAX_ZOOM;
 // either changes.
 let base: { world: string; version: string; layer: L.ImageOverlay } | undefined;
 
-let worlds: LiveWorld[] = [];
+// The live players, by world, as /api/players last gave them; none while it fails.
+let live: LiveWorld[] = [];
+// The worlds /api/worlds last listed, in its order.
+let known: string[] = [];
+let playersFailed = false;
 // The names the picker lists. It is rebuilt only when they change: rebuilt on every poll, it
 // would close under a viewer who has it open.
 let listed = "";
 let picked: string | undefined;
-// The world the view was last fitted to: it fits again only for another world, or after its
-// players were gone.
+// What the view was last fitted to: a world and its players or its render.
 let fitted: string | undefined;
 let timer: number | undefined;
 let polling = false;
@@ -175,37 +178,49 @@ function drawBase(world: string | undefined): void {
   base = { world, version: drawn.version, layer };
 }
 
+// Every world the picker lists: /api/worlds' worlds, in its order, then any that only /api/players
+// names.
+function listedNames(): string[] {
+  return [...new Set([...known, ...live.map((entry) => entry.name)])];
+}
+
 function render(): void {
   markers.clearLayers();
-  const world = worlds.find((entry) => entry.name === picked);
+  const names = listedNames();
+  if (picked === undefined || !names.includes(picked)) {
+    picked = names[0];
+  }
   // A world's name holds no line break (the contract's pattern), so the joined names tell lists apart.
-  const names = worlds.map((entry) => entry.name).join("\n");
-  if (names !== listed) {
+  const joined = names.join("\n");
+  if (joined !== listed) {
     picker.replaceChildren(
-      ...worlds.map((entry) => {
+      ...names.map((name) => {
         const option = document.createElement("option");
-        option.value = entry.name;
-        option.textContent = entry.name;
+        option.value = name;
+        option.textContent = name;
         return option;
       }),
     );
-    listed = names;
+    listed = joined;
   }
-  picker.hidden = worlds.length === 0;
-  const index = world === undefined ? -1 : worlds.indexOf(world);
+  picker.hidden = names.length === 0;
+  const index = picked === undefined ? -1 : names.indexOf(picked);
   if (picker.selectedIndex !== index) {
     picker.selectedIndex = index;
   }
-  if (world === undefined) {
-    fitted = undefined;
-    drawBase(undefined);
-    say(picked === undefined ? "no live players" : `no live players in ${picked}`);
-    return;
+  // The base image shows whatever the players' state: the map stays up while nobody plays and
+  // while /api/players fails.
+  drawBase(picked);
+  const players = live.find((entry) => entry.name === picked)?.players ?? [];
+  if (playersFailed) {
+    say("the live players are unavailable");
+  } else if (picked === undefined) {
+    say("no live players");
+  } else {
+    say(players.length === 0 ? `no live players in ${picked}` : "");
   }
-  say("");
-  drawBase(world.name);
   const points: L.LatLng[] = [];
-  for (const player of world.players) {
+  for (const player of players) {
     // The plane's vertical is the world's z (north), its horizontal x; y is height.
     const at = L.latLng(worldToLatLng(player.x, player.z));
     points.push(at);
@@ -215,28 +230,51 @@ function render(): void {
     }
     marker.addTo(markers);
   }
-  if (fitted !== world.name) {
-    map.fitBounds(L.latLngBounds(points), { maxZoom: fitMaxZoom, padding: [FIT_PADDING, FIT_PADDING] });
-    fitted = world.name;
+  // Fit to the players when there are some, else to the render, once for each: again for another
+  // world, or when the players come or go.
+  const drawn = picked === undefined ? undefined : geometry.get(picked);
+  const key = picked === undefined ? undefined : `${picked}|${points.length > 0 ? "players" : "render"}`;
+  if (key === fitted) {
+    return;
   }
+  if (points.length > 0) {
+    map.fitBounds(L.latLngBounds(points), { maxZoom: fitMaxZoom, padding: [FIT_PADDING, FIT_PADDING] });
+  } else if (drawn !== undefined) {
+    map.fitBounds(L.latLngBounds(renderBounds(drawn.half_width)), { maxZoom: fitMaxZoom });
+  } else {
+    fitted = undefined;
+    return;
+  }
+  fitted = key;
 }
 
-// What was last read is no longer known to be live, so none of it stays to be picked or drawn.
-function unavailable(): void {
-  worlds = [];
-  render();
-  say("the live players are unavailable");
-}
-
-// Undefined when /api/worlds cannot be read now: the geometry last read stays.
-async function readWorlds(): Promise<Map<string, WorldRender> | undefined> {
+// Undefined when /api/worlds cannot be read now: the worlds and geometry last read stay.
+async function readWorlds(): Promise<{ order: string[]; geometry: Map<string, WorldRender> } | undefined> {
   try {
     const response = await fetch("/api/worlds", { cache: "no-store", signal: AbortSignal.timeout(POLL_TIMEOUT_MS) });
     const answer: unknown = response.ok ? await response.json() : undefined;
     if (!isWorlds(answer)) {
       return undefined;
     }
-    return new Map(answer.worlds.flatMap((entry) => (entry.render === null ? [] : [[entry.name, entry.render] as const])));
+    return {
+      order: answer.worlds.map((entry) => entry.name),
+      geometry: new Map(answer.worlds.flatMap((entry) => (entry.render === null ? [] : [[entry.name, entry.render] as const]))),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+// Undefined when the live players cannot be read: what was last read is no longer known to be
+// live, so none of it stays to be drawn.
+async function readPlayers(): Promise<LiveWorld[] | undefined> {
+  try {
+    const response = await fetch("/api/players", { cache: "no-store", signal: AbortSignal.timeout(POLL_TIMEOUT_MS) });
+    if (!response.ok) {
+      return undefined;
+    }
+    const answer: unknown = await response.json();
+    return isLivePlayers(answer) ? answer.worlds : undefined;
   } catch {
     return undefined;
   }
@@ -245,23 +283,15 @@ async function readWorlds(): Promise<Map<string, WorldRender> | undefined> {
 async function poll(): Promise<void> {
   polling = true;
   try {
-    // The worlds are the base image only: while they are unreadable the players still show, over
-    // the geometry last read.
-    const known = readWorlds();
-    const response = await fetch("/api/players", { cache: "no-store", signal: AbortSignal.timeout(POLL_TIMEOUT_MS) });
-    if (!response.ok) {
-      throw new Error(`it answered ${response.status}`);
+    // Neither read waits on, or fails with, the other.
+    const [seen, players] = await Promise.all([readWorlds(), readPlayers()]);
+    if (seen !== undefined) {
+      known = seen.order;
+      geometry = seen.geometry;
     }
-    const answer: unknown = await response.json();
-    if (!isLivePlayers(answer)) {
-      throw new Error("it is not the live players");
-    }
-    geometry = (await known) ?? geometry;
-    worlds = answer.worlds;
-    picked ??= worlds[0]?.name;
+    live = players ?? [];
+    playersFailed = players === undefined;
     render();
-  } catch {
-    unavailable();
   } finally {
     polling = false;
     schedule();
