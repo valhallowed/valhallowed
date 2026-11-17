@@ -77,6 +77,6 @@ namespace Valhallowed.Plugin
         private static string Time(DateTime at) =>
             "\"" + at.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'", CultureInfo.InvariantCulture) + "\"";
 
-        private static string Number(float value) => value.ToString("R", CultureInfo.InvariantCulture);
+        internal static string Number(float value) => value.ToString("R", CultureInfo.InvariantCulture);
     }
 }

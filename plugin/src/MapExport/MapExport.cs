@@ -69,7 +69,7 @@ namespace Valhallowed.Plugin
         public const string MetaFile = "meta.json";
         // uint16 biome, float32 height and float32 forest factor.
         public const int BytesPerPixel = 10;
-        // The largest raster that fits one array: size * size * BytesPerPixel stays below int.MaxValue.
+        // A bound under which size * size * BytesPerPixel stays below int.MaxValue, so the raster fits one array.
         public const int MaxSize = 14000;
         // A meta is under 400 bytes; the cap keeps a wrong file from being read whole.
         private const int MaxMetaBytes = 4096;
@@ -77,8 +77,11 @@ namespace Valhallowed.Plugin
         // The contract's biome values: the game's Heightmap.Biome flags.
         private static readonly HashSet<ushort> Biomes = new HashSet<ushort> { 1, 2, 4, 8, 16, 32, 64, 256, 512 };
 
-        // Samples size by size pixels over world space from -halfWidth to +halfWidth, row 0 north.
-        public static ExportFiles Build(WorldIdentity world, int size, float halfWidth, Sampler sample, CancellationToken cancel)
+        // Samples size by size pixels over world space from -halfWidth to +halfWidth,
+        // row 0 north. pause, when given, runs after each row, so a caller can
+        // throttle the sweep.
+        public static ExportFiles Build(WorldIdentity world, int size, float halfWidth, Sampler sample, CancellationToken cancel,
+            Action pause = null)
         {
             Check(world, size, halfWidth);
             int pixels = size * size;
@@ -98,12 +101,17 @@ namespace Valhallowed.Plugin
                     {
                         throw new InvalidOperationException($"the world generator gave biome {at.Biome} at ({x}, {z}), which B5 does not name");
                     }
+                    if (!IsFinite(at.Height) || !IsFinite(at.Forest))
+                    {
+                        throw new InvalidOperationException($"the world generator gave a height or forest factor at ({x}, {z}) that is not finite");
+                    }
                     int pixel = row * size + column;
                     raster[pixel * 2] = (byte)at.Biome;
                     raster[pixel * 2 + 1] = (byte)(at.Biome >> 8);
                     PutSingle(raster, heightPlane + pixel * 4, at.Height);
                     PutSingle(raster, forestPlane + pixel * 4, at.Forest);
                 }
+                pause?.Invoke();
             }
 
             string meta = Prefix(world, size, halfWidth) + raster.Length + ",\"sha256\":\"" + Hash(raster) + "\"}}\n";
@@ -212,24 +220,24 @@ namespace Valhallowed.Plugin
             $"{{\"contract\":{Contract},\"world\":{Batch.Quote(world.Name)}," +
             $"\"seed\":{{\"name\":{Batch.Quote(world.SeedName)},\"value\":{world.Seed.ToString(CultureInfo.InvariantCulture)}}}," +
             $"\"generator_version\":{world.GeneratorVersion.ToString(CultureInfo.InvariantCulture)}," +
-            $"\"water_level\":{Number(world.WaterLevel)}," +
-            $"\"geometry\":{{\"size\":{size.ToString(CultureInfo.InvariantCulture)},\"half_width\":{Number(halfWidth)}}}," +
+            $"\"water_level\":{Batch.Number(world.WaterLevel)}," +
+            $"\"geometry\":{{\"size\":{size.ToString(CultureInfo.InvariantCulture)},\"half_width\":{Batch.Number(halfWidth)}}}," +
             $"\"raster\":{{\"file\":\"{RasterFile}\",\"bytes\":";
 
         private static void Check(WorldIdentity world, int size, float halfWidth)
         {
             if (world.Name == null || world.Name.Length == 0 || world.SeedName == null || world.GeneratorVersion < 0
-                || float.IsNaN(world.WaterLevel) || float.IsInfinity(world.WaterLevel))
+                || !IsFinite(world.WaterLevel))
             {
                 throw new ArgumentException("the world's identity breaks B5");
             }
-            if (size < 1 || size > MaxSize || float.IsNaN(halfWidth) || float.IsInfinity(halfWidth) || halfWidth <= 0f)
+            if (size < 1 || size > MaxSize || !IsFinite(halfWidth) || halfWidth <= 0f)
             {
                 throw new ArgumentException("the raster's geometry breaks B5");
             }
         }
 
-        private static string Number(float value) => value.ToString("R", CultureInfo.InvariantCulture);
+        private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
 
         private static void PutSingle(byte[] into, int at, float value)
         {

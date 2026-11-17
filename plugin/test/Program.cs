@@ -8,7 +8,7 @@ using Valhallowed.Plugin;
 // contracts/plugin.map-export.schema.json, and the raster beside it, whose
 // name is args[1] with .json replaced by .raster.bin. So what the plugin
 // writes is what the contract allows.
-if (args.Length != 2 || !args[1].EndsWith(".json"))
+if (args.Length != 2 || !args[1].EndsWith(".json", StringComparison.Ordinal))
 {
     Console.Error.WriteLine("usage: Valhallowed.Plugin.Test BATCH_EXAMPLE MAP_EXPORT_EXAMPLE");
     return 2;
@@ -133,6 +133,13 @@ Check(sampled.Count == 256 && sampled[0] == (-9843.75f, 9843.75f) && sampled[1] 
 
 Check(Throws<InvalidOperationException>(() => MapExport.Build(world, 2, 10f, (x, z) => new Sample(3, 0f, 0f), CancellationToken.None)),
     "a biome B5 does not name is refused");
+Check(Throws<InvalidOperationException>(() => MapExport.Build(world, 2, 10f, (x, z) => new Sample(1, float.NaN, 0f), CancellationToken.None)),
+    "a height that is not finite is refused");
+Check(Throws<InvalidOperationException>(() => MapExport.Build(world, 2, 10f, (x, z) => new Sample(1, 0f, float.PositiveInfinity), CancellationToken.None)),
+    "a forest factor that is not finite is refused");
+int paused = 0;
+MapExport.Build(world, 4, 10f, Synthetic, CancellationToken.None, () => paused++);
+Check(paused == 4, "a build pauses after each row");
 Check(Throws<ArgumentException>(() => MapExport.Build(world, 0, 10f, Synthetic, CancellationToken.None)), "an empty raster is refused");
 Check(Throws<ArgumentException>(() => MapExport.Build(world, 2, 0f, Synthetic, CancellationToken.None)), "a raster of no extent is refused");
 Check(Throws<ArgumentException>(() => MapExport.Build(new WorldIdentity("", "", 0, 2, 30f), 2, 10f, Synthetic, CancellationToken.None)),
