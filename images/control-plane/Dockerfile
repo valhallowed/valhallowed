@@ -7,7 +7,7 @@
 # Each version is named once here; its checksums change with it, and
 # scripts/check-upstream.sh reports a newer release.
 ARG DOCKER_VERSION=29.10.0
-ARG COMPOSE_VERSION=5.7.1
+ARG COMPOSE_VERSION=5.7.2
 
 FROM vhd-debian AS docker
 ARG DOCKER_VERSION
@@ -27,7 +27,7 @@ RUN apt-get update \
  && useradd --system --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin vhd \
  && mkdir -p /opt/vhd/licenses
 COPY --from=docker /tmp/docker/docker /usr/local/bin/docker
-ADD --checksum=sha256:af426722a8af5de812fcee30cc1c39f0639f5f723cbadefb25e5d4db054064cf --chmod=0755 \
+ADD --checksum=sha256:e14235d9c622c5bd57eb8adeed4a0f7308c7f3862e6812dd843f6fe27f1307cc --chmod=0755 \
     https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/docker-compose-linux-x86_64 \
     /usr/local/libexec/docker/cli-plugins/docker-compose
 # The licenses. The RUN above makes their directory: ADD would give one it
