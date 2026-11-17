@@ -1,0 +1,38 @@
+{
+  "description": "Zane disconnects and no leave reaches intake (the plugin drops a batch intake refuses, never retrying it). He stays in the view, at his last position. His last position was received 121 s ago, so the web map drops him. Aud keeps sending and is live in both.",
+  "batches": [
+    {
+      "age_s": 146,
+      "batch": {"contract": 1, "session": "1d85b3f6-9c2e-4a70-b1e4-7a63d90c58f2", "sent_at": "2026-11-03T18:57:34Z", "events": [
+        {"kind": "session.start", "at": "2026-11-03T18:57:28Z"},
+        {"kind": "player.join", "at": "2026-11-03T18:57:32Z", "player": {"id": "Steam_76561190000000301", "name": "Aud"}},
+        {"kind": "player.join", "at": "2026-11-03T18:57:33Z", "player": {"id": "Steam_76561190000000302", "name": "Zane"}},
+        {"kind": "player.position", "at": "2026-11-03T18:57:34Z", "player": {"id": "Steam_76561190000000301"}, "x": 520.0, "y": 35.0, "z": 90.0},
+        {"kind": "player.position", "at": "2026-11-03T18:57:34Z", "player": {"id": "Steam_76561190000000302"}, "x": 560.0, "y": 36.0, "z": 95.0}
+      ]}
+    },
+    {
+      "age_s": 121,
+      "batch": {"contract": 1, "session": "1d85b3f6-9c2e-4a70-b1e4-7a63d90c58f2", "sent_at": "2026-11-03T18:57:59Z", "events": [
+        {"kind": "player.position", "at": "2026-11-03T18:57:59Z", "player": {"id": "Steam_76561190000000301"}, "x": 524.0, "y": 35.0, "z": 93.0},
+        {"kind": "player.position", "at": "2026-11-03T18:57:59Z", "player": {"id": "Steam_76561190000000302"}, "x": 566.5, "y": 36.0, "z": 99.0}
+      ]}
+    },
+    {
+      "age_s": 62,
+      "batch": {"contract": 1, "session": "1d85b3f6-9c2e-4a70-b1e4-7a63d90c58f2", "sent_at": "2026-11-03T18:58:58Z", "events": [
+        {"kind": "player.position", "at": "2026-11-03T18:58:58Z", "player": {"id": "Steam_76561190000000301"}, "x": 540.0, "y": 35.5, "z": 101.0}
+      ]}
+    },
+    {
+      "age_s": 27,
+      "batch": {"contract": 1, "session": "1d85b3f6-9c2e-4a70-b1e4-7a63d90c58f2", "sent_at": "2026-11-03T18:59:33Z", "events": [
+        {"kind": "player.position", "at": "2026-11-03T18:59:33Z", "player": {"id": "Steam_76561190000000301"}, "x": 552.0, "y": 36.0, "z": 110.0}
+      ]}
+    }
+  ],
+  "live": {
+    "view": [{"name": "Aud", "x": 552.0}, {"name": "Zane", "x": 566.5}],
+    "web_map": [{"name": "Aud", "x": 552.0}]
+  }
+}

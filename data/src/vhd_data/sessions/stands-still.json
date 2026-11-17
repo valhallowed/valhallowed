@@ -1,0 +1,43 @@
+{
+  "description": "Wyn stands still for two minutes, and the plugin keeps sending his position every 30 s, so he stays live. Yrsa stands still and her last position was received 125 s ago, over three position intervals, with no leave: she is in the view, and the web map's 90 s cut drops her.",
+  "batches": [
+    {
+      "age_s": 125,
+      "batch": {"contract": 1, "session": "c94e7a21-5f0b-4b86-a3d2-0e18b6f5c7a9", "sent_at": "2026-11-03T18:57:55Z", "events": [
+        {"kind": "session.start", "at": "2026-11-03T18:57:53Z"},
+        {"kind": "player.join", "at": "2026-11-03T18:57:54Z", "player": {"id": "Steam_76561190000000201", "name": "Wyn"}},
+        {"kind": "player.join", "at": "2026-11-03T18:57:54Z", "player": {"id": "Steam_76561190000000202", "name": "Yrsa"}},
+        {"kind": "player.position", "at": "2026-11-03T18:57:55Z", "player": {"id": "Steam_76561190000000201"}, "x": 410.0, "y": 28.0, "z": -75.0},
+        {"kind": "player.position", "at": "2026-11-03T18:57:55Z", "player": {"id": "Steam_76561190000000202"}, "x": 420.0, "y": 28.5, "z": -80.0}
+      ]}
+    },
+    {
+      "age_s": 95,
+      "batch": {"contract": 1, "session": "c94e7a21-5f0b-4b86-a3d2-0e18b6f5c7a9", "sent_at": "2026-11-03T18:58:25Z", "events": [
+        {"kind": "player.position", "at": "2026-11-03T18:58:25Z", "player": {"id": "Steam_76561190000000201"}, "x": 410.0, "y": 28.0, "z": -75.0}
+      ]}
+    },
+    {
+      "age_s": 65,
+      "batch": {"contract": 1, "session": "c94e7a21-5f0b-4b86-a3d2-0e18b6f5c7a9", "sent_at": "2026-11-03T18:58:55Z", "events": [
+        {"kind": "player.position", "at": "2026-11-03T18:58:55Z", "player": {"id": "Steam_76561190000000201"}, "x": 410.0, "y": 28.0, "z": -75.0}
+      ]}
+    },
+    {
+      "age_s": 35,
+      "batch": {"contract": 1, "session": "c94e7a21-5f0b-4b86-a3d2-0e18b6f5c7a9", "sent_at": "2026-11-03T18:59:25Z", "events": [
+        {"kind": "player.position", "at": "2026-11-03T18:59:25Z", "player": {"id": "Steam_76561190000000201"}, "x": 410.0, "y": 28.0, "z": -75.0}
+      ]}
+    },
+    {
+      "age_s": 5,
+      "batch": {"contract": 1, "session": "c94e7a21-5f0b-4b86-a3d2-0e18b6f5c7a9", "sent_at": "2026-11-03T18:59:55Z", "events": [
+        {"kind": "player.position", "at": "2026-11-03T18:59:55Z", "player": {"id": "Steam_76561190000000201"}, "x": 410.0, "y": 28.0, "z": -75.0}
+      ]}
+    }
+  ],
+  "live": {
+    "view": [{"name": "Wyn", "x": 410.0}, {"name": "Yrsa", "x": 420.0}],
+    "web_map": [{"name": "Wyn", "x": 410.0}]
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "description": "Two characters, two player ids, both named Eydis, both live. The data layer keeps them apart by id, which never leaves it, so the web map shows two Eydis.",
+  "batches": [
+    {
+      "age_s": 15,
+      "batch": {"contract": 1, "session": "a3c60f19-7e5d-4b28-9f14-d8e2b7061c53", "sent_at": "2026-11-03T18:59:45Z", "events": [
+        {"kind": "session.start", "at": "2026-11-03T18:59:38Z"},
+        {"kind": "player.join", "at": "2026-11-03T18:59:41Z", "player": {"id": "Steam_76561190000000501", "name": "Eydis"}},
+        {"kind": "player.join", "at": "2026-11-03T18:59:42Z", "player": {"id": "Steam_76561190000000502", "name": "Eydis"}},
+        {"kind": "player.position", "at": "2026-11-03T18:59:44Z", "player": {"id": "Steam_76561190000000501"}, "x": 610.0, "y": 25.0, "z": -40.0},
+        {"kind": "player.position", "at": "2026-11-03T18:59:45Z", "player": {"id": "Steam_76561190000000502"}, "x": 620.0, "y": 25.5, "z": -45.0}
+      ]}
+    },
+    {
+      "age_s": 5,
+      "batch": {"contract": 1, "session": "a3c60f19-7e5d-4b28-9f14-d8e2b7061c53", "sent_at": "2026-11-03T18:59:55Z", "events": [
+        {"kind": "player.position", "at": "2026-11-03T18:59:54Z", "player": {"id": "Steam_76561190000000501"}, "x": 615.0, "y": 25.0, "z": -42.0},
+        {"kind": "player.position", "at": "2026-11-03T18:59:55Z", "player": {"id": "Steam_76561190000000502"}, "x": 620.0, "y": 25.5, "z": -45.0}
+      ]}
+    }
+  ],
+  "live": {
+    "view": [{"name": "Eydis", "x": 615.0}, {"name": "Eydis", "x": 620.0}],
+    "web_map": [{"name": "Eydis", "x": 615.0}, {"name": "Eydis", "x": 620.0}]
+  }
+}
