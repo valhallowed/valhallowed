@@ -7,3 +7,8 @@ export const DESIGN = fileURLToPath(new URL("../../../design/", import.meta.url)
 export const PAGE = fileURLToPath(new URL("../page/", import.meta.url));
 export const LEAFLET = fileURLToPath(new URL("../../node_modules/leaflet/dist/", import.meta.url));
 export const PUBLIC = fileURLToPath(new URL("../../public/", import.meta.url));
+// The synthesized map export of contracts/examples/valid, and the image the renderer's output is
+// compared with. Neither reaches the final image: its build stage copies the first for the tests,
+// and the final stage copies only the compiled service and page.
+export const EXAMPLES = fileURLToPath(new URL("../../../contracts/examples/valid/", import.meta.url));
+export const GOLDEN = fileURLToPath(new URL("../../src/test/golden/", import.meta.url));

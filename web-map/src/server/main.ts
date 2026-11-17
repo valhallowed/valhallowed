@@ -5,10 +5,13 @@
 // healthcheck reads, are served all the same.
 
 import { createServer } from "node:http";
+import { join } from "node:path";
 import { Adopter, Reader } from "./documents.js";
+import { MapRenders, metaValidator } from "./mapexport.js";
+import { readPalette } from "./palette.js";
 import { Players } from "./players.js";
 import { assets, handler } from "./routes.js";
-import { report, Reporter, SERVICE } from "./status.js";
+import { report, Reporter, SERVICE, withProblems } from "./status.js";
 
 // Where the web map listens on the install network; vhd apply publishes it on the manifest's
 // web_map.port (control's layout.WEB_MAP_PORT).
@@ -33,6 +36,7 @@ const reader = new Reader(SERVICE, GENERATION, CONTRACTS);
 const reporter = new Reporter(log);
 const held = new Adopter(reader, log);
 const players = new Players(log);
+const renders = new MapRenders(metaValidator(CONTRACTS), readPalette(join(DESIGN, "tokens.css")), log);
 let reportedAt = Number.NEGATIVE_INFINITY;
 
 async function tick(): Promise<void> {
@@ -41,13 +45,17 @@ async function tick(): Promise<void> {
   if (documents !== undefined) {
     players.adopt(documents);
     await players.tick();
+    renders.adopt(documents);
+    // Not awaited: a render takes a while, and status and players go on meanwhile.
+    renders.poll().catch((error: unknown) => log(`world render pass failed: ${String(error)}`));
   }
   if (documents === undefined || Date.now() - reportedAt < documents.generation.status_interval_s * 1000) {
     return;
   }
   reportedAt = Date.now();
   const { state, reason } = players.status();
-  await reporter.send(documents.generation.status_url, report(documents.number, state, reason));
+  const status = withProblems(state, reason, renders.problems());
+  await reporter.send(documents.generation.status_url, report(documents.number, status.state, status.reason));
 }
 
 const server = createServer(

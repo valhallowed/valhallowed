@@ -36,6 +36,16 @@
   --ok: #2ecc71;
   --warn: #ffb74d;
   --bad: #ef5350;
+  /* The world's base image: one palette, never themed, so no light override follows. */
+  --map-water: #1d3f6e;
+  --map-meadows: #5f9a4a;
+  --map-swamp: #5a6b3f;
+  --map-mountain: #9aa0a8;
+  --map-black-forest: #2f5a3a;
+  --map-plains: #c9b45a;
+  --map-ash-lands: #6b3a30;
+  --map-deep-north: #cfe1ee;
+  --map-mistlands: #6a5d8a;
   --font-display: "Alegreya SC", "Iowan Old Style", Georgia, serif;
   --font-body: "Alegreya Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;

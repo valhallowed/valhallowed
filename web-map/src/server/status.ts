@@ -42,6 +42,28 @@ export function report(generation: number, state: State, why?: string): ServiceS
   return status;
 }
 
+/** The state with the world renders' problems joined in: a refused map export means the web map
+ * cannot do all its work, so it is failing, and its reason says which world and why. When the
+ * text is longer than a reason can be, it leads with the count and the worlds' names, so a cut
+ * never drops a world. */
+export function withProblems(
+  state: State,
+  why: string | undefined,
+  problems: readonly { world: string; reason: string }[],
+): { state: State; reason?: string } {
+  if (problems.length === 0) {
+    return why === undefined ? { state } : { state, reason: why };
+  }
+  const details = problems.map((problem) => `world ${problem.world}: map export refused: ${problem.reason}`);
+  const parts = [...(why === undefined ? [] : [why]), ...details];
+  let text = parts.join("; ");
+  if (text.length > MAX_REASON) {
+    const count = `map export${problems.length === 1 ? "" : "s"} refused for ${problems.length} world${problems.length === 1 ? "" : "s"}`;
+    text = [`${count}: ${problems.map((problem) => problem.world).join(", ")}`, ...parts].join("; ");
+  }
+  return { state: "failing", reason: reason(text) };
+}
+
 /** text as the contract takes a reason: one line of printable characters, cut to fit. */
 export function reason(text: string): string {
   const line = text.replace(/[\u0000-\u001f\u007f]/g, " ").trim();
