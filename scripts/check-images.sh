@@ -5,8 +5,9 @@
 # leaves every candidate unpromotable, or ships an image no install runs. Also
 # fail unless Dependabot's docker updates watch every images/ directory with a
 # Dockerfile, unless each image's NOTICE names the versions its Dockerfile pins
-# as ARGs, and unless the checks run the Python minor version the images
-# install.
+# as ARGs, and each source it links at a tag (tree/v<version>) is of a version
+# its Dockerfile pins and its entry names, and unless the checks run the Python
+# minor version the images install.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -40,12 +41,28 @@ fi
 for dockerfile in images/*/Dockerfile; do
   notice=${dockerfile%Dockerfile}NOTICE
   [[ -f $notice ]] || continue
+  pinned=$(sed -n 's/^ARG [A-Z_]*_VERSION=//p' "$dockerfile")
   while IFS= read -r version; do
+    [[ -n $version ]] || continue
     if ! grep -qF " $version" "$notice"; then
       echo "check-images: $notice does not name $version, which $dockerfile pins" >&2
       exit 1
     fi
-  done < <(sed -n 's/^ARG [A-Z_]*_VERSION=//p' "$dockerfile")
+  done <<< "$pinned"
+  # A pin move that renames the version and leaves its source link behind: each
+  # entry is a paragraph whose first line names its version.
+  while IFS=$'\t' read -r linked entry; do
+    if ! grep -qxF "$linked" <<< "$pinned" || [[ " $entry " != *" $linked "* ]]; then
+      echo "check-images: $notice links the source of $linked under '$entry', which pins or names another version" >&2
+      exit 1
+    fi
+  done < <(awk 'BEGIN { RS = "" } {
+    entry = $0; sub(/\n.*/, "", entry); rest = $0
+    while (match(rest, /tree\/v[0-9]+(\.[0-9]+)*/)) {
+      print substr(rest, RSTART + 6, RLENGTH - 6) "\t" entry
+      rest = substr(rest, RSTART + RLENGTH)
+    }
+  }' "$notice")
 done
 # Dependabot takes only patch releases of the checks' Python; a new minor version
 # moves with the Debian base, by hand.
@@ -55,4 +72,4 @@ if [[ -z $checks || $shipped != "$checks" ]]; then
   echo "check-images: the checks run Python ${checks:-none}; the images install ${shipped//$'\n'/, }" >&2
   exit 1
 fi
-echo "check-images: CI builds exactly the images the install lists, Dependabot watches every Dockerfile, every NOTICE names its pinned versions, and the checks run the images' Python"
+echo "check-images: CI builds exactly the images the install lists, Dependabot watches every Dockerfile, every NOTICE names its pinned versions and links only their tags, and the checks run the images' Python"
