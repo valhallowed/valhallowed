@@ -49,6 +49,22 @@ def test_state_from_before_the_web_map_lists_services_without_ports(tmp_path: Pa
     assert store.load().services_applied == {"database": None, "intake": None}
 
 
+def test_state_from_before_the_web_map_mounts_map_exports_holds_none(tmp_path: Path) -> None:
+    store = Store(tmp_path)
+    generation = reconcile(Settings((World("Meadowfold", 2456, None),), 8456), None)
+    store.save(State(generation=generation))
+    document = json.loads((tmp_path / "state.json").read_text())
+    del document["mounts_applied"]
+    for service in document["generation"]["services"].values():
+        del service["mounts"]
+    (tmp_path / "state.json").write_text(json.dumps(document))
+
+    state = store.load()
+    assert state.mounts_applied == {}
+    assert state.generation is not None
+    assert state.generation.services["web-map"].mounts == ()
+
+
 def test_no_state_yet(tmp_path: Path) -> None:
     assert Store(tmp_path).load() == State()
 
