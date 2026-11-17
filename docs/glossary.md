@@ -274,8 +274,9 @@ admin console.
 **World ports** — The UDP ports a world reserves on the host: its port through
 port+2.
 
-**World render** — Turning a world's map export into the web map's base image.
-Runs on the install, so no image carries a world's map.
+**World render** — Turning a world's map export into the web map's base image,
+which the page draws under its live players by world coordinates. Runs on the
+install, so no image carries a world's map.
 
 **World truth** — Whether a world actually loaded, checked against its save.
 The opposite of trusting container health.
