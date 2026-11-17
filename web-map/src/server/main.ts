@@ -60,7 +60,7 @@ async function tick(): Promise<void> {
 
 const server = createServer(
   { headersTimeout: HEADERS_TIMEOUT_MS, requestTimeout: REQUEST_TIMEOUT_MS },
-  handler(process.env.VHD_BUILD ?? "unknown", assets({ public: PUBLIC, page: PAGE, leaflet: LEAFLET, design: DESIGN }), () => players.read()),
+  handler(process.env.VHD_BUILD ?? "unknown", assets({ public: PUBLIC, page: PAGE, leaflet: LEAFLET, design: DESIGN }), () => players.read(), renders),
 );
 server.maxConnections = MAX_CONNECTIONS;
 server.listen(PORT, () => log(`serving on ${PORT}`));
