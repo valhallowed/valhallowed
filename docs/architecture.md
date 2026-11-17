@@ -237,7 +237,7 @@ markers and journal entries are records, never commands.
   the water level, and no request path reaches the file system: a render is
   served from memory, by a name matched exactly against the generation's worlds.
   The page lays the render under its players in world coordinates, north up,
-  its edges at the geometry's extent, the half-open range of B5. The web map's
+  its edges at the geometry's extent, as B5's frame has them, and its zoom limits following the render's pixel. The web map's
   generation (B1) lists each world by save name, as its live players do,
   with where its export is mounted. Only the `map-export` subpath is mounted,
   so a world's saves and secrets never reach the web map.
