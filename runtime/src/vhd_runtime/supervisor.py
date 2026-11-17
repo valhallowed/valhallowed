@@ -77,7 +77,8 @@ class Paths:
 
     @property
     def map_export(self) -> Path:
-        """Where the plugin writes the world's map export (B5), kept in the data volume for the web map to read."""
+        """Where the plugin writes the world's map export (B5), in the data volume. The web map
+        mounts it read-only by this name, map-export, under the volume (docs/architecture.md)."""
         return self.data / "map-export"
 
     @property

@@ -93,7 +93,6 @@ def test_save_exists_in_either_format(tmp_path: Path) -> None:
 def test_the_generated_plugin_config_meets_its_contract() -> None:
     config = server.plugin_config(GENERATION, WORLD_STATUS, MAP_EXPORT)
     assert not list(validator(CONFIG_SCHEMA).iter_errors(config))
-    assert config["MapExport"] == {"Directory": "/data/map-export"}
 
 
 def test_the_plugin_binds_exactly_the_keys_its_contract_states() -> None:

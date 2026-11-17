@@ -290,7 +290,6 @@ def test_the_plugin_finds_its_map_export_directory_at_launch(world: World) -> No
     assert sup.run() == 0
     [(exists, config)] = at_launch
     assert exists
-    assert world.paths.map_export.is_relative_to(world.paths.data)
     assert f"[MapExport]\nDirectory = {world.paths.map_export}\n" in config
 
 
@@ -319,6 +318,11 @@ def test_a_map_export_directory_that_cannot_be_made_does_not_stop_the_world(
     assert sup.run() == 0
     assert len(world.launches) == 1
     assert "the web map gets no export" in caplog.text
+
+
+def test_the_map_export_directory_is_named_where_the_web_map_mounts_it() -> None:
+    # The web map mounts this directory of the world's data volume by name (docs/architecture.md).
+    assert Paths().map_export == Path("/data/map-export")
 
 
 def test_a_new_world_may_start_empty(world: World) -> None:
