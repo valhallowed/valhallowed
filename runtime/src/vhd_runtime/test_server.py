@@ -12,6 +12,8 @@ GENERATION = Generation(
     number=1, world="Meadowfold", port=2456, status_interval_s=5, status_url=None, intake_url=INTAKE, password=None
 )
 CONFIG_SCHEMA = REPO / "contracts" / "plugin.config.schema.json"
+WORLD_STATUS = Path("/run/vhd/world.json")
+MAP_EXPORT = Path("/data/map-export")
 # A key the plugin binds: Config.Bind("Section", "Key", default, ...).
 BIND = re.compile(r'Config\.Bind\(\s*"(\w+)",\s*"(\w+)",\s*("[^"]*"|-?\d+)\s*,')
 
@@ -36,7 +38,7 @@ def test_install_mods_lays_in_bepinex_the_plugin_and_its_config(tmp_path: Path) 
     patcher.parent.mkdir(parents=True)
     patcher.write_bytes(b"MZ")
 
-    config = server.plugin_config(replace(GENERATION, status_interval_s=7), Path("/run/vhd/world.json"))
+    config = server.plugin_config(replace(GENERATION, status_interval_s=7), WORLD_STATUS, MAP_EXPORT)
     server.install_mods(make_pack(tmp_path), plugin, server_dir, config)
 
     assert (server_dir / "BepInEx" / "core" / "BepInEx.Preloader.dll").exists()
@@ -45,7 +47,11 @@ def test_install_mods_lays_in_bepinex_the_plugin_and_its_config(tmp_path: Path) 
     assert not stray.exists()
     assert not patcher.exists()
     written = (server_dir / "BepInEx" / "config" / "com.valhallowed.plugin.cfg").read_text()
-    assert written == f"[Status]\nPath = /run/vhd/world.json\nIntervalSeconds = 7\n\n[Intake]\nUrl = {INTAKE}\n"
+    assert written == (
+        "[Status]\nPath = /run/vhd/world.json\nIntervalSeconds = 7\n\n"
+        f"[Intake]\nUrl = {INTAKE}\n\n"
+        "[MapExport]\nDirectory = /data/map-export\n"
+    )
 
 
 def test_command_keeps_the_world_unlisted() -> None:
@@ -85,7 +91,7 @@ def test_save_exists_in_either_format(tmp_path: Path) -> None:
 
 
 def test_the_generated_plugin_config_meets_its_contract() -> None:
-    config = server.plugin_config(GENERATION, Path("/run/vhd/world.json"))
+    config = server.plugin_config(GENERATION, WORLD_STATUS, MAP_EXPORT)
     assert not list(validator(CONFIG_SCHEMA).iter_errors(config))
 
 

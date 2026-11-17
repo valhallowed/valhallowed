@@ -138,8 +138,9 @@ install. Checked against the manifest schema; never holds secrets.
 and what applies it. With the secrets schema, it produces validation, defaults,
 each child's configuration and the settings reference.
 
-**Map export** — The file the plugin writes with a world's map, the input to
-world render (B5).
+**Map export** — What the plugin writes with a world's map, into the map
+export directory in the world's data volume that its config names (B12): the
+input to world render (B5).
 
 **Merge queue** — GitHub's queue in front of `main`. It takes one ready pull
 request at a time and merges it once the merge gate passes again on it merged

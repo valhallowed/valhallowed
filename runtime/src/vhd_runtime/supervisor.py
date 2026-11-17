@@ -76,6 +76,12 @@ class Paths:
         return self.data / "saves"
 
     @property
+    def map_export(self) -> Path:
+        """Where the plugin writes the world's map export (B5), in the data volume. The web map
+        mounts it read-only by this name, map-export, under the volume (docs/architecture.md)."""
+        return self.data / "map-export"
+
+    @property
     def last_objects(self) -> Path:
         """The object count the runtime last saw its world hold, kept in the data volume."""
         return self.data / "vhd" / "last-objects.json"
@@ -136,7 +142,8 @@ class Supervisor:
         # The control plane may have handed a newer generation while the server installed.
         generation = self._read_generation() or generation
         reporter = status.Reporter(generation.status_url, self.post)
-        config = server.plugin_config(generation, self.paths.world_status)
+        self._map_export_directory()
+        config = server.plugin_config(generation, self.paths.world_status, self.paths.map_export)
         server.install_mods(self.paths.pack, self.paths.plugin, self.paths.server, config)
         save_existed = server.save_exists(self.paths.saves, generation.world)
         # A report from an earlier run of this container must not pass for this one.
@@ -153,6 +160,19 @@ class Supervisor:
             self.paths.server,
         )
         return self._watch(process, generation, reporter, save_existed, build)
+
+    def _map_export_directory(self) -> None:
+        """The directory the plugin writes the map export into, made on every start. The export is
+        an observation: a directory that cannot be made or written costs the web map its render,
+        never the world its start."""
+        directory = self.paths.map_export
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            _log.error("cannot make the map export directory %s, so the web map gets no export: %s", directory, error)
+            return
+        if not os.access(directory, os.W_OK):
+            _log.error("the map export directory %s is not writable, so the web map gets no export", directory)
 
     def _install(self, generation: Generation, reporter: status.Reporter) -> str | None:
         """SteamCMD and the dedicated server, installed or updated: the server's build id, or

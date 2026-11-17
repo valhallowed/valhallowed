@@ -273,6 +273,58 @@ def test_remembers_the_count_while_running(world: World) -> None:
     assert json.loads(world.paths.last_objects.read_text()) == {"world": "Meadowfold", "objects": 54}
 
 
+def test_the_plugin_finds_its_map_export_directory_at_launch(world: World) -> None:
+    world.generation()
+    sup = world.supervisor()
+    launch = sup.launch
+    at_launch: list[tuple[bool, str]] = []
+
+    def checking_launch(command: list[str], env: dict[str, str], cwd: Path) -> supervisor.Process:
+        config = world.paths.server / "BepInEx" / "config" / "com.valhallowed.plugin.cfg"
+        at_launch.append((world.paths.map_export.is_dir(), config.read_text()))
+        return launch(command, env, cwd)
+
+    sup.launch = checking_launch
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    [(exists, config)] = at_launch
+    assert exists
+    assert f"[MapExport]\nDirectory = {world.paths.map_export}\n" in config
+
+
+def test_an_earlier_map_export_is_kept_across_a_start(world: World) -> None:
+    export = world.paths.map_export / "export"
+    export.parent.mkdir(parents=True)
+    export.write_bytes(b"map")
+    world.generation()
+    sup = world.supervisor()
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert len(world.launches) == 1
+    assert export.read_bytes() == b"map"
+
+
+def test_a_map_export_directory_that_cannot_be_made_does_not_stop_the_world(
+    world: World, caplog: pytest.LogCaptureFixture
+) -> None:
+    world.paths.map_export.parent.mkdir(parents=True, exist_ok=True)
+    world.paths.map_export.write_bytes(b"not a directory")
+    world.generation()
+    sup = world.supervisor()
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert len(world.launches) == 1
+    assert "the web map gets no export" in caplog.text
+
+
+def test_the_map_export_directory_is_named_where_the_web_map_mounts_it() -> None:
+    # The web map mounts this directory of the world's data volume by name (docs/architecture.md).
+    assert Paths().map_export == Path("/data/map-export")
+
+
 def test_a_new_world_may_start_empty(world: World) -> None:
     world.generation()
     sup = world.supervisor()
