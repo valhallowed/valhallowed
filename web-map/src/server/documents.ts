@@ -18,6 +18,9 @@ export interface Generation {
   status_url: string;
   status_interval_s: number;
   database: { host: string; port: number; name: string; user: string };
+  /** Each world, by save name as /api/players names it, with where its map export is mounted
+   * read-only: an absolute path in this container. */
+  worlds: { name: string; map_export: string }[];
 }
 
 /** A secret string that prints as "[redacted]" in JSON and in the inspector (console.log, util.

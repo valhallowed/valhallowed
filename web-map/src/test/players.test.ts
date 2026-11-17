@@ -37,6 +37,7 @@ function documents(password = "pw", host = "db"): Documents {
       status_url: "http://control-plane:9457/status",
       status_interval_s: 5,
       database: { host, port: 5432, name: "vhd", user: "web_map" },
+      worlds: [],
     },
     secrets: { contract: 1, generation: 1, password: new Secret(password) },
   };
