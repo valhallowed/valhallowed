@@ -89,6 +89,33 @@ test("a world is named as the live players contract names it", () => {
   assert.equal(pattern("web-map.generation.schema.json"), pattern("web-map.players.schema.json"));
 });
 
+test("two worlds that share a name or a map export path are refused", () => {
+  const dir = directory();
+  write(dir, "secrets.json", secrets(2));
+  const other = { name: "Ashwake", map_export: "/map-export/world-ashwake-9b01de" };
+  const reader = new Reader("web-map", dir, CONTRACTS);
+  for (const repeated of [
+    { ...other, name: "Meadowfold" },
+    { ...other, map_export: "/map-export/world-meadowfold-3f2a1c" },
+  ]) {
+    write(dir, "generation.json", { ...GENERATION, worlds: [...GENERATION.worlds, repeated] });
+    assert.throws(() => reader.read(), (error: unknown) => {
+      return error instanceof InvalidDocuments && error.message.includes("share a");
+    });
+  }
+  write(dir, "generation.json", { ...GENERATION, worlds: [...GENERATION.worlds, other] });
+  assert.equal(reader.read()?.generation.worlds.length, 2);
+});
+
+test("a map export path that leaves its directory is refused", () => {
+  const dir = directory();
+  write(dir, "secrets.json", secrets(2));
+  for (const path of ["/map-export/../generations", "/map-export//x", "/map-export/x/"]) {
+    write(dir, "generation.json", { ...GENERATION, worlds: [{ name: "Meadowfold", map_export: path }] });
+    assert.throws(() => new Reader("web-map", dir, CONTRACTS).read(), InvalidDocuments);
+  }
+});
+
 test("a generation with no worlds reads as an empty list", () => {
   const dir = directory();
   write(dir, "secrets.json", secrets(2));

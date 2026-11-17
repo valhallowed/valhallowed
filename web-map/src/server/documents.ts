@@ -105,6 +105,7 @@ export class Reader {
       return undefined;
     }
     const generation = load(generationPath, this.#generation, false) as Generation;
+    refuseRepeats(generationPath, generation);
     const number = generation.generation;
     if (!existsSync(secretsPath)) {
       throw new IncompleteDocuments(`generation ${number} has no ${SECRETS_FILE} yet`);
@@ -117,6 +118,19 @@ export class Reader {
     const documents = { number, generation, secrets };
     this.#read = { stamp, documents };
     return documents;
+  }
+}
+
+/** The contract says no two worlds share a name or a map export path, which a schema cannot say. */
+function refuseRepeats(path: string, generation: Generation): void {
+  for (const key of ["name", "map_export"] as const) {
+    const seen = new Set<string>();
+    for (const world of generation.worlds) {
+      if (seen.has(world[key])) {
+        throw new InvalidDocuments(`${path}: two worlds share a ${key}`);
+      }
+      seen.add(world[key]);
+    }
   }
 }
 
