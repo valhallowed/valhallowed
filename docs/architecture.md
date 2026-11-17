@@ -207,9 +207,16 @@ markers and journal entries are records, never commands.
 - **World render runs in the web map.** Each world's map export directory,
   `map-export` in the world's data volume, is mounted read-only into the web
   map, which turns a new export into that world's base image and keeps its last
-  good render when an export is bad. An export changes only with its world's
-  seed, world generator version or resolution, so the render is rare work and
-  needs no child of its own.
+  good render when an export is bad. The plugin writes an export again only
+  when it differs from what its world would produce: another world name, seed,
+  world generator version, water level, resolution or extent, or a raster that
+  is not its meta's. That is rare, so the render is rare work and needs no child
+  of its own. A game update that changes generation without bumping the world
+  generator version leaves the export as it was. The plugin writes the export
+  off the game thread,
+  and only files inside `map-export`, never the directory itself, which the web
+  map mounts. It writes the raster first and the meta last, and the meta names
+  the raster's length and SHA-256, so a reader never takes a partial export.
 - **Intake knows a world by its address.** It attributes a batch to the world
   whose container sent it, as the control plane's status listener does. No
   child can forge its address on the install network, so worlds hold no token.
@@ -251,7 +258,7 @@ boundary, and every boundary follows one standard. Each contract lives in
 | B2 | Plugin → intake | Telemetry events | Event schema | Fail soft |
 | B3 | Broker ↔ plugin | Commands and their outcomes | Command verbs, limits, idempotency key | Fail closed |
 | B4 | Services → database | Reads and writes | Schema owned by the data layer; one role per service | The capability degrades; nothing else migrates the schema |
-| B5 | Plugin → world render | The map export, in the directory the plugin config names (B12) | Export file format | The web map keeps its last good render |
+| B5 | Plugin → world render | The map export, in the directory the plugin config names (B12) | Map export schema, with the raster's layout | The web map keeps its last good render |
 | B6 | Web map → data | Reads, record writes, chat sends | Read-only role, record constraints, chat-scoped token through the broker | The web map stays read-only |
 | B7 | Assistant → LLM provider | World digest and question; answer | Provider adapter with timeout and budget | The assistant reports itself unavailable |
 | B8 | Chat relay ↔ chat service | Events out; commands in | Adapter; inbound authors allow-listed; commands go through the broker | The relay switches off; the game is unaffected |
