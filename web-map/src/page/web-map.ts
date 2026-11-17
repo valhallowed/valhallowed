@@ -45,6 +45,10 @@ const FIT_PADDING = 48;
 // One unit is a metre from the world's centre; zoom 0 is a metre to a pixel.
 const MIN_ZOOM = -6;
 const MAX_ZOOM = 4;
+// With a render the limits follow its pixel (renderZoom is the zoom that shows one to a screen
+// pixel): at most 8 screen pixels to a render pixel, and a fit to players no closer than 2.
+const RENDER_MAX_ZOOM_ABOVE_NATIVE = 3;
+const RENDER_FIT_ZOOM_ABOVE_NATIVE = 1;
 
 function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -68,6 +72,8 @@ const markers = L.layerGroup().addTo(map);
 // Each world's render as /api/worlds last gave it. A world without one, or a page that cannot read
 // /api/worlds, draws its players on the plain background.
 let geometry = new Map<string, WorldRender>();
+// How close a fit to players may zoom: FIT_MAX_ZOOM, or its render's.
+let fitMaxZoom = FIT_MAX_ZOOM;
 // The image on the map: which world and which version of its render, so it loads again only when
 // either changes.
 let base: { world: string; version: string; layer: L.ImageOverlay } | undefined;
@@ -146,22 +152,27 @@ function say(line: string): void {
 
 // The picked world's render under its players, or nothing when it has none.
 function drawBase(world: string | undefined): void {
-  const render = world === undefined ? undefined : geometry.get(world);
-  if (world === undefined || render === undefined) {
+  const drawn = world === undefined ? undefined : geometry.get(world);
+  if (world === undefined || drawn === undefined) {
     base?.layer.remove();
     base = undefined;
+    fitMaxZoom = FIT_MAX_ZOOM;
+    map.setMaxZoom(MAX_ZOOM);
     return;
   }
-  if (base?.world === world && base.version === render.version) {
+  if (base?.world === world && base.version === drawn.version) {
     return;
   }
   base?.layer.remove();
+  const native = renderZoom(drawn.size, drawn.half_width);
+  map.setMaxZoom(Math.max(MIN_ZOOM, native + RENDER_MAX_ZOOM_ABOVE_NATIVE));
+  fitMaxZoom = native + RENDER_FIT_ZOOM_ABOVE_NATIVE;
   // The query is ignored by the server; it only makes a new version a new URL for the browser.
-  const url = `/api/worlds/${encodeURIComponent(world)}/render.png?v=${render.version}`;
+  const url = `/api/worlds/${encodeURIComponent(world)}/render.png?v=${drawn.version}`;
   // The overlay's corners are the image's edges, at +-half_width, which is where B5 puts them.
-  const layer = L.imageOverlay(url, renderBounds(render.half_width), { className: "render", interactive: false });
+  const layer = L.imageOverlay(url, renderBounds(drawn.half_width), { className: "render" });
   layer.addTo(map);
-  base = { world, version: render.version, layer };
+  base = { world, version: drawn.version, layer };
 }
 
 function render(): void {
@@ -205,7 +216,7 @@ function render(): void {
     marker.addTo(markers);
   }
   if (fitted !== world.name) {
-    map.fitBounds(L.latLngBounds(points), { maxZoom: FIT_MAX_ZOOM, padding: [FIT_PADDING, FIT_PADDING] });
+    map.fitBounds(L.latLngBounds(points), { maxZoom: fitMaxZoom, padding: [FIT_PADDING, FIT_PADDING] });
     fitted = world.name;
   }
 }
@@ -217,23 +228,25 @@ function unavailable(): void {
   say("the live players are unavailable");
 }
 
-async function readWorlds(): Promise<Map<string, WorldRender>> {
+// Undefined when /api/worlds cannot be read now: the geometry last read stays.
+async function readWorlds(): Promise<Map<string, WorldRender> | undefined> {
   try {
     const response = await fetch("/api/worlds", { cache: "no-store", signal: AbortSignal.timeout(POLL_TIMEOUT_MS) });
     const answer: unknown = response.ok ? await response.json() : undefined;
     if (!isWorlds(answer)) {
-      return new Map();
+      return undefined;
     }
     return new Map(answer.worlds.flatMap((entry) => (entry.render === null ? [] : [[entry.name, entry.render] as const])));
   } catch {
-    return new Map();
+    return undefined;
   }
 }
 
 async function poll(): Promise<void> {
   polling = true;
   try {
-    // The worlds are the base image only: while they are unreadable the players still show.
+    // The worlds are the base image only: while they are unreadable the players still show, over
+    // the geometry last read.
     const known = readWorlds();
     const response = await fetch("/api/players", { cache: "no-store", signal: AbortSignal.timeout(POLL_TIMEOUT_MS) });
     if (!response.ok) {
@@ -243,7 +256,7 @@ async function poll(): Promise<void> {
     if (!isLivePlayers(answer)) {
       throw new Error("it is not the live players");
     }
-    geometry = await known;
+    geometry = (await known) ?? geometry;
     worlds = answer.worlds;
     picked ??= worlds[0]?.name;
     render();

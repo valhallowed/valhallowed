@@ -25,5 +25,5 @@ footer { padding: 16px; color: var(--ink-muted); font-size: 0.875rem; }
 .leaflet-tooltip-left:before { border-left-color: var(--line); }
 .leaflet-tooltip-right:before { border-right-color: var(--line); }
 .player { stroke: var(--z-people); fill: var(--z-people); }
-/* The render is one pixel to a few metres: keep its pixels crisp as the view zooms in, not blurred. */
+/* A render pixel covers 2 * half_width / size metres, about 21 at the plugin's geometry, so the view magnifies it: keep its pixels crisp, not blurred. */
 .render { image-rendering: pixelated; }
