@@ -25,3 +25,5 @@ footer { padding: 16px; color: var(--ink-muted); font-size: 0.875rem; }
 .leaflet-tooltip-left:before { border-left-color: var(--line); }
 .leaflet-tooltip-right:before { border-right-color: var(--line); }
 .player { stroke: var(--z-people); fill: var(--z-people); }
+/* The render is one pixel to a few metres: keep its pixels crisp as the view zooms in, not blurred. */
+.render { image-rendering: pixelated; }

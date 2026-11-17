@@ -89,7 +89,7 @@ export interface Directories {
   design: string;
 }
 
-/** The files the web map serves, by request path: its own page, styles and script; the two files
+/** The files the web map serves, by request path: its own page, styles and scripts; the two files
  * of Leaflet it needs, by name, under /leaflet/; and the design system's tokens and fonts under
  * /design/, where tokens.css finds its fonts by relative path. */
 export function assets(directories: Directories): Map<string, Asset> {
@@ -103,7 +103,9 @@ export function assets(directories: Directories): Map<string, Asset> {
   for (const name of readdirSync(directories.public)) {
     add(name === "index.html" ? "/" : `/${name}`, join(directories.public, name));
   }
-  add("/web-map.js", join(directories.page, "web-map.js"));
+  for (const name of ["world-coordinates.js", "web-map.js"]) {
+    add(`/${name}`, join(directories.page, name));
+  }
   for (const name of ["leaflet.js", "leaflet.css"]) {
     add(`/leaflet/${name}`, join(directories.leaflet, name));
   }

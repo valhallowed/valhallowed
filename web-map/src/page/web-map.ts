@@ -1,6 +1,7 @@
-// The web map's page: the live players of one world on an empty plane, polled from /api/players
-// (B11). A classic script, not a module: Leaflet 1.x is the global L, which /leaflet/leaflet.js
-// defines, and the page's content security policy allows only scripts the web map serves itself.
+// The web map's page: the live players of one world over its world render, polled from /api/players
+// and /api/worlds (B11). A classic script, not a module: Leaflet 1.x is the global L, which
+// /leaflet/leaflet.js defines, worldToLatLng and renderBounds are world-coordinates.ts's, and the
+// page's content security policy allows only scripts the web map serves itself.
 
 // contracts/web-map.players.schema.json
 interface LivePlayer {
@@ -16,6 +17,21 @@ interface LiveWorld {
 interface LivePlayers {
   contract: 1;
   worlds: LiveWorld[];
+}
+
+// contracts/web-map.worlds.schema.json
+interface WorldRender {
+  size: number;
+  half_width: number;
+  version: string;
+}
+interface WorldGeometry {
+  name: string;
+  render: WorldRender | null;
+}
+interface Worlds {
+  contract: 1;
+  worlds: WorldGeometry[];
 }
 
 // The plugin's sender rounds every 5 s, so a faster poll finds nothing new.
@@ -48,6 +64,13 @@ const map = L.map(element("map"), {
 });
 map.setView([0, 0], 0);
 const markers = L.layerGroup().addTo(map);
+
+// Each world's render as /api/worlds last gave it. A world without one, or a page that cannot read
+// /api/worlds, draws its players on the plain background.
+let geometry = new Map<string, WorldRender>();
+// The image on the map: which world and which version of its render, so it loads again only when
+// either changes.
+let base: { world: string; version: string; layer: L.ImageOverlay } | undefined;
 
 let worlds: LiveWorld[] = [];
 // The names the picker lists. It is rebuilt only when they change: rebuilt on every poll, it
@@ -87,6 +110,29 @@ function isLivePlayers(value: unknown): value is LivePlayers {
   return isRecord(value) && value.contract === 1 && Array.isArray(value.worlds) && value.worlds.every(isLiveWorld);
 }
 
+function isWorldGeometry(value: unknown): value is WorldGeometry {
+  if (!isRecord(value) || typeof value.name !== "string") {
+    return false;
+  }
+  const render = value.render;
+  return (
+    render === null ||
+    (isRecord(render) &&
+      typeof render.size === "number" &&
+      Number.isInteger(render.size) &&
+      render.size > 0 &&
+      typeof render.half_width === "number" &&
+      Number.isFinite(render.half_width) &&
+      render.half_width > 0 &&
+      typeof render.version === "string" &&
+      /^[0-9a-f]{16}$/.test(render.version))
+  );
+}
+
+function isWorlds(value: unknown): value is Worlds {
+  return isRecord(value) && value.contract === 1 && Array.isArray(value.worlds) && value.worlds.every(isWorldGeometry);
+}
+
 // A player's name is whatever they chose: it goes in as text, never as markup.
 function label(name: string): HTMLElement {
   const text = document.createElement("span");
@@ -96,6 +142,26 @@ function label(name: string): HTMLElement {
 
 function say(line: string): void {
   statusLine.textContent = line;
+}
+
+// The picked world's render under its players, or nothing when it has none.
+function drawBase(world: string | undefined): void {
+  const render = world === undefined ? undefined : geometry.get(world);
+  if (world === undefined || render === undefined) {
+    base?.layer.remove();
+    base = undefined;
+    return;
+  }
+  if (base?.world === world && base.version === render.version) {
+    return;
+  }
+  base?.layer.remove();
+  // The query is ignored by the server; it only makes a new version a new URL for the browser.
+  const url = `/api/worlds/${encodeURIComponent(world)}/render.png?v=${render.version}`;
+  // The overlay's corners are the image's edges, at +-half_width, which is where B5 puts them.
+  const layer = L.imageOverlay(url, renderBounds(render.half_width), { className: "render", interactive: false });
+  layer.addTo(map);
+  base = { world, version: render.version, layer };
 }
 
 function render(): void {
@@ -121,14 +187,16 @@ function render(): void {
   }
   if (world === undefined) {
     fitted = undefined;
+    drawBase(undefined);
     say(picked === undefined ? "no live players" : `no live players in ${picked}`);
     return;
   }
   say("");
+  drawBase(world.name);
   const points: L.LatLng[] = [];
   for (const player of world.players) {
     // The plane's vertical is the world's z (north), its horizontal x; y is height.
-    const at = L.latLng(player.z, player.x);
+    const at = L.latLng(worldToLatLng(player.x, player.z));
     points.push(at);
     const marker = L.circleMarker(at, { radius: 6, weight: 2, fillOpacity: 0.85, className: "player", interactive: false });
     if (player.name !== null) {
@@ -149,9 +217,24 @@ function unavailable(): void {
   say("the live players are unavailable");
 }
 
+async function readWorlds(): Promise<Map<string, WorldRender>> {
+  try {
+    const response = await fetch("/api/worlds", { cache: "no-store", signal: AbortSignal.timeout(POLL_TIMEOUT_MS) });
+    const answer: unknown = response.ok ? await response.json() : undefined;
+    if (!isWorlds(answer)) {
+      return new Map();
+    }
+    return new Map(answer.worlds.flatMap((entry) => (entry.render === null ? [] : [[entry.name, entry.render] as const])));
+  } catch {
+    return new Map();
+  }
+}
+
 async function poll(): Promise<void> {
   polling = true;
   try {
+    // The worlds are the base image only: while they are unreadable the players still show.
+    const known = readWorlds();
     const response = await fetch("/api/players", { cache: "no-store", signal: AbortSignal.timeout(POLL_TIMEOUT_MS) });
     if (!response.ok) {
       throw new Error(`it answered ${response.status}`);
@@ -160,6 +243,7 @@ async function poll(): Promise<void> {
     if (!isLivePlayers(answer)) {
       throw new Error("it is not the live players");
     }
+    geometry = await known;
     worlds = answer.worlds;
     picked ??= worlds[0]?.name;
     render();

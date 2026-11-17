@@ -63,6 +63,7 @@ test("the page, its styles, the design tokens and their fonts are served", async
     ["/", "text/html"],
     ["/web-map.css", "text/css"],
     ["/web-map.js", "text/javascript"],
+    ["/world-coordinates.js", "text/javascript"],
     ["/leaflet/leaflet.js", "text/javascript"],
     ["/leaflet/leaflet.css", "text/css"],
     ["/design/tokens.css", "text/css"],
