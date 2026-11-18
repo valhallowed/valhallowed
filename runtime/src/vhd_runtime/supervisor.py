@@ -151,6 +151,9 @@ class Supervisor:
     _backed_up: backups.Saved | None = field(default=None, init=False)
     _backup_at: float | None = field(default=None, init=False)
     _next_backup: float = field(default=0.0, init=False)
+    # Until a start's turn completes, every turn is one: it clears cut-short copies and reads the
+    # newest backup's record before it backs up.
+    _starting: bool = field(default=True, init=False)
     _retry_s: float = field(default=BACKUP_RETRY_S, init=False)
     _backup_names: list[str] | None = field(default=None, init=False)
     _backup_failure: str | None = field(default=None, init=False)
@@ -174,7 +177,7 @@ class Supervisor:
         reporter = status.Reporter(generation.status_url, self.post)
         self._map_export_directory()
         # Off the loop, so a slow or hung backups disk never holds up the world's launch.
-        self._tend(generation, starting=True)
+        self._tend(generation)
         config = server.plugin_config(generation, self.paths.world_status, self.paths.map_export)
         server.install_mods(self.paths.pack, self.paths.plugin, self.paths.server, config)
         save_existed = server.save_exists(self.paths.saves, generation.world)
@@ -393,13 +396,13 @@ class Supervisor:
             self._report(reporter, final)
         return 0
 
-    def _tend(self, generation: Generation, *, starting: bool = False) -> Future[backups.Tended]:
+    def _tend(self, generation: Generation) -> Future[backups.Tended]:
         """Start a turn of the world's backups off the loop, which keeps reporting and watching."""
         place = backups.Place(
             backups.world_folder(self.paths.saves, generation.world), self.paths.backups, generation.world
         )
         self._tending = self.executor.submit(
-            backups.tend, place, generation.backups, self.wall(), self._backed_up, starting=starting
+            backups.tend, place, generation.backups, self.wall(), self._backed_up, starting=self._starting
         )
         return self._tending
 
@@ -411,7 +414,11 @@ class Supervisor:
             if not self._tending.done():
                 return
             self._settle(self._tending, generation)
-        if running and self.clock.now() >= self._next_backup:
+        # Due once the settings' interval, as they stand now, has passed since the newest backup.
+        due = self._next_backup
+        if self._backup_at is not None:
+            due = max(due, self._backup_at + generation.backups.every_s)
+        if running and self.clock.now() >= due:
             self._tend(generation)
 
     def _back_up_at_stop(self, generation: Generation) -> None:
@@ -438,6 +445,7 @@ class Supervisor:
             self._next_backup = now + self._retry_s
             self._retry_s = min(self._retry_s * 2, generation.backups.every_s)
             return
+        self._starting = False
         self._backup_names = tended.names
         if tended.backup is not None:
             backup = tended.backup
@@ -458,8 +466,8 @@ class Supervisor:
             self._retry_s = min(self._retry_s * 2, generation.backups.every_s)
             return
         self._retry_s = BACKUP_RETRY_S
-        due = now if self._backup_at is None else self._backup_at + generation.backups.every_s
-        self._next_backup = max(now + BACKUP_CHECK_S, due)
+        # Taken now, the interval governs the next; otherwise look again a little later.
+        self._next_backup = now if tended.backup is not None else now + BACKUP_CHECK_S
 
     def _backup_failed(self, why: str) -> None:
         if why != self._backup_failure:
