@@ -198,7 +198,8 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   again from the newest complete save, so a partial copy is never kept. A
   runtime takes a backup after a new save, at most hourly; after every clean
   stop; at each start, of a save no backup holds yet, such as one a stop cut
-  short did not back up; and before any action replaces the save. It keeps the
+  short did not back up; and before any action replaces the save. A copy that
+  would leave the disk less than 1 GiB free is not started. It keeps the
   newest 24, and the newest backup of each of the newest 14 days (UTC) that
   have one, removes the oldest first, and never removes the newest. How often
   and how many are defaults the manifest can change, each count at most 100,
