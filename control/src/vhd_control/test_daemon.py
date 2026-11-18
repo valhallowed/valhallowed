@@ -60,6 +60,7 @@ class Install:
                 state.mounts_applied = {name: service.mounts for name, service in generation.services.items()}
             state.generation = generation
             state.applied = {cid: child.port for cid, child in generation.children.items()}
+            state.backups_applied = generation.backups
             self.store.save(state)
 
     def pending(self, world: str) -> dict[str, object] | None:
@@ -140,6 +141,23 @@ def test_a_new_port_waits_for_vhd_apply(install: Install) -> None:
     install.daemon.step()
     assert install.handed(MEADOWFOLD) == (1, None)
     assert install.pending("Meadowfold") == {"generation": 2, "waits_for": WAITS_FOR_APPLY}
+
+
+def test_a_backups_change_reaches_a_world_with_players_online(install: Install) -> None:
+    install.players("Meadowfold", 2)
+    install.write(TWO_WORLDS + '\n[backups]\nkeep = 48\n\n[updates]\npolicy = "at-start"\n')
+    install.daemon.step()
+    assert install.handed(MEADOWFOLD) == (2, None)
+    assert install.pending("Meadowfold") is None
+
+
+def test_a_new_backups_folder_waits_for_vhd_apply(install: Install) -> None:
+    install.players("Meadowfold", 0)
+    install.write(TWO_WORLDS + '\n[backups]\npath = "/srv/backups"\n')
+    install.daemon.step()
+    assert install.handed(MEADOWFOLD) == (1, None)
+    assert install.pending("Meadowfold") == {"generation": 2, "waits_for": WAITS_FOR_APPLY}
+    assert install.pending("Ashwake") == {"generation": 2, "waits_for": WAITS_FOR_APPLY}
 
 
 def test_a_refused_manifest_keeps_the_last_good_generation(install: Install) -> None:

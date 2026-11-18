@@ -1,9 +1,10 @@
 """The running control plane: reload the settings, reconcile, and hand each child what it may have.
 
 What a runtime may have depends on what the change costs it (Change cost):
-- documents equal but for their number: always, since the runtime adopts them in place;
+- documents equal but for their number, backups and updates: always, since the runtime adopts
+  them in place;
 - anything else restarts its game, so it waits while players may be online (an empty world);
-- a new world or a new port changes its container, so it waits for vhd apply.
+- a new world, a new port or a new backups folder changes its container, so it waits for vhd apply.
 A data-layer service takes every generation at once: it faces no players, and adopts its
 documents in place. Only a service whose container vhd apply has not created as the generation
 needs it waits for it: one with no container yet, one published on another host port (the web
@@ -88,7 +89,7 @@ class Daemon:
             changed = generation is not state.generation
             pending: dict[str, tuple[int, str]] = {}
             for cid, child in generation.children.items():
-                waits = self._waits_for(state, cid, child)
+                waits = self._waits_for(state, cid, child, generation.backups)
                 if waits is not None:
                     pending[cid] = (generation.number, waits)
                 elif state.handed[cid].number != generation.number:
@@ -186,11 +187,16 @@ class Daemon:
         """Why the newest manifest or secrets were refused, or None while they run."""
         return self._unreadable or self._refused
 
-    def _waits_for(self, state: State, child_id: str, child: Child) -> str | None:
+    def _waits_for(self, state: State, child_id: str, child: Child, backups: str) -> str | None:
         handed = state.handed.get(child_id)
-        if state.applied is None or state.applied.get(child_id) != child.port or handed is None:
+        if (
+            state.applied is None
+            or state.applied.get(child_id) != child.port
+            or state.backups_applied != backups
+            or handed is None
+        ):
             return WAITS_FOR_APPLY
-        if handed.child == child or self.book.view(child.world).empty:
+        if not handed.child.restarts(child) or self.book.view(child.world).empty:
             return None
         return WAITS_FOR_EMPTY
 

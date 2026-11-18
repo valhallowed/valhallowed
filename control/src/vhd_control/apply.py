@@ -19,7 +19,7 @@ from vhd_control import client, layout, manifest
 from vhd_control.docker import Docker, DockerError
 from vhd_control.manifest import Settings
 from vhd_control.reconcile import Child, Generation, Service, reconcile
-from vhd_control.render import GAME_RUNTIME_IMAGE, IMAGES, LOCKED_DOWN, Host, data_volume, render
+from vhd_control.render import GAME_RUNTIME_IMAGE, IMAGES, LOCKED_DOWN, Host, backups_folder, data_volume, render
 from vhd_control.schemas import Schemas
 from vhd_control.status import WorldView
 from vhd_control.store import Handed, State, Store
@@ -32,6 +32,11 @@ VOLUME_LABEL = "com.docker.compose.volume"
 # How long Compose waits for the containers it starts to run.
 WAIT_TIMEOUT_S = 300
 APPLY_LOCK = ".apply.lock"
+# Makes each world's backup folder, named in its arguments, and gives it to the game runtime's user.
+# A link is refused: the world's bind mount would follow it to wherever it points.
+MAKE_BACKUP_FOLDERS = (
+    'set -e; for d; do test ! -L "/backups/$d"; mkdir -p "/backups/$d"; chown vhd:vhd "/backups/$d"; done'
+)
 IGNORE_ORPHANS = "COMPOSE_IGNORE_ORPHANS"
 
 
@@ -110,8 +115,9 @@ class Apply:
             recreated = _recreated(rendered, previous)
             restarts = _restarts(generation, state, recreated, running, worlds)
             override = self._confirm(restarts, disconnect_players, worlds) if restarts else None
-            # After the players check, so a refused apply creates no volume.
+            # After the players check, so a refused apply creates no volume and no folder.
             self._make_map_exports(host, generation)
+            self._make_backup_folders(host, generation)
             confirmed = {cid for cid, restart in restarts.items() if override and restart.world in override}
             self._write(next_file, rendered, host.owner)
             try:
@@ -173,6 +179,31 @@ class Apply:
                     "volume's /data is owned by the runtime's user, and that /data/map-export, if it exists, is a "
                     "directory; then run vhd apply again."
                 ) from error
+
+    def _make_backup_folders(self, host: Host, generation: Generation) -> None:
+        """Make each world's folder in the install's backups folder, owned by the game runtime's
+        user, before Compose mounts it: Docker makes a missing bind source as root, where the runtime
+        could not write. One one-off container of the game runtime's image makes them all, as root
+        with only the capabilities that takes, and gives each to the image's own user by name, so
+        the uid is written in the Dockerfile alone. Docker makes the backups folder itself when it
+        is missing. Safe to repeat."""
+        folder = backups_folder(generation, host)
+        try:
+            self.docker.output(
+                [
+                    "run", "--rm", "--pull", "never", "--network", "none", "--user", "0", "--entrypoint", "sh",
+                    "--cap-drop=ALL", "--cap-add=CHOWN", "--cap-add=DAC_OVERRIDE",
+                    "--security-opt=no-new-privileges:true",
+                    "--volume", f"{folder}:{layout.BACKUPS}",
+                    host.images[GAME_RUNTIME_IMAGE], "-c", MAKE_BACKUP_FOLDERS, "sh", *sorted(generation.children),
+                ]
+            )  # fmt: skip
+        except DockerError as error:
+            raise Refused(
+                f"vhd apply could not make the worlds' backup folders in {folder} ({error}). Nothing was applied. "
+                "Check that Docker can run the game runtime image, and that no world's folder there is a link or "
+                "a file; then run vhd apply again."
+            ) from error
 
     def _quiet_orphans(self, owner: tuple[int, int]) -> None:
         """The host's Compose sees the containers vhd apply renders as orphans of compose.yaml,
@@ -400,6 +431,7 @@ class Apply:
         state.applied = {cid: child.port for cid, child in generation.children.items()}
         state.services_applied = {name: service.port for name, service in sorted(generation.services.items())}
         state.mounts_applied = {name: service.mounts for name, service in sorted(generation.services.items())}
+        state.backups_applied = generation.backups
         self.store.save(state)
         self.store.prune(state.applied, removed)
 
@@ -428,8 +460,8 @@ def _restarts(
     generation: Generation, state: State, recreated: set[str], running: set[str], worlds: Mapping[str, Any]
 ) -> dict[str, _Restart]:
     """The running worlds this apply restarts, by child id: those whose container changes, whose
-    documents change in a way the runtime cannot adopt, whose runtime still waits on documents it
-    was handed, or which the manifest no longer has."""
+    documents change in a way the runtime cannot adopt in place, whose runtime still waits on
+    documents it was handed, or which the manifest no longer has."""
     restarts: dict[str, _Restart] = {}
     for cid, child in generation.children.items():
         if cid not in running:
@@ -438,7 +470,7 @@ def _restarts(
         container = cid in recreated
         runs = worlds.get(child.world, {}).get("report", {}).get("generation")
         waiting = handed is not None and runs is not None and runs < handed.number and handed.child == child
-        documents = handed is None or handed.child != child or waiting
+        documents = handed is None or handed.child.restarts(child) or waiting
         if container or documents:
             restarts[cid] = _Restart(child.world, container, documents)
     for cid, handed in state.handed.items():

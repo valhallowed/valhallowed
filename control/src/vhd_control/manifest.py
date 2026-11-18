@@ -4,7 +4,9 @@ Nothing past this module reads either file: it hands on Settings, with every def
 taken from the manifest schema.
 """
 
+import re
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
@@ -15,6 +17,8 @@ MANIFEST_TOML = "manifest.toml"
 SECRETS_TOML = "secrets.toml"
 MANIFEST_SCHEMA = "schema/manifest.schema.json"
 SECRETS_SCHEMA = "schema/secrets.schema.json"
+# A duration's unit, in seconds: the manifest schema's $defs/duration.
+_UNIT_S = {"m": 60, "h": 3600, "d": 86400}
 
 
 class InvalidSettings(Exception):
@@ -30,11 +34,28 @@ class World:
 
 
 @dataclass(frozen=True)
+class Backups:
+    # The host folder, as the manifest names it: relative to the install folder unless absolute.
+    path: str
+    every_s: int
+    keep: int
+    keep_daily: int
+
+
+@dataclass(frozen=True)
+class Updates:
+    policy: str
+    every_s: int
+
+
+@dataclass(frozen=True)
 class Settings:
     """Everything the manifest and secrets say, defaults filled in. Worlds sort by name."""
 
     worlds: tuple[World, ...]
     web_map_port: int
+    backups: Backups
+    updates: Updates
 
 
 def load(install: Path, schemas: Schemas) -> Settings:
@@ -60,7 +81,52 @@ def load(install: Path, schemas: Schemas) -> Settings:
         for name in sorted(world_tables)
     )
     web_map = cast(dict[str, Any], manifest.get("web_map", {}))
-    return Settings(worlds=worlds, web_map_port=cast(int, web_map.get("port", default_web_map_port)))
+    backups = _table(manifest, schema, "backups")
+    updates = _table(manifest, schema, "updates")
+    return Settings(
+        worlds=worlds,
+        web_map_port=cast(int, web_map.get("port", default_web_map_port)),
+        backups=Backups(
+            path=cast(str, backups["path"]),
+            every_s=_seconds(schema, "backups", "every", cast(str, backups["every"])),
+            keep=cast(int, backups["keep"]),
+            keep_daily=cast(int, backups["keep_daily"]),
+        ),
+        updates=Updates(
+            policy=cast(str, updates["policy"]),
+            every_s=_seconds(schema, "updates", "every", cast(str, updates["every"])),
+        ),
+    )
+
+
+def _table(manifest: Mapping[str, Any], schema: Mapping[str, Any], name: str) -> dict[str, object]:
+    """A table of the manifest, each key it leaves out taken from the schema's default."""
+    keys = cast(dict[str, dict[str, Any]], schema["properties"][name]["properties"])
+    given = cast(dict[str, object], manifest.get(name, {}))
+    return {key: given.get(key, spec["default"]) for key, spec in keys.items()}
+
+
+def _seconds(schema: Mapping[str, Any], table: str, key: str, text: str) -> int:
+    """A duration the schema has matched, in seconds, held to the range its x-seconds states."""
+    match = re.fullmatch(r"([0-9]+)([mhd])", text)
+    if match is None:
+        raise InvalidSettings(f"{MANIFEST_TOML} at {table}/{key}: {text!r} is no duration")
+    seconds = int(match[1]) * _UNIT_S[match[2]]
+    bounds = cast(dict[str, int], schema["properties"][table]["properties"][key]["x-seconds"])
+    if not bounds["minimum"] <= seconds <= bounds["maximum"]:
+        raise InvalidSettings(
+            f"{MANIFEST_TOML} at {table}/{key}: {text!r} is outside "
+            f"{duration(bounds['minimum'])} to {duration(bounds['maximum'])}"
+        )
+    return seconds
+
+
+def duration(seconds: int) -> str:
+    """Seconds as the manifest writes them, in the largest unit that divides them."""
+    for unit, size in sorted(_UNIT_S.items(), key=lambda item: -item[1]):
+        if seconds % size == 0:
+            return f"{seconds // size}{unit}"
+    return f"{seconds}s"
 
 
 def _read(path: Path, schema: str, schemas: Schemas, *, secret: bool = False) -> dict[str, Any]:

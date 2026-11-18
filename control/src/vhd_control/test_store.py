@@ -2,17 +2,18 @@ import json
 import os
 from pathlib import Path
 
-from vhd_control.manifest import Settings, World
+from vhd_control.manifest import World
 from vhd_control.naming import child_id
 from vhd_control.reconcile import reconcile
 from vhd_control.store import State, Store
+from vhd_control.test_reconcile import settings
 
 MEADOWFOLD = child_id("Meadowfold")
 
 
 def test_hand_writes_the_pair_a_runtime_reads(tmp_path: Path) -> None:
     store = Store(tmp_path)
-    generation = reconcile(Settings((World("Meadowfold", 2456, "hearth-and-horn"),), 8456), None)
+    generation = reconcile(settings(World("Meadowfold", 2456, "hearth-and-horn")), None)
     state = State()
 
     store.hand(state, MEADOWFOLD, generation.children[MEADOWFOLD], 7)
@@ -29,7 +30,7 @@ def test_hand_writes_the_pair_a_runtime_reads(tmp_path: Path) -> None:
 
 def test_state_survives_a_round_trip(tmp_path: Path) -> None:
     store = Store(tmp_path)
-    generation = reconcile(Settings((World("Meadowfold", 2456, None),), 8456), None)
+    generation = reconcile(settings(World("Meadowfold", 2456, None)), None)
     state = State(generation=generation, applied={MEADOWFOLD: 2456})
     store.hand(state, MEADOWFOLD, generation.children[MEADOWFOLD], generation.number)
 
@@ -51,7 +52,7 @@ def test_state_from_before_the_web_map_lists_services_without_ports(tmp_path: Pa
 
 def test_state_from_before_the_web_map_mounts_map_exports_holds_none(tmp_path: Path) -> None:
     store = Store(tmp_path)
-    generation = reconcile(Settings((World("Meadowfold", 2456, None),), 8456), None)
+    generation = reconcile(settings(World("Meadowfold", 2456, None)), None)
     store.save(State(generation=generation))
     document = json.loads((tmp_path / "state.json").read_text())
     del document["mounts_applied"]
@@ -92,7 +93,7 @@ def test_a_leftover_temporary_file_never_lends_state_its_mode(tmp_path: Path) ->
 
 def test_prune_keeps_only_the_directories_containers_mount(tmp_path: Path) -> None:
     store = Store(tmp_path)
-    generation = reconcile(Settings((World("Meadowfold", 2456, None), World("Ashwake", 2459, None)), 8456), None)
+    generation = reconcile(settings(World("Meadowfold", 2456, None), World("Ashwake", 2459, None)), None)
     state = State()
     for cid, child in generation.children.items():
         store.hand(state, cid, child, 1)
@@ -103,3 +104,28 @@ def test_prune_keeps_only_the_directories_containers_mount(tmp_path: Path) -> No
 
     assert {p.name for p in tmp_path.iterdir()} == {MEADOWFOLD, "state.json"}
     assert [p.name for p in (tmp_path / MEADOWFOLD).iterdir()] == ["2456"]
+
+
+def test_the_backups_folder_and_what_vhd_apply_mounted_survive_a_reload(tmp_path: Path) -> None:
+    store = Store(tmp_path)
+    generation = reconcile(settings(World("Meadowfold", 2456, None)), None)
+    store.save(State(generation=generation, backups_applied="backups"))
+
+    state = store.load()
+    assert state.generation == generation
+    assert state.generation is not None and state.generation.backups == "backups"
+    assert state.backups_applied == "backups"
+
+
+def test_a_state_from_before_backups_names_no_folder_so_the_next_pass_replaces_it(tmp_path: Path) -> None:
+    store = Store(tmp_path)
+    generation = reconcile(settings(World("Meadowfold", 2456, None)), None)
+    store.save(State(generation=generation))
+    document = json.loads((tmp_path / "state.json").read_text())
+    del document["generation"]["backups"], document["backups_applied"]
+    (tmp_path / "state.json").write_text(json.dumps(document))
+
+    state = store.load()
+    assert state.generation is not None and state.generation.backups == ""
+    assert state.backups_applied is None
+    assert reconcile(settings(World("Meadowfold", 2456, None)), state.generation).number == generation.number + 1

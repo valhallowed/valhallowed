@@ -3,14 +3,18 @@ from pathlib import Path
 
 import pytest
 
-from vhd_control.manifest import InvalidSettings, Settings, World, load
+from vhd_control.manifest import Backups, InvalidSettings, Settings, Updates, World, load
 from vhd_control.naming import child_id
 from vhd_control.reconcile import STATUS_INTERVAL_S, STATUS_URL, Generation, Service, reconcile
 from vhd_control.test_daemon import REPO, SCHEMAS
 
+# The manifest schema's defaults.
+BACKUPS = Backups(path="backups", every_s=3600, keep=24, keep_daily=14)
+UPDATES = Updates(policy="when-empty", every_s=900)
 
-def settings(*worlds: World) -> Settings:
-    return Settings(worlds=worlds, web_map_port=8456)
+
+def settings(*worlds: World, backups: Backups = BACKUPS, updates: Updates = UPDATES) -> Settings:
+    return Settings(worlds=worlds, web_map_port=8456, backups=backups, updates=updates)
 
 
 @pytest.mark.parametrize("example", sorted((REPO / "schema" / "examples" / "valid").glob("manifest-*.toml")))
@@ -167,3 +171,35 @@ def test_intake_takes_telemetry_from_the_worlds_the_generation_runs() -> None:
     }
     second = reconcile(settings(World("Meadowfold", 2456, None)), first)
     assert second.services["intake"].generation["worlds"] == {child_id("Meadowfold"): "Meadowfold"}
+
+
+def test_each_world_carries_the_backups_and_updates() -> None:
+    generation = reconcile(
+        settings(World("Meadowfold", 2456, None), backups=Backups("backups", 1800, 48, 0), updates=UPDATES), None
+    )
+    (child,) = generation.children.values()
+    assert child.generation["backups"] == {"every_s": 1800, "keep": 48, "keep_daily": 0}
+    assert child.generation["updates"] == {"policy": "when-empty", "every_s": 900}
+    assert generation.backups == "backups"
+
+
+def test_a_backups_or_updates_change_restarts_no_game_and_a_password_does() -> None:
+    world = World("Meadowfold", 2456, None)
+    (before,) = reconcile(settings(world), None).children.values()
+    (live,) = reconcile(
+        settings(world, backups=Backups("backups", 7200, 5, 3), updates=Updates("at-start", 3600)), None
+    ).children.values()
+    (password,) = reconcile(settings(World("Meadowfold", 2456, "hearth-and-horn")), None).children.values()
+
+    assert live != before
+    assert not before.restarts(live)
+    assert before.restarts(password)
+
+
+def test_a_new_backups_folder_makes_a_new_generation_with_the_same_documents() -> None:
+    first = reconcile(settings(World("Meadowfold", 2456, None)), None)
+    moved = reconcile(settings(World("Meadowfold", 2456, None), backups=Backups("/srv/backups", 3600, 24, 14)), first)
+
+    assert moved.number == first.number + 1
+    assert moved.backups == "/srv/backups"
+    assert dict(moved.children) == dict(first.children)

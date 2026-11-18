@@ -18,7 +18,7 @@ from pathlib import PurePosixPath
 from typing import cast
 
 from vhd_control import layout
-from vhd_control.manifest import InvalidSettings, Settings, World
+from vhd_control.manifest import Backups, InvalidSettings, Settings, Updates, World
 from vhd_control.naming import child_id
 
 STATUS_URL = f"http://{layout.CONTROL_PLANE}:{layout.STATUS_PORT}/status"
@@ -29,6 +29,9 @@ STATUS_INTERVAL_S = 5
 WORLD_PORTS = 3
 # The database roles the services sign in as, each with a generated password.
 ROLES = (layout.INTAKE_ROLE, layout.WEB_MAP_ROLE)
+# What a runtime adopts in place from a newer generation (B1): a change to these alone restarts no
+# game, so it never waits for an empty world.
+LIVE = ("backups", "updates")
 
 Token = Callable[[], str]
 
@@ -63,6 +66,11 @@ class Child:
             generation["disconnect_players"] = True
         return generation, {**self.secrets, "generation": number}
 
+    def restarts(self, other: "Child") -> bool:
+        """Whether a runtime running on these documents restarts its game for other's: any change
+        but to what it adopts in place."""
+        return _restarting(self) != _restarting(other)
+
 
 @dataclass(frozen=True)
 class Service:
@@ -90,6 +98,10 @@ class Generation:
     number: int
     children: Mapping[str, Child]
     services: Mapping[str, Service] = field(default_factory=dict)
+    # The host folder of every world's backups, as the manifest names it, which no document carries:
+    # each world's container mounts its own folder in it, so a change waits for vhd apply. Empty in
+    # a state.json from a release before backups, which the next pass replaces.
+    backups: str = ""
 
 
 def reconcile(settings: Settings, previous: Generation | None, token: Token = _token) -> Generation:
@@ -102,11 +114,19 @@ def reconcile(settings: Settings, previous: Generation | None, token: Token = _t
             raise InvalidSettings(
                 f"worlds {children[cid].world!r} and {world.name!r} would share the service name {cid}; rename one"
             )
-        children[cid] = _child(world)
+        children[cid] = _child(world, settings.backups, settings.updates)
     services = _services(children, _passwords(previous, token), settings.web_map_port)
-    if previous is not None and dict(previous.children) == children and dict(previous.services) == services:
+    backups = settings.backups.path
+    if (
+        previous is not None
+        and dict(previous.children) == children
+        and dict(previous.services) == services
+        and previous.backups == backups
+    ):
         return previous
-    return Generation(number=1 if previous is None else previous.number + 1, children=children, services=services)
+    return Generation(
+        number=1 if previous is None else previous.number + 1, children=children, services=services, backups=backups
+    )
 
 
 def web_map_export(child_id: str) -> PurePosixPath:
@@ -114,7 +134,7 @@ def web_map_export(child_id: str) -> PurePosixPath:
     return layout.WEB_MAP_EXPORTS / child_id
 
 
-def _child(world: World) -> Child:
+def _child(world: World, backups: Backups, updates: Updates) -> Child:
     secrets: dict[str, object] = {"contract": 1}
     if world.password is not None:
         secrets["password"] = world.password
@@ -122,13 +142,21 @@ def _child(world: World) -> Child:
         world=world.name,
         port=world.port,
         generation={
-            "contract": 3,
+            "contract": 4,
             "world": {"name": world.name, "port": world.port},
             "plugin": {"status_interval_s": STATUS_INTERVAL_S, "intake_url": INTAKE_URL},
+            "backups": {"every_s": backups.every_s, "keep": backups.keep, "keep_daily": backups.keep_daily},
+            "updates": {"policy": updates.policy, "every_s": updates.every_s},
             "status_url": STATUS_URL,
         },
         secrets=secrets,
     )
+
+
+def _restarting(child: Child) -> tuple[str, int, dict[str, object], Mapping[str, object]]:
+    """What of a child a runtime cannot adopt in place."""
+    generation = {key: value for key, value in child.generation.items() if key not in LIVE}
+    return child.world, child.port, generation, child.secrets
 
 
 def _passwords(previous: Generation | None, token: Token) -> dict[str, str]:
