@@ -1,5 +1,6 @@
 import io
 import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -37,10 +38,27 @@ def test_status_names_each_world_its_players_and_what_waits() -> None:
                 "published": 4,
                 "pending": {"generation": 5, "waits_for": "an empty world"},
                 "state": "running",
-                "report": {"contract": 1, "generation": 4, "world": "Meadowfold", "state": "running", "players": 2},
+                "report": {
+                    "contract": 1,
+                    "generation": 4,
+                    "world": "Meadowfold",
+                    "state": "running",
+                    "players": 2,
+                    "backups": {"names": ["20261118T194012Z", "20261118T184011Z"]},
+                },
                 "report_age_s": 1,
             },
             "Ashwake": {"state": "unknown"},
+            "Frostmere": {
+                "state": "running",
+                "report": {
+                    "contract": 1,
+                    "generation": 4,
+                    "world": "Frostmere",
+                    "state": "running",
+                    "backups": {"names": ["99999999T999999Z"], "failure": "save 1 lacks _main.1.db2\x1b[2J"},
+                },
+            },
         },
         "services": {
             "intake": {
@@ -53,11 +71,12 @@ def test_status_names_each_world_its_players_and_what_waits() -> None:
         },
     }
     out = io.StringIO()
-    cli.show_status(status, out)
+    cli.show_status(status, out, now=datetime(2026, 11, 18, 20, 4, 12, tzinfo=UTC))
     assert out.getvalue().splitlines() == [
         "generation 5",
         "Ashwake: unknown",
-        "Meadowfold: running, 2 player(s); generation 5 waits for an empty world",
+        "Frostmere: running, 1 backup(s) (backups: save 1 lacks _main.1.db2?[2J)",
+        "Meadowfold: running, 2 player(s), 2 backup(s), the newest 24m old; generation 5 waits for an empty world",
         "database service: unknown; generation 5 waits for vhd apply",
         "intake service: running, 40 event(s) taken, 2 dropped",
     ]

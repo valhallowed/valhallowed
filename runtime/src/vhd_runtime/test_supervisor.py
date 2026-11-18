@@ -3,19 +3,62 @@ import json
 import signal
 import subprocess
 from collections.abc import Callable
+from concurrent.futures import Executor, Future
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any, TypeVar
 from urllib.error import URLError
 
 import pytest
 
-from vhd_runtime import steam, supervisor
+from vhd_runtime import backups, steam, supervisor
 from vhd_runtime.generation import Reader, validator
 from vhd_runtime.supervisor import Clock, Paths, Supervisor
+from vhd_runtime.test_backups import write_save
 from vhd_runtime.test_steam import STEAMCMD, Download
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "contracts"
 STATUS_URL = "http://control-plane:9457/status"
 STATUS = validator(CONTRACTS / "game-runtime.status.schema.json")
+# The wall clock when the fake one reads 0.
+START = datetime(2026, 11, 18, 20, 0, 0, tzinfo=UTC)
+T = TypeVar("T")
+
+
+class Deferred(Executor):
+    """Runs a task only when its result is asked for, so the loop sees a copy still under way."""
+
+    def __init__(self) -> None:
+        self.pending: list[Future[Any]] = []
+
+    def submit(self, fn: Callable[..., T], /, *args: Any, **kwargs: Any) -> Future[T]:
+        executor = self
+
+        class Waiting(Future[T]):
+            def result(self, timeout: float | None = None) -> T:
+                if not self.done():
+                    executor.pending.remove(self)
+                    try:
+                        self.set_result(fn(*args, **kwargs))
+                    except Exception as error:
+                        self.set_exception(error)
+                return super().result(timeout)
+
+        future = Waiting()
+        self.pending.append(future)
+        return future
+
+
+class Immediate(Executor):
+    """Runs each task as it is submitted, so a backup copied off the loop lands in fake time."""
+
+    def submit(self, fn: Callable[..., T], /, *args: Any, **kwargs: Any) -> Future[T]:
+        future: Future[T] = Future()
+        try:
+            future.set_result(fn(*args, **kwargs))
+        except Exception as error:
+            future.set_exception(error)
+        return future
 
 
 class FakeProcess:
@@ -24,12 +67,16 @@ class FakeProcess:
         self.signals: list[int] = []
         self.killed = False
         self.wait_times_out = False
+        # What the game does on SIGINT before it exits, such as writing its last save.
+        self.on_interrupt: Callable[[], None] = lambda: None
 
     def poll(self) -> int | None:
         return self.code
 
     def send_signal(self, sig: int) -> None:
         self.signals.append(sig)
+        if sig == signal.SIGINT:
+            self.on_interrupt()
 
     def kill(self) -> None:
         self.killed = True
@@ -73,8 +120,10 @@ class World:
             plugin=root / "plugin" / "Valhallowed.Plugin.dll",
             contracts=CONTRACTS,
             world_status=root / "run" / "world.json",
+            backups=root / "backups",
         )
         for directory in (
+            self.paths.backups,
             self.paths.generation,
             self.paths.steamcmd,
             self.paths.plugin.parent,
@@ -100,7 +149,9 @@ class World:
         password: str | None = None,
         secrets: bool = True,
         disconnect: bool = False,
+        *,
         keep: int = 24,
+        every_s: int = 3600,
     ) -> None:
         """Write a generation, and unless told not to, its secrets, as the control plane does."""
         if secrets:
@@ -110,7 +161,7 @@ class World:
             "generation": number,
             "world": {"name": "Meadowfold", "port": 2456},
             "plugin": {"status_interval_s": 5, "intake_url": "http://intake:9458/events"},
-            "backups": {"every_s": 3600, "keep": keep, "keep_daily": 14},
+            "backups": {"every_s": every_s, "keep": keep, "keep_daily": 14},
             "updates": {"policy": "when-empty", "every_s": 900},
             "status_url": STATUS_URL,
         }
@@ -132,6 +183,28 @@ class World:
 
     def save(self) -> None:
         (self.paths.saves / "worlds_local" / "Meadowfold").mkdir(parents=True)
+
+    def game_saves(self, number: int, *, missing: tuple[str, ...] = ()) -> None:
+        """The game writing save number now, its one chunk at version number, as a 1.0+ save."""
+        chunk = {"chunk": 258, "size": 64, "version": number, "objects": 100 + number}
+        write_save(
+            self.paths.saves / "worlds_local" / "Meadowfold",
+            number,
+            [chunk],
+            missing=missing,
+            seconds_ago=-self.time.now,
+        )
+
+    def now(self) -> datetime:
+        """The wall clock, as the supervisor reads it."""
+        return START + timedelta(seconds=self.time.now)
+
+    def backed_up(self) -> list[int]:
+        """The save each backup holds, oldest first."""
+        return [
+            json.loads((self.paths.backups / name / "backup.json").read_text())["save"]
+            for name in reversed(backups.names(self.paths.backups, self.now()))
+        ]
 
     def remember(self, name: str, objects: int) -> None:
         self.paths.last_objects.parent.mkdir(parents=True, exist_ok=True)
@@ -169,6 +242,8 @@ class World:
             post=post,
             clock=Clock(now=lambda: self.time.now, sleep=self.time.sleep),
             environ={},
+            executor=Immediate(),
+            wall=self.now,
         )
 
     def run_steamcmd(self, command: list[str], timeout: float, stopping: steam.Stopping) -> None:
@@ -213,7 +288,9 @@ def test_a_loaded_world_runs_and_saves_on_stop(world: World) -> None:
 
     assert sup.run() == 0
     assert world.states() == ["installing", "loading", "running"]
-    assert world.reports[-1]["objects"] == 48113
+    assert world.reports[-2]["objects"] == 48113
+    # The last word after the stop: the plugin's counts went with the game.
+    assert "objects" not in world.reports[-1] and "players" not in world.reports[-1]
     assert world.process.signals == [signal.SIGINT]
     assert not world.process.killed
 
@@ -702,3 +779,232 @@ def test_status_keeps_reporting_a_long_install(world: World) -> None:
     assert sup.run() == 0
     installing = [r for r in world.reports if r["state"] == "installing"]
     assert len(installing) >= 4
+
+
+def test_a_running_world_backs_up_each_new_save_at_most_as_often_as_its_settings_say(world: World) -> None:
+    world.generation(1)
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.time.at(100, lambda: world.game_saves(1))
+    # Within the hour its settings allow, so save 2 is never backed up: once the hour has passed,
+    # save 3 is the newest.
+    world.time.at(1900, lambda: world.game_saves(2))
+    world.time.at(2500, lambda: world.game_saves(3))
+    world.stop_at(3750, sup)
+
+    assert sup.run() == 0
+    assert world.backed_up() == [1, 3]
+    names = backups.names(world.paths.backups, world.now())
+    assert names[-1].startswith("20261118T2001")
+    assert world.reports[-1]["backups"] == {"names": names}
+
+
+def test_a_clean_stop_backs_up_the_save_the_game_stopped_with(world: World) -> None:
+    world.generation(1)
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.time.at(100, lambda: world.game_saves(1))
+    world.process.on_interrupt = lambda: world.game_saves(2)
+    world.stop_at(600, sup)
+
+    assert sup.run() == 0
+    assert world.backed_up() == [1, 2]
+
+
+def test_a_held_world_has_its_real_save_backed_up_at_start_and_nothing_at_its_stop(world: World) -> None:
+    world.save()
+    world.game_saves(5)
+    world.remember("Meadowfold", 54)
+    world.generation(1)
+    sup = world.supervisor()
+    world.time.at(30, lambda: world.plugin_reports(0))
+    world.stop_at(120, sup)
+
+    assert sup.run() == 0
+    assert world.held_reasons()
+    # At start, before the world loads empty; the stop, a kill, saved nothing to back up.
+    assert world.backed_up() == [5]
+    assert world.reports[-1]["backups"] == {"names": backups.names(world.paths.backups, world.now())}
+
+
+def test_a_start_clears_cut_short_copies_keeps_what_the_settings_say_and_backs_up_no_save_twice(
+    world: World,
+) -> None:
+    for hours_ago, save in ((3, 3), (2, 4), (1, 5)):
+        world.game_saves(save)
+        backups.take(
+            world.paths.saves / "worlds_local" / "Meadowfold",
+            world.paths.backups,
+            "Meadowfold",
+            START - timedelta(hours=hours_ago),
+        )
+    (world.paths.backups / ".partial-20261118T195959Z").mkdir()
+    world.generation(1, keep=2)
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.stop_at(600, sup)
+
+    assert sup.run() == 0
+    # The oldest went: the newest two stay, the 18th's newest is one of them, and save 5, backed
+    # up an hour ago, is not backed up again, even by the stop.
+    assert world.backed_up() == [4, 5]
+    first = next(report for report in world.reports if "backups" in report)
+    assert first["backups"] == {"names": ["20261118T190000Z", "20261118T180000Z"]}
+    assert not (world.paths.backups / ".partial-20261118T195959Z").exists()
+
+
+def test_a_failed_backup_says_why_until_one_succeeds(world: World) -> None:
+    world.generation(1)
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.time.at(100, lambda: world.game_saves(1, missing=("01_02__64_1.chunk",)))
+    world.time.at(400, lambda: world.game_saves(2))
+    world.stop_at(600, sup)
+    failures: list[object] = []
+    world.time.at(300, lambda: failures.append(world.reports[-1]["backups"]))
+
+    assert sup.run() == 0
+    assert failures == [{"names": [], "failure": "save 1 lacks 01_02__64_1.chunk, which its .chunks file names"}]
+    assert world.backed_up() == [2]
+    assert world.reports[-1]["backups"] == {"names": backups.names(world.paths.backups, world.now())}
+
+
+def test_a_stop_waits_for_a_copy_under_way_and_backs_up_no_save_twice(world: World) -> None:
+    world.generation(1)
+    sup = world.supervisor()
+    deferred = Deferred()
+    sup.executor = deferred
+    # The start's turn is still copying when the world runs; so is the turn that finds save 1.
+    world.plugin_running(10)
+    world.time.at(100, lambda: world.game_saves(1))
+    world.stop_at(200, sup)
+
+    assert sup.run() == 0
+    assert world.backed_up() == [1]
+    assert deferred.pending == []
+
+
+def test_a_failed_stop_backup_is_the_last_word(world: World) -> None:
+    world.generation(1)
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.process.on_interrupt = lambda: world.game_saves(2, missing=("01_02__64_2.chunk",))
+    world.stop_at(200, sup)
+
+    assert sup.run() == 0
+    assert world.reports[-1]["backups"] == {
+        "names": [],
+        "failure": "save 2 lacks 01_02__64_2.chunk, which its .chunks file names",
+    }
+
+
+def test_a_backup_named_ahead_of_the_clock_delays_the_next_no_more_than_the_interval(world: World) -> None:
+    world.game_saves(5)
+    backups.take(
+        world.paths.saves / "worlds_local" / "Meadowfold", world.paths.backups, "Meadowfold", START + timedelta(hours=6)
+    )
+    world.generation(1)
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.time.at(100, lambda: world.game_saves(6))
+    world.stop_at(3700, sup)
+
+    assert sup.run() == 0
+    assert world.backed_up() == [5, 6]
+    names = backups.names(world.paths.backups, world.now())
+    assert names[0] > names[1]
+
+
+def test_an_unexpected_error_in_the_backups_never_stops_the_world(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(*args: object, **kwargs: object) -> backups.Tended:
+        raise RuntimeError("a bug")
+
+    monkeypatch.setattr(backups, "tend", broken)
+    world.generation(1)
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.stop_at(200, sup)
+
+    assert sup.run() == 0
+    assert world.process.signals == [signal.SIGINT]
+    report = world.reports[-1]
+    assert report["state"] == "running"
+    assert report["backups"] == {"names": [], "failure": "backups stopped on an unexpected error: RuntimeError: a bug"}
+
+
+def test_a_backup_that_keeps_failing_is_tried_again_less_often(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
+    tried: list[float] = []
+    tend = backups.tend
+
+    def counted(*args: Any, **kwargs: Any) -> backups.Tended:
+        tried.append(world.time.now)
+        return tend(*args, **kwargs)
+
+    monkeypatch.setattr(backups, "tend", counted)
+    world.game_saves(1, missing=("01_02__64_1.chunk",))
+    world.generation(1)
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.stop_at(1000, sup)
+
+    assert sup.run() == 0
+    gaps = [round(later - earlier) for earlier, later in itertools.pairwise(tried[1:])]
+    # Doubling from a minute, each gap up to a poll longer as the loop notes the failed turn.
+    assert all(wait <= gap <= wait + 2 for gap, wait in zip(gaps[:3], (120, 240, 480), strict=True))
+
+
+def test_the_largest_report_fits_the_status_listener() -> None:
+    # control/src/vhd_control/listeners.py, MAX_BODY: the control plane refuses a longer report.
+    max_body = 16 * 1024
+    longest = "\U0001f6e1" * supervisor.REASON_MAX
+    report = {
+        "contract": 1,
+        "generation": 2**31,
+        "world": "M" * 64,
+        "state": "unverified",
+        "reason": longest,
+        "game_build": "9" * 12,
+        "objects": 2**31,
+        "players": 2**31,
+        "backups": {"names": ["20261118T204012Z"] * supervisor.BACKUP_NAMES_MAX, "failure": longest},
+    }
+    STATUS.validate(report)
+    assert len(json.dumps(report).encode()) <= max_body
+
+
+def test_a_start_turn_that_fails_is_tried_again_as_one(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
+    starting: list[bool] = []
+    tend = backups.tend
+
+    def flaky(*args: Any, **kwargs: Any) -> backups.Tended:
+        starting.append(kwargs["starting"])
+        if len(starting) == 1:
+            raise OSError(5, "Input/output error")
+        return tend(*args, **kwargs)
+
+    monkeypatch.setattr(backups, "tend", flaky)
+    world.generation(1)
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.stop_at(400, sup)
+
+    assert sup.run() == 0
+    assert starting[:3] == [True, True, False]
+
+
+def test_a_shorter_interval_set_while_the_world_runs_holds_from_the_next_backup(world: World) -> None:
+    world.generation(1, every_s=86400)
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.time.at(100, lambda: world.game_saves(1))
+    world.time.at(200, lambda: world.generation(2, every_s=3600))
+    world.time.at(300, lambda: world.game_saves(2))
+    # Late enough that a backup only at the stop would come well over the new hour after the first.
+    world.stop_at(5000, sup)
+
+    assert sup.run() == 0
+    assert world.backed_up() == [1, 2]
+    taken = [backups.taken(name) for name in reversed(backups.names(world.paths.backups, world.now()))]
+    assert (taken[1] - taken[0]).total_seconds() < 3700

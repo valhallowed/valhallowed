@@ -326,7 +326,7 @@
     backup: { label: 'Backup', cap: 'A world backs itself up while it runs: no pause, and no player notices.', steps: [
       { f: 'gr', t: 'gr', l: 'game saves: _main.42.ok last', d: 'Every 30 minutes unless told otherwise. The game writes a save’s chunks, then its .db2 and .fwl2, and its completion marker last.' },
       { f: 'gr', t: 'gr', l: 'copy the newest complete save', d: 'Only the files that save names, none of which the game rewrites in place. If the next save removes one mid-copy, the copy starts again from the newest complete save.' },
-      { f: 'gr', t: 'gr', l: 'into backups/, keep 24 and 14 daily', d: 'A folder in the install folder for each world, which only that world mounts; the manifest can name another host path. By default a world keeps its newest 24 backups and one a day for 14 days, and removes the oldest first.' },
+      { f: 'gr', t: 'gr', l: 'into backups/, keep 24 and 14 daily', d: 'A folder in the install folder for each world, which only that world mounts; the manifest can name another host path. By default a world keeps its newest 24 backups and the newest of each of 14 days, and removes the oldest first.' },
       { note: 'also after every clean stop, and before a restore or an import', a: 'cp', b: 'dl', d: 'A world backs up the save it stops with, and the save an action is about to replace.' },
       { f: 'gr', t: 'cp', l: 'status: newest backup 12 minutes old', dash: true, d: 'Each world names its backups in its status, so the control plane mounts no world’s backups.' },
       { f: 'cp', t: 'ui', l: 'backups', dash: true, d: 'The world list shows each world’s newest backup and its age. A failed backup says why.' }

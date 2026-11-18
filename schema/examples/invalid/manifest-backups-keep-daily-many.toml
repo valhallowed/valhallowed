@@ -1,0 +1,7 @@
+# expect: 101 is greater than the maximum of 100
+schema = 1
+
+[world.Meadowfold]
+
+[backups]
+keep_daily = 101

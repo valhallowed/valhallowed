@@ -1,0 +1,29 @@
+{
+  "description": "Save 12 has its .ok, but a chunk file its .chunks file names is gone. Nothing is backed up, and the failure names the file.",
+  "saves": [
+    {
+      "number": 12,
+      "seconds_ago": 60,
+      "ok": true,
+      "missing": [
+        "01_02__64_3.chunk"
+      ],
+      "chunks": [
+        {
+          "chunk": 258,
+          "size": 64,
+          "version": 3,
+          "objects": 40
+        },
+        {
+          "chunk": 259,
+          "size": 64,
+          "version": 1,
+          "objects": 2
+        }
+      ]
+    }
+  ],
+  "newest_complete": null,
+  "failure": "save 12 lacks 01_02__64_3.chunk, which its .chunks file names"
+}

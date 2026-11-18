@@ -6,6 +6,7 @@ import os
 import signal
 import sys
 import threading
+from datetime import UTC, datetime
 from typing import Any, TextIO
 
 from vhd_control import client, layout, manifest
@@ -75,7 +76,8 @@ def validate(schemas: Schemas, out: TextIO) -> None:
     print(f"updates: {updates.policy}, checking every {duration(updates.every_s)}", file=out)
 
 
-def show_status(status: dict[str, Any], out: TextIO) -> None:
+def show_status(status: dict[str, Any], out: TextIO, now: datetime | None = None) -> None:
+    now = now or datetime.now(UTC)
     print(f"generation {status['generation']}", file=out)
     if "refused" in status:
         print(f"refused: {status['refused']}; generation {status['generation']} keeps running", file=out)
@@ -94,6 +96,8 @@ def show_status(status: dict[str, Any], out: TextIO) -> None:
         if "reason" in report:
             # A runtime faces players; its words reach a terminal only as printable text.
             line += f" ({_printable(report['reason'])})"
+        if "backups" in report:
+            line += _backups(report["backups"], now)
         if world.get("removed"):
             line += "; removed from the manifest, waits for vhd apply"
         elif "pending" in world:
@@ -109,6 +113,34 @@ def show_status(status: dict[str, Any], out: TextIO) -> None:
         if "pending" in service:
             line += f"; generation {service['pending']['generation']} waits for {service['pending']['waits_for']}"
         print(line, file=out)
+
+
+def _backups(backups: dict[str, Any], now: datetime) -> str:
+    """A world's backups for its status line: how many, the newest one's age from its name, and why
+    its runtime could not take or keep one."""
+    names: list[str] = backups["names"]
+    text = ", no backup yet"
+    if names:
+        text = f", {len(names)} backup(s)"
+        # A runtime's report is a child's words: a name that is no time shows no age.
+        try:
+            taken = datetime.strptime(names[0], "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+        except ValueError:
+            pass
+        else:
+            text += f", the newest {_age((now - taken).total_seconds())} old"
+    if "failure" in backups:
+        text += f" (backups: {_printable(backups['failure'])})"
+    return text
+
+
+def _age(seconds: float) -> str:
+    """An age in the largest unit that leaves a number of at least two."""
+    whole = max(0, int(seconds))
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if whole >= 2 * size:
+            return f"{whole // size}{unit}"
+    return f"{whole}s"
 
 
 def _printable(text: str) -> str:
