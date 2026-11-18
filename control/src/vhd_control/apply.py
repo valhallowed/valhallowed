@@ -35,7 +35,7 @@ APPLY_LOCK = ".apply.lock"
 # Makes each world's backup folder, named in its arguments, and gives it to the game runtime's user.
 # A link is refused: the world's bind mount would follow it to wherever it points.
 MAKE_BACKUP_FOLDERS = (
-    'set -e; for d; do test ! -L "/backups/$d"; mkdir -p "/backups/$d"; chown vhd:vhd "/backups/$d"; done'
+    f'set -e; for d; do f="{layout.BACKUPS}/$d"; test ! -L "$f"; mkdir -p "$f"; chown vhd:vhd "$f"; done'
 )
 IGNORE_ORPHANS = "COMPOSE_IGNORE_ORPHANS"
 

@@ -280,7 +280,7 @@ def test_one_run_makes_every_worlds_backup_folder_as_the_runtime_user(setup: Set
         "--volume", "/srv/vhd/backups:/backups",
         IMAGES["game-runtime"], "-c", MAKE_BACKUP_FOLDERS, "sh", ASHWAKE, MEADOWFOLD,
     ]  # fmt: skip
-    assert "chown vhd:vhd" in MAKE_BACKUP_FOLDERS and "test ! -L" in MAKE_BACKUP_FOLDERS
+    assert '/backups/$d"' in MAKE_BACKUP_FOLDERS and "chown vhd:vhd" in MAKE_BACKUP_FOLDERS
 
 
 def test_each_world_mounts_only_its_own_backup_folder(setup: Setup) -> None:
