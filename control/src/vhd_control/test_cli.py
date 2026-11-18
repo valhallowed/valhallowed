@@ -56,7 +56,7 @@ def test_status_names_each_world_its_players_and_what_waits() -> None:
                     "generation": 4,
                     "world": "Frostmere",
                     "state": "running",
-                    "backups": {"names": [], "failure": "save 1 lacks _main.1.db2\x1b[2J"},
+                    "backups": {"names": ["99999999T999999Z"], "failure": "save 1 lacks _main.1.db2\x1b[2J"},
                 },
             },
         },
@@ -75,7 +75,7 @@ def test_status_names_each_world_its_players_and_what_waits() -> None:
     assert out.getvalue().splitlines() == [
         "generation 5",
         "Ashwake: unknown",
-        "Frostmere: running, no backup yet (the last backup failed: save 1 lacks _main.1.db2?[2J)",
+        "Frostmere: running, 1 backup(s) (backups: save 1 lacks _main.1.db2?[2J)",
         "Meadowfold: running, 2 player(s), 2 backup(s), the newest 24m old; generation 5 waits for an empty world",
         "database service: unknown; generation 5 waits for vhd apply",
         "intake service: running, 40 event(s) taken, 2 dropped",

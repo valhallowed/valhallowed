@@ -117,14 +117,20 @@ def show_status(status: dict[str, Any], out: TextIO, now: datetime | None = None
 
 def _backups(backups: dict[str, Any], now: datetime) -> str:
     """A world's backups for its status line: how many, the newest one's age from its name, and why
-    the last one failed."""
+    its runtime could not take or keep one."""
     names: list[str] = backups["names"]
     text = ", no backup yet"
     if names:
-        taken = datetime.strptime(names[0], "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
-        text = f", {len(names)} backup(s), the newest {_age((now - taken).total_seconds())} old"
+        text = f", {len(names)} backup(s)"
+        # A runtime's report is a child's words: a name that is no time shows no age.
+        try:
+            taken = datetime.strptime(names[0], "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+        except ValueError:
+            pass
+        else:
+            text += f", the newest {_age((now - taken).total_seconds())} old"
     if "failure" in backups:
-        text += f" (the last backup failed: {_printable(backups['failure'])})"
+        text += f" (backups: {_printable(backups['failure'])})"
     return text
 
 
