@@ -46,19 +46,19 @@
       "minimum": 0
     },
     "backups": {
-      "description": "The world's backups, as the runtime last listed its backup folder. Absent until it has.",
+      "description": "The world's backups, as the runtime last listed its backup folder. Absent until the runtime has listed its backup folder, or failed to.",
       "type": "object",
       "additionalProperties": false,
       "required": ["names"],
       "properties": {
         "names": {
-          "description": "The backups in the folder, newest first, each named for when it was taken, in UTC, so the first says the newest one's age. At most the manifest's backups.keep and keep_daily allow together; a folder holding more, as after either is lowered, is named only as far as that.",
+          "description": "The backups in the folder, newest first, each named for when it was taken, in UTC, so the first says the newest one's age. At most 200, which the manifest's backups.keep and keep_daily, 100 each, keep a folder within; until the next backup prunes it, as after either is lowered, only the newest 200 are named.",
           "type": "array",
           "maxItems": 200,
           "items": { "type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z$" }
         },
         "failure": {
-          "description": "Why the last backup failed, in one line of printable text: vhd status shows it to the server manager. Absent once a backup succeeds.",
+          "description": "Why the runtime could not take or keep its backups, in one line of printable text: vhd status shows it to the server manager. Absent once a turn of its backups succeeds.",
           "type": "string",
           "minLength": 1,
           "maxLength": 500,
