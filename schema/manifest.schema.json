@@ -39,11 +39,11 @@
       "additionalProperties": false,
       "properties": {
         "path": {
-          "description": "The host folder backups live in, each world in a folder of its own. Relative to the install folder unless it starts with /. A folder on another disk keeps backups apart from the worlds they protect.",
+          "description": "The host folder backups live in, each world in a folder of its own. Relative to the install folder unless it starts with /, and without a colon, which Docker's volume syntax reserves. A folder on another disk keeps backups apart from the worlds they protect. vhd apply makes the folder, which then belongs to root, and each world's folder, which belongs to the game runtime's user, so removing them takes root. A world's folder stays when the world is removed or the path changes, and a world added again under the same save name finds its backups there.",
           "type": "string",
           "minLength": 1,
           "maxLength": 1024,
-          "pattern": "^[^\\u0000-\\u001f]+$",
+          "pattern": "^[^\\u0000-\\u001f:]+$",
           "default": "backups",
           "x-change-cost": "game-server restart",
           "x-applied-by": "vhd apply"

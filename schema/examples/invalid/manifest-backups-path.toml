@@ -1,0 +1,7 @@
+# expect: '/mnt/disk:1/vhd' does not match
+schema = 1
+
+[world.Meadowfold]
+
+[backups]
+path = "/mnt/disk:1/vhd"
