@@ -172,8 +172,10 @@ function drawBase(world: string | undefined): void {
   fitMaxZoom = native + RENDER_FIT_ZOOM_ABOVE_NATIVE;
   // The query is ignored by the server; it only makes a new version a new URL for the browser.
   const url = `/api/worlds/${encodeURIComponent(world)}/render.png?v=${drawn.version}`;
-  // The overlay's corners are the image's edges, at +-half_width, which is where B5 puts them.
-  const layer = L.imageOverlay(url, renderBounds(drawn.half_width), { className: "render" });
+  // The overlay's corners are the image's edges, at +-half_width, which is where B5 puts them. It
+  // sits in the tile pane, below the overlay pane that holds the players' SVG, whatever the order
+  // the layers are added in: an image added to the overlay pane later would cover the players.
+  const layer = L.imageOverlay(url, renderBounds(drawn.half_width), { className: "render", pane: "tilePane" });
   layer.addTo(map);
   base = { world, version: drawn.version, layer };
 }
