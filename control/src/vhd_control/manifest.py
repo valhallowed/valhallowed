@@ -4,6 +4,7 @@ Nothing past this module reads either file: it hands on Settings, with every def
 taken from the manifest schema.
 """
 
+import posixpath
 import re
 import tomllib
 from collections.abc import Mapping
@@ -87,7 +88,8 @@ def load(install: Path, schemas: Schemas) -> Settings:
         worlds=worlds,
         web_map_port=cast(int, web_map.get("port", default_web_map_port)),
         backups=Backups(
-            path=cast(str, backups["path"]),
+            # Normalized, so ./backups and backups/ name the folder backups does.
+            path=posixpath.normpath(cast(str, backups["path"])),
             every_s=_seconds(schema, "backups", "every", cast(str, backups["every"])),
             keep=cast(int, backups["keep"]),
             keep_daily=cast(int, backups["keep_daily"]),

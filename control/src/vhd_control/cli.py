@@ -65,7 +65,7 @@ def validate(schemas: Schemas, out: TextIO) -> None:
         print(f"world {world.name}: udp {world.port}-{last_port(world.port)}, password {password}", file=out)
     print(f"web map: tcp {settings.web_map_port}", file=out)
     backups = settings.backups
-    where = backups.path if backups.path.startswith("/") else f"{backups.path}/ in the install folder"
+    where = backups.path if backups.path.startswith("/") else f"{backups.path}/, relative to the install folder"
     print(
         f"backups: into {where}, after a new save at most every {duration(backups.every_s)}, "
         f"keeping the newest {backups.keep} and {backups.keep_daily} daily",

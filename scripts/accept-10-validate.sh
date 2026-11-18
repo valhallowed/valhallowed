@@ -12,7 +12,7 @@ cli=(docker compose -p "$ACCEPT_PROJECT" -f "$ACCEPT_INSTALL/compose.yaml")
 expected_validate=$(printf '%s\n' \
   "world $ACCEPT_WORLD_NAME: udp $ACCEPT_WORLD_PORT-$((ACCEPT_WORLD_PORT + 2)), password unset" \
   "web map: tcp $ACCEPT_WEB_MAP_PORT" \
-  "backups: into backups/ in the install folder, after a new save at most every 1h, keeping the newest 24 and 14 daily" \
+  "backups: into backups/, relative to the install folder, after a new save at most every 1h, keeping the newest 24 and 14 daily" \
   "updates: when-empty, checking every 15m")
 if ! got=$("${cli[@]}" run --rm vhd validate) || [[ $got != "$expected_validate" ]]; then
   echo "accept: vhd validate did not reconcile the manifest:" >&2

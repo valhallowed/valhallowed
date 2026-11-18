@@ -19,7 +19,7 @@ def test_validate_shows_what_the_manifest_reconciles_to(tmp_path: Path, monkeypa
         "world Ashwake: udp 2459-2461, password unset",
         "world Meadowfold: udp 2456-2458, password set",
         "web map: tcp 8456",
-        "backups: into backups/ in the install folder, after a new save at most every 1h, "
+        "backups: into backups/, relative to the install folder, after a new save at most every 1h, "
         "keeping the newest 24 and 14 daily",
         "updates: when-empty, checking every 15m",
     ]

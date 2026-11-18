@@ -89,3 +89,9 @@ def test_unreadable_toml_names_the_file(tmp_path: Path) -> None:
 def test_a_missing_manifest_is_refused(tmp_path: Path) -> None:
     with pytest.raises(InvalidSettings, match=r"^manifest\.toml: "):
         load(tmp_path, SCHEMAS)
+
+
+@pytest.mark.parametrize("path", ["./backups", "backups/", "backups//"])
+def test_a_backups_path_is_normalized_so_one_folder_has_one_name(tmp_path: Path, path: str) -> None:
+    (tmp_path / "manifest.toml").write_text(f'schema = 1\n\n[world.Meadowfold]\n\n[backups]\npath = "{path}"\n')
+    assert load(tmp_path, SCHEMAS).backups.path == "backups"
