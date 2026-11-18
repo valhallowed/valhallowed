@@ -24,6 +24,13 @@ class WorldStatus:
     stamp: tuple[int, int]
 
 
+class Backups(TypedDict):
+    """A world's backups in its status: their names, newest first, and why the last one failed."""
+
+    names: list[str]
+    failure: NotRequired[str]
+
+
 class RuntimeStatus(TypedDict):
     """One status report, as contracts/game-runtime.status.schema.json defines it."""
 
@@ -35,6 +42,7 @@ class RuntimeStatus(TypedDict):
     game_build: NotRequired[str]
     objects: NotRequired[int]
     players: NotRequired[int]
+    backups: NotRequired[Backups]
 
 
 Post = Callable[[str, bytes, float], None]

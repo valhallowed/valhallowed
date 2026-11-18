@@ -1,4 +1,4 @@
-"""The runtime's state machine: generation, install, launch, world truth, stop and hold."""
+"""The runtime's state machine: generation, install, launch, world truth, backups, stop and hold."""
 
 import json
 import logging
@@ -8,19 +8,22 @@ import signal
 import subprocess
 import time
 from collections.abc import Callable, Mapping
+from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from types import FrameType
 from typing import Protocol
 
-from vhd_runtime import server, status, steam
+from vhd_runtime import backups, server, status, steam
 from vhd_runtime.generation import Generation, IncompleteGeneration, InvalidGeneration, Reader
 
 # Well below the game's autosave interval (30 minutes unless changed), so a
 # world held at this point has not saved.
 LOAD_TIMEOUT_S = 900
-# vhd apply's stop grace for a world (render.STOP_GRACE) must exceed this.
+# vhd apply's stop grace for a world (render.STOP_GRACE) must exceed this, with room after it for
+# a backup of the save the game stopped with.
 STOP_TIMEOUT_S = 120
 POLL_S = 1.0
 GENERATION_POLL_S = 2.0
@@ -42,6 +45,12 @@ INSTALL_RETRY_FIRST_S = 30
 INSTALL_RETRY_MAX_S = 600
 # The runtime status contract's bound on a reason.
 REASON_MAX = 500
+# How often a running world looks for a save newer than its last backup, once its settings' interval
+# has passed, and how long it waits to try again after a backup failed.
+BACKUP_CHECK_S = 15
+BACKUP_RETRY_S = 60
+# The runtime status contract's bound on the backups it names.
+BACKUP_NAMES_MAX = 200
 
 _log = logging.getLogger(__name__)
 
@@ -62,6 +71,9 @@ class Paths:
     plugin: Path = Path("/opt/vhd/plugin") / server.PLUGIN_FILE
     contracts: Path = Path("/opt/vhd/contracts")
     world_status: Path = Path("/run/vhd/world.json")
+    # The world's own folder of the install's backups, which vhd apply makes and mounts here:
+    # control/src/vhd_control/layout.py, BACKUPS.
+    backups: Path = Path("/backups")
 
     @property
     def steamcmd(self) -> Path:
@@ -119,6 +131,9 @@ class Supervisor:
     clock: Clock = field(default_factory=Clock)
     jitter: Callable[[float, float], float] = random.uniform
     environ: Mapping[str, str] = field(default_factory=lambda: dict(os.environ))
+    # Copies a backup off the supervisor's loop, which keeps reporting and watching the world.
+    executor: Executor = field(default_factory=lambda: ThreadPoolExecutor(max_workers=1))
+    wall: Callable[[], datetime] = lambda: datetime.now(UTC)
     _stop: bool = field(default=False, init=False)
     _problem: str | None = field(default=None, init=False)
     _remembered: int | None = field(default=None, init=False)
@@ -127,6 +142,14 @@ class Supervisor:
     _world_seen: float = field(default=0.0, init=False)
     # The generation a restart waits on, so the wait is logged once.
     _waiting: int | None = field(default=None, init=False)
+    # The backup being copied; the save number the newest backup holds; when the loop next looks
+    # for a newer save; the backups the folder holds, newest first, None until listed; and why the
+    # last backup failed.
+    _backup: Future[backups.Backup | None] | None = field(default=None, init=False)
+    _backed_up: int | None = field(default=None, init=False)
+    _next_backup: float = field(default=0.0, init=False)
+    _backup_names: list[str] | None = field(default=None, init=False)
+    _backup_failure: str | None = field(default=None, init=False)
 
     def request_stop(self, signum: int, frame: FrameType | None) -> None:
         """Signal handler: stop at the next poll, saving the world first."""
@@ -144,6 +167,7 @@ class Supervisor:
         generation = self._read_generation() or generation
         reporter = status.Reporter(generation.status_url, self.post)
         self._map_export_directory()
+        self._start_backups(generation)
         config = server.plugin_config(generation, self.paths.world_status, self.paths.map_export)
         server.install_mods(self.paths.pack, self.paths.plugin, self.paths.server, config)
         save_existed = server.save_exists(self.paths.saves, generation.world)
@@ -227,7 +251,7 @@ class Supervisor:
         next_report = launched
         while True:
             if self._stop:
-                return self._shut_down(process, state, "stop requested")
+                return self._shut_down(process, state, "stop requested", generation)
             if state is not State.HELD:
                 code = process.poll()
                 if code is not None:
@@ -238,7 +262,7 @@ class Supervisor:
             current = world if self._seen_within(EMPTY_WITHIN, generation) else None
             generation, newer = self._follow(generation)
             if newer is not None and self._may_restart(state, newer, current):
-                return self._shut_down(process, state, "a newer generation changes this world's settings")
+                return self._shut_down(process, state, "a newer generation changes this world's settings", generation)
             previous = state
             if state in (State.LOADING, State.UNVERIFIED) and fresh is not None:
                 state, reason = self._on_report(process, generation.world, fresh.objects, save_existed)
@@ -246,8 +270,14 @@ class Supervisor:
                 self._remember_objects(generation.world, fresh.objects)
             elif state is State.LOADING and self.clock.now() - launched > LOAD_TIMEOUT_S:
                 state, reason = self._on_load_timeout(process, generation.world, save_existed)
+            if state in (State.RUNNING, State.UNVERIFIED):
+                self._back_up(generation)
             if state is not previous or self.clock.now() >= next_report:
-                reporter.send(_status(generation, state, reason, build, fresh))
+                report = _status(generation, state, reason, build, fresh)
+                backed_up = self._backups_status()
+                if backed_up is not None:
+                    report["backups"] = backed_up
+                reporter.send(report)
                 next_report = self.clock.now() + generation.status_interval_s
             self.clock.sleep(POLL_S)
 
@@ -333,7 +363,7 @@ class Supervisor:
         temporary.replace(record)
         self._remembered = objects
 
-    def _shut_down(self, process: Process, state: State, why: str) -> int:
+    def _shut_down(self, process: Process, state: State, why: str, generation: Generation) -> int:
         _log.info("stopping: %s", why)
         if state is State.HELD or process.poll() is not None:
             return 0
@@ -348,7 +378,96 @@ class Supervisor:
         except subprocess.TimeoutExpired:
             _log.error("the dedicated server did not stop within %d s; killing it", STOP_TIMEOUT_S)
             _kill(process)
+        self._back_up_at_stop(generation)
         return 0
+
+    def _start_backups(self, generation: Generation) -> None:
+        """List the world's backups, removing copies a stop cut short and those the settings no
+        longer keep, and carry on from the newest: its save is backed up, and the next backup is
+        due once the settings' interval has passed since it was taken. A folder that cannot be read
+        or written costs the world its backups, never its start."""
+        folder = self.paths.backups
+        try:
+            backups.clear_partials(folder)
+            held = backups.prune(folder, generation.backups.keep, generation.backups.keep_daily)
+        except OSError as error:
+            self._backup_failed(f"cannot read the backup folder {folder}: {error.strerror or error}")
+            return
+        self._backup_names = held
+        if not os.access(folder, os.W_OK):
+            self._backup_failed(f"cannot write the backup folder {folder}")
+        if held:
+            self._backed_up = backups.last_save(folder, held[0])
+            age = (self.wall() - backups.taken(held[0])).total_seconds()
+            self._next_backup = self.clock.now() + max(0.0, generation.backups.every_s - age)
+
+    def _back_up(self, generation: Generation) -> None:
+        """While the world runs: once the settings' interval has passed since the last backup, back
+        up a save newer than it, copied off this loop. The game is never paused."""
+        if self._backup is not None:
+            if not self._backup.done():
+                return
+            self._settle(self._backup, generation)
+        if self.clock.now() < self._next_backup:
+            return
+        folder = backups.world_folder(self.paths.saves, generation.world)
+        self._backup = self.executor.submit(
+            backups.take, folder, self.paths.backups, generation.world, self.wall(), self._backed_up
+        )
+
+    def _back_up_at_stop(self, generation: Generation) -> None:
+        """Back up the save the game stopped with, once any backup still copying is done."""
+        if self._backup is not None:
+            self._settle(self._backup, generation)
+        folder = backups.world_folder(self.paths.saves, generation.world)
+        try:
+            backup = backups.take(folder, self.paths.backups, generation.world, self.wall(), self._backed_up)
+        except (backups.BackupFailed, OSError) as error:
+            self._backup_failed(str(error))
+            return
+        self._took(backup, generation)
+
+    def _settle(self, copied: Future[backups.Backup | None], generation: Generation) -> None:
+        """Note how a backup copied off the loop went; it waits for one still copying."""
+        self._backup = None
+        try:
+            backup = copied.result()
+        except (backups.BackupFailed, OSError) as error:
+            self._backup_failed(str(error))
+            self._next_backup = self.clock.now() + BACKUP_RETRY_S
+            return
+        self._took(backup, generation)
+
+    def _took(self, backup: backups.Backup | None, generation: Generation) -> None:
+        """Note a backup taken, and keep what the settings say; or, with none to take, look again
+        a little later."""
+        if backup is None:
+            self._next_backup = self.clock.now() + BACKUP_CHECK_S
+            return
+        _log.info("backed up save %d of world %s as %s", backup.save, generation.world, backup.name)
+        self._backed_up = backup.save
+        self._backup_failure = None
+        self._next_backup = self.clock.now() + generation.backups.every_s
+        try:
+            self._backup_names = backups.prune(
+                self.paths.backups, generation.backups.keep, generation.backups.keep_daily
+            )
+        except OSError as error:
+            self._backup_failed(f"cannot remove old backups from {self.paths.backups}: {error.strerror or error}")
+
+    def _backup_failed(self, why: str) -> None:
+        if why != self._backup_failure:
+            _log.error("no backup: %s", why)
+        self._backup_failure = _reason(why)
+
+    def _backups_status(self) -> status.Backups | None:
+        """The backups for the status report, None until the folder has been listed or has failed."""
+        if self._backup_names is None and self._backup_failure is None:
+            return None
+        report: status.Backups = {"names": (self._backup_names or [])[:BACKUP_NAMES_MAX]}
+        if self._backup_failure is not None:
+            report["failure"] = self._backup_failure
+        return report
 
     def _wait_for_generation(self) -> Generation | None:
         while not self._stop:
