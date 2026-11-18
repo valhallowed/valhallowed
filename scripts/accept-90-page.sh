@@ -149,7 +149,7 @@ console.log(JSON.stringify({ seen, expected, problems }));
 process.exit(shows && problems.length === 0 ? 0 : 1);
 JS
 ); then
-  echo "accept: the web map's page did not show Pagewalker cleanly, over its base image where the render's answer 'expected' has one: ${report:-the browser gave no report}" >&2
+  echo "accept: the web map's page did not show Pagewalker cleanly, or not over its base image when GET /api/worlds gave a render: ${report:-the browser gave no report}" >&2
   exit 1
 fi
 if jq -e '.expected != null' <<< "$report" >/dev/null; then

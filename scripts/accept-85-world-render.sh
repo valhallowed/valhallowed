@@ -102,7 +102,7 @@ PY
 fi
 if ! jq -e --argjson render "$render" \
   '.size == $render.size and .half_width == $render.half_width and .bytes == .size * .size * 10' <<< "$exported" >/dev/null; then
-  diagnose "the export $exported is not the world render's geometry $render"
+  diagnose "the export $exported is not the render's geometry $render"
 fi
 if ! jq -e '.biomes_above_water | length > 1' <<< "$exported" >/dev/null; then
   diagnose "the export's raster holds fewer than two biomes above the water level: $(jq -c .biomes_above_water <<< "$exported")"
@@ -120,7 +120,7 @@ digest=$(sha256sum "$tmp/render.png")
 [[ ${digest:0:16} == "$version" ]] || diagnose "the render's version $version is not the first 16 hex digits of the base image's SHA-256, ${digest:0:16}"
 [[ $control == no-cache ]] || diagnose "the base image's Cache-Control is '$control', not no-cache"
 code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' -H "If-None-Match: $etag" "$url") || code=''
-[[ $code == 304 ]] || diagnose "a request carrying the render's ETag was answered '$code', not 304"
+[[ $code == 304 ]] || diagnose "a request carrying the base image's ETag was answered '$code', not 304"
 
 # The PNG is read on the web map image's Node, which the page check uses too, with the palette read
 # by the server's own code. Every filter type is undone, so the check does not depend on the
