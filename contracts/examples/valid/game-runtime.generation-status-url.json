@@ -1,1 +1,1 @@
-{"contract": 3, "generation": 12, "world": {"name": "Ashwake", "port": 2459}, "plugin": {"status_interval_s": 5, "intake_url": "http://intake:9458/events"}, "status_url": "http://control-plane:9457/status"}
+{"contract": 4, "generation": 12, "world": {"name": "Ashwake", "port": 2459}, "plugin": {"status_interval_s": 5, "intake_url": "http://intake:9458/events"}, "backups": {"every_s": 1800, "keep": 48, "keep_daily": 0}, "updates": {"policy": "at-start", "every_s": 3600}, "status_url": "http://control-plane:9457/status"}

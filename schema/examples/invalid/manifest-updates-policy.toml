@@ -1,0 +1,7 @@
+# expect: 'never' is not one of
+schema = 1
+
+[world.Meadowfold]
+
+[updates]
+policy = "never"

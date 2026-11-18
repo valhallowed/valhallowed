@@ -1,0 +1,14 @@
+# Backups on another disk, kept longer, and a world that updates only when it starts.
+schema = 1
+
+[world.Meadowfold]
+
+[backups]
+path = "/srv/vhd-backups"
+every = "30m"
+keep = 48
+keep_daily = 30
+
+[updates]
+policy = "at-start"
+every = "1h"

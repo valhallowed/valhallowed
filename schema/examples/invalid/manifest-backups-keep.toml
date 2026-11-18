@@ -1,0 +1,7 @@
+# expect: 0 is less than the minimum of 1
+schema = 1
+
+[world.Meadowfold]
+
+[backups]
+keep = 0

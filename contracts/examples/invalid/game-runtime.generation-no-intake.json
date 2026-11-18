@@ -1,1 +1,1 @@
-{"contract": 3, "generation": 1, "world": {"name": "Meadowfold", "port": 2456}, "plugin": {"status_interval_s": 5}}
+{"contract": 4, "generation": 1, "world": {"name": "Meadowfold", "port": 2456}, "plugin": {"status_interval_s": 5}, "backups": {"every_s": 3600, "keep": 24, "keep_daily": 14}, "updates": {"policy": "when-empty", "every_s": 900}}
