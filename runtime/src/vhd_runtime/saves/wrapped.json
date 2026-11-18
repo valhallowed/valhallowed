@@ -1,0 +1,55 @@
+{
+  "description": "Save numbers wrap: 0 follows 4294967295, and the game picks the newest by modification time. Both saves are complete, as for the moment after the newer one's .ok is written and before the older one's files go. A backup takes save 0.",
+  "saves": [
+    {
+      "number": 4294967295,
+      "seconds_ago": 1800,
+      "ok": true,
+      "chunks": [
+        {
+          "chunk": 258,
+          "size": 64,
+          "version": 3,
+          "objects": 1200
+        },
+        {
+          "chunk": 4660,
+          "size": 32,
+          "version": 7,
+          "objects": 300
+        }
+      ]
+    },
+    {
+      "number": 0,
+      "seconds_ago": 5,
+      "ok": true,
+      "chunks": [
+        {
+          "chunk": 258,
+          "size": 64,
+          "version": 4,
+          "objects": 1250
+        },
+        {
+          "chunk": 4660,
+          "size": 32,
+          "version": 7,
+          "objects": 300
+        }
+      ]
+    }
+  ],
+  "newest_complete": {
+    "save": 0,
+    "objects": 1550,
+    "files": [
+      "01_02__64_4.chunk",
+      "12_34__32_7.chunk",
+      "_main.0.chunks",
+      "_main.0.db2",
+      "_main.0.fwl2",
+      "_main.0.ok"
+    ]
+  }
+}

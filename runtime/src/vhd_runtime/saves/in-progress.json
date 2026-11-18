@@ -1,0 +1,42 @@
+{
+  "description": "Save 42 is being written: its chunks and .db2 are on disk, but not its .ok. A backup takes save 41 and none of save 42's files.",
+  "saves": [
+    {
+      "number": 41,
+      "seconds_ago": 1800,
+      "ok": true,
+      "chunks": [
+        {
+          "chunk": 513,
+          "size": 64,
+          "version": 9,
+          "objects": 800
+        }
+      ]
+    },
+    {
+      "number": 42,
+      "seconds_ago": 1,
+      "ok": false,
+      "chunks": [
+        {
+          "chunk": 513,
+          "size": 64,
+          "version": 10,
+          "objects": 812
+        }
+      ]
+    }
+  ],
+  "newest_complete": {
+    "save": 41,
+    "objects": 800,
+    "files": [
+      "02_01__64_9.chunk",
+      "_main.41.chunks",
+      "_main.41.db2",
+      "_main.41.fwl2",
+      "_main.41.ok"
+    ]
+  }
+}

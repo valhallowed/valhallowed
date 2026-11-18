@@ -57,19 +57,19 @@
           "x-applied-by": "control plane"
         },
         "keep": {
-          "description": "How many of its newest backups a world keeps, besides its daily ones.",
+          "description": "How many of its newest backups a world keeps, besides its daily ones. At most 100: a world's status names every backup it keeps.",
           "type": "integer",
           "minimum": 1,
-          "maximum": 1000,
+          "maximum": 100,
           "default": 24,
           "x-change-cost": "live",
           "x-applied-by": "control plane"
         },
         "keep_daily": {
-          "description": "How many daily backups a world keeps, one a day. 0 keeps none.",
+          "description": "How many daily backups a world keeps: the newest backup of each of that many days, in UTC. 0 keeps none. At most 100: a world's status names every backup it keeps.",
           "type": "integer",
           "minimum": 0,
-          "maximum": 3650,
+          "maximum": 100,
           "default": 14,
           "x-change-cost": "live",
           "x-applied-by": "control plane"
