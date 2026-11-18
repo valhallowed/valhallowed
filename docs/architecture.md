@@ -163,10 +163,12 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
 - **The child runs the game; the control plane sets policy.** A runtime runs
   the Valheim dedicated server, BepInEx and the plugin on what the control
   plane hands it; its supervisor reads the generation, installs and updates
-  the server, starts and stops it, and reports status. Updates, backups,
-  schedules, and world import and export belong to the control plane. Until
-  the control plane sets an update policy, the supervisor updates the server
-  at every start, and world truth holds a world the update stops from loading.
+  the server, starts and stops it, and reports status. Backups, updates,
+  restores, and world import and export are the control plane's to set and to
+  ask for, and each world's runtime carries them out on its own world only. It
+  already holds the world's data volume and sees when a save is complete, and
+  it reaches no other world's saves; the control plane would otherwise mount
+  every world's saves and carry their traffic, which G14 keeps out of it.
   Each world downloads and updates a server of its own, so a crash, an update
   or a full disk stays inside it; worlds on one host pay that disk space and
   download once each.
@@ -187,6 +189,49 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
 - **Hold.** An action that replaces a world's files, such as import or
   restore, puts its runtime on hold: the game stops and the container stays
   up until the action finishes. No Docker socket is needed (G13).
+- **Backups.** A runtime copies its world's newest complete save (§ Game
+  facts) while the game runs, so a backup needs no pause and no player
+  notices it. It copies only the files that save names, none of which the game
+  rewrites in place; a file the next save removes mid-copy starts the copy
+  again from the newest complete save, so a partial copy is never kept. A
+  runtime takes a backup after a new save, at most hourly, and keeps one a day
+  besides; after every clean stop; and before any action replaces the save.
+  It keeps the newest 24 and the daily ones for 14 days, removes the oldest
+  first, and never removes the newest. How often and how many are defaults the
+  manifest can change. Backups live in a `backups` folder in the install
+  folder, a folder for each world that only its runtime mounts. A Docker volume
+  would go, with the world it protects, on `docker compose down -v`; a folder
+  stays, and the server manager copies it off the host with any tool. The
+  manifest can name another host path, such as another disk (G3). A runtime
+  names its world's backups and the newest one's age in its status, and the
+  control plane learns them from there, so it mounts no world's backups. The dedicated
+  server's own backups (§ Game facts) sit beside the save, in the world's
+  volume, and go with it.
+- **Restore, import and export share one path.** A restore puts the world's
+  runtime on hold: the runtime stops the game with a save, backs that save up,
+  validates the backup it was asked for and replaces the save with it, then
+  starts the game, and world truth judges the load. A restored save that fails
+  world truth is replaced by the backup taken just before it, and status says
+  why. An import is a save, in either save format, that the server manager puts
+  in the install folder: `vhd import` validates it and keeps it as a backup of
+  its world, which is then restored like any other, and the runtime validates
+  it again before it replaces anything. A world that has never started loads
+  an imported save at its first start, so no empty world is made first. An
+  export copies a backup, the newest by default, into the install folder in
+  the layout the game reads. A restore or an import waits as a pending change
+  while its world has players online, like a game-server restart, unless the
+  server manager confirms it.
+- **Updates.** Under the default update policy, a runtime compares its
+  installed game build with Steam's newest public build every 15 minutes, and
+  restarts its world to update once no players are online, by its own final
+  players check. The game refuses a player whose game is another version
+  (§ Game facts), so a world that updated only when it started would refuse
+  every updated player after a game patch until someone restarted it. The stop
+  backs the save up, as every clean stop does, so an update that damages a
+  world leaves the save from before it, and world truth holds a world the
+  update stops from loading. Under the `at-start` policy, a world updates only
+  when it next starts. Status names the installed build, and the newer one
+  while it waits.
 - **Capabilities are independent.** Telemetry, in-game commands, chat relay,
   assistant, web map and sign-in each switch on separately and declare what
   they depend on. A failure in one degrades that capability only.
@@ -414,6 +459,17 @@ What any design here must respect about the game.
   still loads, and the server's next save removes it.
 - A new world counts no objects when it first loads, and its real count about
   30 seconds later. A world loaded from a save counts its objects at once.
+- A 1.0+ save is complete once its `_main.<n>.ok` exists. The server writes a
+  save's chunks, then `_main.<n>.db2` and `_main.<n>.fwl2`, and the `.ok`
+  last, only when all of them were written. Each chunk a save writes goes to a
+  new file with a higher version in its name, and the previous save's files
+  are removed only once the new save is complete, so no file of a complete
+  save is rewritten in place.
+- The server saves the world when it stops cleanly, and every 30 minutes
+  unless told otherwise. It also keeps backups of its own beside the save, two
+  unless told otherwise.
+- The server refuses a client on another game version. A server that has not
+  updated refuses every player whose game has.
 - A world's server uses its port and the next one, over UDP; the server's own
   start script asks for its port through port+2 to be forwarded. Worlds that
   share a host need ranges that do not overlap.
