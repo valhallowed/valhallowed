@@ -741,6 +741,29 @@ def test_disconnect_players_frees_a_runtime_waiting_for_an_empty_world(setup: Se
     assert setup.handed(MEADOWFOLD) == (2, "hearth-and-horn")
 
 
+@pytest.mark.parametrize("live", ["", "\n[backups]\nkeep = 48\n"])
+def test_a_runtime_waiting_for_an_empty_world_still_needs_confirmation_after_a_live_change(
+    setup: Setup, live: str
+) -> None:
+    setup.apply()
+    setup.docker.running = [MEADOWFOLD, ASHWAKE]
+    # Generation 2, a new password, was handed while the world looked empty; a player joined, and
+    # the runtime still runs generation 1. Then the manifest changes what the runtime adopts in place.
+    (setup.install / "secrets.toml").write_text(PASSWORD)
+    store = Store(setup.volume)
+    with store.locked():
+        state = store.load()
+        generation = reconcile(load(setup.install, SCHEMAS), state.generation)
+        store.hand(state, MEADOWFOLD, generation.children[MEADOWFOLD], generation.number)
+        state.generation = generation
+        store.save(state)
+    setup.players("Meadowfold", 2)
+    (setup.install / "manifest.toml").write_text(TWO_WORLDS + live)
+
+    with pytest.raises(Refused, match=r"restarts Meadowfold \(2 player\(s\)\)"):
+        setup.apply()
+
+
 def test_a_second_apply_while_one_runs_is_refused(setup: Setup) -> None:
     with (setup.volume / ".apply.lock").open("a") as held:
         fcntl.flock(held, fcntl.LOCK_EX)

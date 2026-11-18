@@ -469,7 +469,9 @@ def _restarts(
         handed = state.handed.get(cid)
         container = cid in recreated
         runs = worlds.get(child.world, {}).get("report", {}).get("generation")
-        waiting = handed is not None and runs is not None and runs < handed.number and handed.child == child
+        # Still waiting on what it was handed, though the manifest changed since in what the runtime
+        # adopts in place.
+        waiting = handed is not None and runs is not None and runs < handed.number and not handed.child.restarts(child)
         documents = handed is None or handed.child.restarts(child) or waiting
         if container or documents:
             restarts[cid] = _Restart(child.world, container, documents)
