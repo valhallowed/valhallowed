@@ -52,15 +52,10 @@
       "required": ["names"],
       "properties": {
         "names": {
-          "description": "The backups in the folder, newest first, each named for when it was taken, in UTC. At most the manifest's backups.keep and keep_daily allow together; a folder holding more, as after either is lowered, is named only as far as that.",
+          "description": "The backups in the folder, newest first, each named for when it was taken, in UTC, so the first says the newest one's age. At most the manifest's backups.keep and keep_daily allow together; a folder holding more, as after either is lowered, is named only as far as that.",
           "type": "array",
           "maxItems": 200,
           "items": { "type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z$" }
-        },
-        "newest_age_s": {
-          "description": "Seconds since the newest backup was taken. Absent with no backup.",
-          "type": "integer",
-          "minimum": 0
         },
         "failure": {
           "description": "Why the last backup failed, in one line of printable text: vhd status shows it to the server manager. Absent once a backup succeeds.",
