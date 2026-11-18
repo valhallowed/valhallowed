@@ -3,7 +3,10 @@
 # the manifest's port, shows a synthetic player sent through intake as its only
 # marker, named in its tooltip, and nothing on the page fails: no console
 # error, no uncaught exception, no failed request and no content security
-# policy violation, which the browser logs as an error. The browser is pinned
+# policy violation, which the browser logs as an error. When GET /api/worlds
+# lists a world render for the world, the page also draws it under the player:
+# the render's image is loaded at the render's size, and the marker lies inside
+# the image's bounds. The browser is pinned
 # in images/tools/Dockerfile; the script that drives it over the DevTools
 # protocol runs on the web map image's own Node. See accept.sh for the ACCEPT_
 # variables.
@@ -24,9 +27,9 @@ node_image=$(docker inspect --format '{{.Config.Image}}' "$ACCEPT_WEB_MAP")
 "$root/scripts/accept-player.sh" Steam_accept_page Pagewalker -12.0 28.5 9.0 >/dev/null
 
 if ! report=$(docker run --rm -i --network "container:$shell" --entrypoint node \
-  -e PAGE="http://install-host:$ACCEPT_WEB_MAP_PORT/" -e PLAYER=Pagewalker \
+  -e PAGE="http://install-host:$ACCEPT_WEB_MAP_PORT/" -e PLAYER=Pagewalker -e WORLD="$ACCEPT_WORLD_NAME" \
   "$node_image" --input-type=module - <<'JS'
-const { PAGE: page, PLAYER: player } = process.env;
+const { PAGE: page, PLAYER: player, WORLD: world } = process.env;
 const deadline = Date.now() + 30_000;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const problems = [];
@@ -36,6 +39,16 @@ setTimeout(() => {
   console.log(JSON.stringify({ seen, problems: [...problems, "the browser stopped answering"] }));
   process.exit(1);
 }, 60_000).unref();
+
+// The render the world has, if any: the page must draw it when it does. accept-85 holds the
+// answer to its contract; here an answer that cannot be read is a problem.
+let expected = null;
+try {
+  const worlds = await (await fetch(new URL("/api/worlds", page))).json();
+  expected = worlds.worlds.find((entry) => entry.name === world)?.render ?? null;
+} catch (error) {
+  problems.push(`GET /api/worlds: ${error.message}`);
+}
 
 // The shell takes a moment to listen; a new target is a blank page of its own.
 let target;
@@ -78,10 +91,27 @@ const probe = `JSON.stringify({
   markers: document.querySelectorAll("path.player").length,
   names: [...document.querySelectorAll(".leaflet-tooltip")].map((tooltip) => tooltip.textContent),
   status: document.getElementById("status")?.textContent,
+  render: (() => {
+    const image = document.querySelector("img.leaflet-image-layer.render");
+    const marker = document.querySelector("path.player");
+    if (!image) return null;
+    const box = image.getBoundingClientRect();
+    const dot = marker?.getBoundingClientRect();
+    const middle = dot && { x: (dot.left + dot.right) / 2, y: (dot.top + dot.bottom) / 2 };
+    return {
+      loaded: image.complete && image.naturalWidth > 0,
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+      inside: !!middle && middle.x >= box.left && middle.x <= box.right && middle.y >= box.top && middle.y <= box.bottom,
+    };
+  })(),
 })`;
 const look = async () => {
   seen = JSON.parse((await send("Runtime.evaluate", { expression: probe, returnByValue: true }))?.result?.value ?? "null");
-  return seen?.markers === 1 && seen.names.length === 1 && seen.names[0] === player;
+  if (!(seen?.markers === 1 && seen.names.length === 1 && seen.names[0] === player)) return false;
+  // Without a render in the answer the page draws none, and nothing here asks for one.
+  return expected === null || (seen.render?.loaded === true && seen.render.width === expected.size &&
+    seen.render.height === expected.size && seen.render.inside);
 };
 let shows = false;
 while (!shows && Date.now() < deadline) {
@@ -94,11 +124,11 @@ if (shows) {
   shows = await look();
 }
 socket.close();
-console.log(JSON.stringify({ seen, problems }));
+console.log(JSON.stringify({ seen, expected, problems }));
 process.exit(shows && problems.length === 0 ? 0 : 1);
 JS
 ); then
-  echo "accept: the web map's page did not show Pagewalker cleanly: ${report:-the browser gave no report}" >&2
+  echo "accept: the web map's page did not show Pagewalker over the world render cleanly: ${report:-the browser gave no report}" >&2
   exit 1
 fi
 echo "accept: the web map's page showed a synthetic player's marker with no error or policy violation"
