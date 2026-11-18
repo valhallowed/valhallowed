@@ -4,12 +4,20 @@ from dataclasses import replace
 from pathlib import Path
 
 from vhd_runtime import server
-from vhd_runtime.generation import Generation, validator
+from vhd_runtime.generation import Backups, Generation, Updates, validator
 
 REPO = Path(__file__).resolve().parents[3]
 INTAKE = "http://intake:9458/events"
 GENERATION = Generation(
-    number=1, world="Meadowfold", port=2456, status_interval_s=5, status_url=None, intake_url=INTAKE, password=None
+    number=1,
+    world="Meadowfold",
+    port=2456,
+    status_interval_s=5,
+    status_url=None,
+    intake_url=INTAKE,
+    password=None,
+    backups=Backups(every_s=3600, keep=24, keep_daily=14),
+    updates=Updates(policy="when-empty", every_s=900),
 )
 CONFIG_SCHEMA = REPO / "contracts" / "plugin.config.schema.json"
 WORLD_STATUS = Path("/run/vhd/world.json")

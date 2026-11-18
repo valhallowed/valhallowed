@@ -35,11 +35,24 @@ class _Plugin(TypedDict):
     intake_url: str
 
 
+class _Backups(TypedDict):
+    every_s: int
+    keep: int
+    keep_daily: int
+
+
+class _Updates(TypedDict):
+    policy: str
+    every_s: int
+
+
 class _GenerationDocument(TypedDict):
     contract: int
     generation: int
     world: _World
     plugin: _Plugin
+    backups: _Backups
+    updates: _Updates
     status_url: NotRequired[str]
     disconnect_players: NotRequired[bool]
 
@@ -48,6 +61,23 @@ class _SecretsDocument(TypedDict):
     contract: int
     generation: int
     password: NotRequired[str]
+
+
+@dataclass(frozen=True)
+class Backups:
+    """How the runtime backs up its world."""
+
+    every_s: int
+    keep: int
+    keep_daily: int
+
+
+@dataclass(frozen=True)
+class Updates:
+    """The update policy: when-empty or at-start, and how often to look for a newer game build."""
+
+    policy: str
+    every_s: int
 
 
 @dataclass(frozen=True)
@@ -61,13 +91,23 @@ class Generation:
     intake_url: str
     # Never in a repr, so no log line or test diff can carry it.
     password: str | None = field(repr=False)
+    backups: Backups
+    updates: Updates
     # The server manager confirmed restarting this world with players online, for this
     # generation alone. It is no setting: it never makes two generations differ.
     disconnect_players: bool = False
 
     def same_settings(self, other: "Generation") -> bool:
-        """Whether other differs from this generation in nothing but its number and confirmation."""
-        return replace(other, number=self.number, disconnect_players=self.disconnect_players) == self
+        """Whether other differs from this generation in nothing but its number, its confirmation,
+        and the backups and updates the runtime adopts in place."""
+        adopted = replace(
+            other,
+            number=self.number,
+            disconnect_players=self.disconnect_players,
+            backups=self.backups,
+            updates=self.updates,
+        )
+        return adopted == self
 
 
 class Reader:
@@ -110,6 +150,8 @@ class Reader:
             status_url=generation.get("status_url"),
             intake_url=generation["plugin"]["intake_url"],
             password=secrets.get("password"),
+            backups=Backups(**generation["backups"]),
+            updates=Updates(**generation["updates"]),
             disconnect_players=generation.get("disconnect_players", False),
         )
         self._read = stamp, read
