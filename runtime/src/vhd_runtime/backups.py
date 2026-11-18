@@ -4,41 +4,54 @@ A 1.0+ save is complete once its _main.<n>.ok exists, and the game never rewrite
 complete save in place: each chunk a save writes goes to a new file, and the previous save's files
 are removed only once the next save is complete (Game facts). So a copy of the files a complete
 save names is that save, unless the next save removes one of them first; the copy then starts
-again from the newest complete save. A backup is copied into a partial folder and renamed into
-place once whole, so a folder named as a backup always holds one.
+again from the newest complete save. A backup is copied into a partial folder, synced, and renamed
+into place once whole, so a folder named as a backup always holds one.
 
     <backups>/<taken>/              one backup, named for when it was taken, in UTC: 20261118T204012Z
-    <backups>/<taken>/backup.json   its record: the world, the save's number and objects, and each
-                                    file's name, size and SHA-256, which a restore checks
+    <backups>/<taken>/backup.json   its record: the world, the save's number, when the game
+                                    completed it, its objects, when the backup was taken, and each
+                                    file's name, size and SHA-256, for a restore to check
     <backups>/<taken>/<file>        the save's files, named as in the world's save folder
-    <backups>/.partial-<taken>/     a copy under way, or one a stop cut short; removed at each start
+    <backups>/.partial-<taken>/     a copy under way, or a backup being removed, or either cut short;
+                                    removed at each start
+
+Every function here may block on the backups folder's disk, so the supervisor runs them off its
+loop, through tend.
 """
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import struct
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+from vhd_runtime.generation import Backups as Settings
 
 RECORD = "backup.json"
 PARTIAL = ".partial-"
 NAME_FORMAT = "%Y%m%dT%H%M%SZ"
-NAME = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
+_NAME = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 # How many times a copy that lost a file to the next save starts again.
 ATTEMPTS = 3
 # A .chunks file names one chunk in 11 bytes, and a world has a few thousand chunks at most.
 CHUNKS_MAX_BYTES = 1 << 20
 COPY_BLOCK = 1 << 20
+MIB = 1 << 20
 
 _OK = re.compile(r"^_main\.([0-9]+)\.ok$")
-# The .chunks file, as the game writes it: little-endian 42, the save's objects, the chunks it
-# names, then each chunk's index, size, version and objects (Game facts).
+# The .chunks file, as the game writes it (Game facts): little-endian 42, the save's objects, the
+# chunks it names, then each chunk's index, size, version and objects.
 _HEADER = struct.Struct("<hii")
 _ENTRY = struct.Struct("<HBIi")
 _MAGIC = 42
+
+# A save, as a backup knows it: its number, and when the game completed it, as its .ok's
+# modification time in nanoseconds. Numbers repeat, after a restore or for a world made again.
+Saved = tuple[int, int]
 
 
 class BackupFailed(Exception):
@@ -51,22 +64,70 @@ class _Gone(Exception):
 
 @dataclass(frozen=True)
 class Save:
-    """A complete save: its number, its objects as its .chunks file counts them, and its files."""
+    """A complete save: its number, when the game completed it, its objects as its .chunks file
+    counts them, and its files."""
 
     number: int
+    written_ns: int
     objects: int
     files: tuple[str, ...]
+
+    @property
+    def saved(self) -> Saved:
+        return self.number, self.written_ns
 
 
 @dataclass(frozen=True)
 class Backup:
     name: str
-    save: int
+    saved: Saved
+
+
+@dataclass(frozen=True)
+class Place:
+    """A world's backups: where its saves are, where its backups go, and its save name."""
+
+    saves: Path
+    backups: Path
+    world: str
+
+
+@dataclass(frozen=True)
+class Tended:
+    """One turn of a world's backups: the backup it took, if any, the backups the folder holds,
+    newest first, the save the newest holds, and why it could not take or keep its backups."""
+
+    backup: Backup | None
+    names: list[str]
+    newest: Saved | None
+    failure: str | None = None
+    # Whether the failure was in taking a backup, so the next try waits longer each time.
+    take_failed: bool = field(default=False)
 
 
 def world_folder(saves: Path, world: str) -> Path:
     """Where the game keeps a world's 1.0+ save (Game facts)."""
     return saves / "worlds_local" / world
+
+
+def tend(place: Place, settings: Settings, now: datetime, last: Saved | None, *, starting: bool = False) -> Tended:
+    """One turn, off the supervisor's loop: back up the world's newest complete save unless the
+    newest backup holds it, then keep what the settings say. Starting, it first clears copies a
+    stop cut short, and takes the save the newest backup holds from its record, so a save the
+    game stopped with that a stop never backed up is backed up now. Raises OSError only when the
+    folder cannot be listed."""
+    if starting:
+        clear_partials(place.backups)
+        held = names(place.backups)
+        last = last_saved(place.backups, held[0]) if held else None
+    failure, take_failed = None, False
+    try:
+        backup = take(place.saves, place.backups, place.world, now, last)
+    except BackupFailed as error:
+        backup, failure, take_failed = None, str(error), True
+    newest = backup.saved if backup is not None else last
+    kept, pruned = prune(place.backups, settings.keep, settings.keep_daily)
+    return Tended(backup, kept, newest, failure or pruned, take_failed)
 
 
 def newest_complete(folder: Path) -> Save | None:
@@ -88,7 +149,7 @@ def newest_complete(folder: Path) -> Save | None:
             continue
     if not written:
         return None
-    _, number = max(written)
+    written_ns, number = max(written)
     main = tuple(f"_main.{number}.{kind}" for kind in ("chunks", "db2", "fwl2", "ok"))
     chunks, objects = _chunks(folder / main[0], number)
     for name in main:
@@ -97,14 +158,14 @@ def newest_complete(folder: Path) -> Save | None:
     for name in chunks:
         if not (folder / name).is_file():
             raise BackupFailed(f"save {number} lacks {name}, which its .chunks file names")
-    return Save(number=number, objects=objects, files=(*sorted(chunks), *main))
+    return Save(number=number, written_ns=written_ns, objects=objects, files=(*sorted(chunks), *main))
 
 
-def take(folder: Path, backups: Path, world: str, now: datetime, last: int | None = None) -> Backup | None:
-    """Back up the world's newest complete save into backups, named for now: the new backup, or
-    None when the world has not saved, or its newest save is the one backed up last. A copy that
-    loses a file to the next save, or finds the save not whole as the next one completes, starts
-    again from the newest complete save. Raises BackupFailed once it has tried ATTEMPTS times."""
+def take(folder: Path, backups: Path, world: str, now: datetime, last: Saved | None = None) -> Backup | None:
+    """Back up the world's newest complete save: the new backup, or None when the world has not
+    saved, or its newest save is the one the newest backup holds. A copy that loses a file to
+    the next save, or finds the save not whole, starts again from the newest complete save.
+    Raises BackupFailed once it has tried ATTEMPTS times, or when the folder lacks the room."""
     failure = "the world saved again during each copy"
     for _ in range(ATTEMPTS):
         try:
@@ -112,7 +173,7 @@ def take(folder: Path, backups: Path, world: str, now: datetime, last: int | Non
         except BackupFailed as error:
             failure = str(error)
             continue
-        if save is None or save.number == last:
+        if save is None or save.saved == last:
             return None
         try:
             return _copy(folder, save, backups, world, now)
@@ -141,34 +202,59 @@ def _chunks(path: Path, number: int) -> tuple[list[str], int]:
 
 
 def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) -> Backup:
-    name = now.strftime(NAME_FORMAT)
-    if (backups / name).exists():
-        raise BackupFailed(f"a backup named {name} exists already")
+    taken_at = _name_time(backups, now)
+    name = taken_at.strftime(NAME_FORMAT)
     partial = backups / f"{PARTIAL}{name}"
     try:
+        _room(folder, save, backups)
         shutil.rmtree(partial, ignore_errors=True)
         partial.mkdir()
         files = [_copy_file(folder / file, partial / file) for file in save.files]
         record = {
             "world": world,
             "save": save.number,
+            "written_ns": save.written_ns,
             "objects": save.objects,
-            "taken": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "taken": taken_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "files": files,
         }
-        (partial / RECORD).write_text(json.dumps(record, indent=2) + "\n")
+        with (partial / RECORD).open("x") as writer:
+            writer.write(json.dumps(record, indent=2) + "\n")
+            writer.flush()
+            os.fsync(writer.fileno())
+        _sync(partial)
         partial.rename(backups / name)
+        _sync(backups)
     except _Gone:
         shutil.rmtree(partial, ignore_errors=True)
         raise
     except OSError as error:
         shutil.rmtree(partial, ignore_errors=True)
         raise BackupFailed(f"cannot write backup {name} into {backups}: {error.strerror or error}") from error
-    return Backup(name=name, save=save.number)
+    return Backup(name=name, saved=save.saved)
+
+
+def _name_time(backups: Path, now: datetime) -> datetime:
+    """When a new backup counts as taken: now, or a second after the newest, if the clock has gone
+    back since that was taken. Names order backups, so a new one always comes newest."""
+    held = names(backups)
+    newest = taken(held[0]) + timedelta(seconds=1) if held else now
+    return max(now.replace(microsecond=0), newest)
+
+
+def _room(folder: Path, save: Save, backups: Path) -> None:
+    """Refuse a copy the backups folder has no room for, before filling the disk it may share with
+    the worlds and the database."""
+    needed = sum((folder / file).stat().st_size for file in save.files)
+    free = shutil.disk_usage(backups).free
+    if free < needed:
+        raise BackupFailed(
+            f"the backup folder {backups} has {free // MIB} MiB free, and save {save.number} needs {needed // MIB} MiB"
+        )
 
 
 def _copy_file(source: Path, target: Path) -> dict[str, object]:
-    """Copy one file of the save, and say its size and SHA-256 for the record."""
+    """Copy one file of the save to disk, and say its size and SHA-256 for the record."""
     try:
         reader = source.open("rb")
     except FileNotFoundError as error:
@@ -181,50 +267,84 @@ def _copy_file(source: Path, target: Path) -> dict[str, object]:
             digest.update(block)
             writer.write(block)
             size += len(block)
+        writer.flush()
+        os.fsync(writer.fileno())
     return {"name": target.name, "size": size, "sha256": digest.hexdigest()}
 
 
+def _sync(directory: Path) -> None:
+    """Sync a directory's entries, so a rename into it survives a power cut."""
+    descriptor = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def taken(name: str) -> datetime:
+    """When a backup was taken, from its name."""
+    return datetime.strptime(name, NAME_FORMAT).replace(tzinfo=UTC)
+
+
+def _is_name(name: str) -> bool:
+    if not _NAME.match(name):
+        return False
+    try:
+        taken(name)
+    except ValueError:
+        return False
+    return True
+
+
 def names(backups: Path) -> list[str]:
-    """The backups in the folder, newest first. Anything else there is not one, and is left alone."""
+    """The backups in the folder, newest first: folders named for a time that exists, holding a
+    record. Anything else there is not a backup, and is left alone."""
     return sorted(
-        (entry.name for entry in backups.iterdir() if NAME.match(entry.name) and (entry / RECORD).is_file()),
+        (entry.name for entry in backups.iterdir() if _is_name(entry.name) and (entry / RECORD).is_file()),
         reverse=True,
     )
 
 
-def last_save(backups: Path, newest: str) -> int | None:
-    """The save number a backup holds, from its record, or None if the record cannot be read."""
+def last_saved(backups: Path, name: str) -> Saved | None:
+    """The save a backup holds, from its record, or None if the record cannot be read."""
     try:
-        record = json.loads((backups / newest / RECORD).read_text())
+        record = json.loads((backups / name / RECORD).read_text())
     except (OSError, ValueError):
         return None
-    save = record.get("save") if isinstance(record, dict) else None
-    return save if isinstance(save, int) else None
+    if not isinstance(record, dict):
+        return None
+    save, written_ns = record.get("save"), record.get("written_ns")
+    if type(save) is not int or type(written_ns) is not int:
+        return None
+    return save, written_ns
 
 
-def prune(backups: Path, keep: int, keep_daily: int) -> list[str]:
-    """Remove the backups the settings no longer keep, oldest first, and return those left, newest
-    first. The newest keep stay, and the newest of each of the newest keep_daily days, in UTC; the
-    newest backup is always among them."""
+def prune(backups: Path, keep: int, keep_daily: int) -> tuple[list[str], str | None]:
+    """Remove the backups the settings no longer keep, oldest first: the newest keep stay, and the
+    newest of each of the newest keep_daily days, in UTC, that hold one; the newest backup is
+    always among them. Each is renamed out of the backups first, so one cut short is never left as
+    a backup. Returns the backups left, newest first, and why one could not be removed."""
     held = names(backups)
     kept = set(held[:keep])
     days: dict[str, str] = {}
     for name in held:
         days.setdefault(name[:8], name)
     kept.update(list(days.values())[:keep_daily])
+    failure = None
     for name in reversed(held):
-        if name not in kept:
-            shutil.rmtree(backups / name)
-    return [name for name in held if name in kept]
+        if name in kept:
+            continue
+        doomed = backups / f"{PARTIAL}{name}"
+        try:
+            (backups / name).rename(doomed)
+            shutil.rmtree(doomed)
+        except OSError as error:
+            failure = failure or f"cannot remove backup {name} from {backups}: {error.strerror or error}"
+    return names(backups), failure
 
 
 def clear_partials(backups: Path) -> None:
-    """Remove the copies a stop cut short: none of them is a backup."""
+    """Remove the copies and removals a stop cut short: none of them is a backup."""
     for entry in backups.iterdir():
         if entry.name.startswith(PARTIAL):
             shutil.rmtree(entry, ignore_errors=True)
-
-
-def taken(name: str) -> datetime:
-    """When a backup was taken, from its name."""
-    return datetime.strptime(name, NAME_FORMAT).replace(tzinfo=UTC)

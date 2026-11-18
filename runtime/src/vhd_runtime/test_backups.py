@@ -1,6 +1,8 @@
 import hashlib
 import json
 import os
+import re
+import shutil
 import struct
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
@@ -10,7 +12,8 @@ from typing import Any
 import pytest
 
 from vhd_runtime import backups
-from vhd_runtime.backups import Backup, BackupFailed, take
+from vhd_runtime.backups import BackupFailed, Place, take
+from vhd_runtime.generation import Backups as Settings
 
 SAVES = Path(__file__).resolve().parent / "saves"
 NOW = datetime(2026, 11, 18, 20, 40, 12, tzinfo=UTC)
@@ -81,7 +84,7 @@ def test_each_synthesized_save_is_backed_up_as_its_case_says(tmp_path: Path, nam
     expected = document["newest_complete"]
 
     if "failure" in document:
-        with pytest.raises(BackupFailed, match=f"^{document['failure']}$"):
+        with pytest.raises(BackupFailed, match=f"^{re.escape(document['failure'])}$"):
             take(folder, store, "Meadowfold", NOW)
         assert list(store.iterdir()) == []
         return
@@ -90,12 +93,14 @@ def test_each_synthesized_save_is_backed_up_as_its_case_says(tmp_path: Path, nam
         assert backup is None
         assert list(store.iterdir()) == []
         return
-    assert backup == Backup(name=NOW_NAME, save=expected["save"])
+    assert backup is not None
+    assert (backup.name, backup.saved[0]) == (NOW_NAME, expected["save"])
     assert sorted(p.name for p in (store / NOW_NAME).iterdir()) == sorted([*expected["files"], "backup.json"])
     record = json.loads((store / NOW_NAME / "backup.json").read_text())
     assert record["world"] == "Meadowfold"
     assert record["save"] == expected["save"]
     assert record["objects"] == expected["objects"]
+    assert record["written_ns"] == backup.saved[1] == (folder / f"_main.{expected['save']}.ok").stat().st_mtime_ns
     assert record["taken"] == "2026-11-18T20:40:12Z"
     for file in record["files"]:
         data = (folder / file["name"]).read_bytes()
@@ -103,12 +108,19 @@ def test_each_synthesized_save_is_backed_up_as_its_case_says(tmp_path: Path, nam
         assert file["sha256"] == hashlib.sha256(data).hexdigest()
 
 
-def test_the_save_backed_up_last_is_not_backed_up_again(tmp_path: Path) -> None:
+def test_the_save_backed_up_last_is_not_backed_up_again_but_one_of_its_number_written_since_is(
+    tmp_path: Path,
+) -> None:
     folder, store = tmp_path / "world", tmp_path / "backups"
     store.mkdir()
     write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
-    assert take(folder, store, "Meadowfold", NOW, last=7) is None
+    save = backups.newest_complete(folder)
+    assert save is not None
+    assert take(folder, store, "Meadowfold", NOW, last=save.saved) is None
     assert list(store.iterdir()) == []
+    # As after a restore: the game numbers its saves on from the restored one's.
+    backup = take(folder, store, "Meadowfold", NOW, last=(7, save.written_ns - 1))
+    assert backup is not None and backup.saved == save.saved
 
 
 def test_a_copy_that_loses_a_file_to_the_next_save_takes_that_save_instead(
@@ -131,7 +143,8 @@ def test_a_copy_that_loses_a_file_to_the_next_save_takes_that_save_instead(
         return copy_file(source, target)
 
     monkeypatch.setattr(backups, "_copy_file", next_save_completes)
-    assert take(folder, store, "Meadowfold", NOW) == Backup(name=NOW_NAME, save=8)
+    backup = take(folder, store, "Meadowfold", NOW)
+    assert backup is not None and (backup.name, backup.saved[0]) == (NOW_NAME, 8)
     assert [p.name for p in store.iterdir()] == [NOW_NAME]
 
 
@@ -189,8 +202,9 @@ def test_prune_keeps_the_newest_and_the_newest_of_each_day(tmp_path: Path) -> No
     held(store, *times)
     (store / "notes.txt").write_text("the server manager's own")
 
-    left = backups.prune(store, keep=2, keep_daily=3)
+    left, failure = backups.prune(store, keep=2, keep_daily=3)
 
+    assert failure is None
     assert left == ["20261118T180000Z", "20261118T120000Z", "20261117T180000Z", "20261116T180000Z"]
     assert backups.names(store) == left
     assert (store / "notes.txt").exists()
@@ -200,7 +214,7 @@ def test_prune_never_removes_the_newest(tmp_path: Path) -> None:
     store = tmp_path / "backups"
     store.mkdir()
     held(store, NOW - timedelta(hours=1), NOW)
-    assert backups.prune(store, keep=1, keep_daily=0) == [NOW_NAME]
+    assert backups.prune(store, keep=1, keep_daily=0) == ([NOW_NAME], None)
 
 
 def test_a_folder_without_its_record_is_no_backup(tmp_path: Path) -> None:
@@ -208,7 +222,7 @@ def test_a_folder_without_its_record_is_no_backup(tmp_path: Path) -> None:
     store.mkdir()
     (store / NOW_NAME).mkdir()
     assert backups.names(store) == []
-    assert backups.prune(store, keep=1, keep_daily=0) == []
+    assert backups.prune(store, keep=1, keep_daily=0) == ([], None)
     assert (store / NOW_NAME).exists()
 
 
@@ -225,7 +239,91 @@ def test_a_backup_says_when_it_was_taken_and_which_save_it_holds(tmp_path: Path)
     folder, store = tmp_path / "world", tmp_path / "backups"
     store.mkdir()
     write_save(folder, 4294967295, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
-    take(folder, store, "Meadowfold", NOW)
+    backup = take(folder, store, "Meadowfold", NOW)
+    assert backup is not None
     assert backups.taken(NOW_NAME) == NOW
-    assert backups.last_save(store, NOW_NAME) == 4294967295
-    assert backups.last_save(store, "20261118T000000Z") is None
+    assert backups.last_saved(store, NOW_NAME) == backup.saved
+    assert backup.saved[0] == 4294967295
+    assert backups.last_saved(store, "20261118T000000Z") is None
+
+
+def test_a_folder_named_for_a_time_that_does_not_exist_is_no_backup(tmp_path: Path) -> None:
+    store = tmp_path / "backups"
+    store.mkdir()
+    held(store, NOW)
+    (store / "99999999T999999Z").mkdir()
+    (store / "99999999T999999Z" / backups.RECORD).write_text("{}")
+    assert backups.names(store) == [NOW_NAME]
+
+
+def test_after_the_clock_goes_back_a_new_backup_still_comes_newest(tmp_path: Path) -> None:
+    folder, store = tmp_path / "world", tmp_path / "backups"
+    store.mkdir()
+    ahead = NOW + timedelta(days=2)
+    held(store, ahead)
+    write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
+    backup = take(folder, store, "Meadowfold", NOW)
+    assert backup is not None
+    assert backup.name == (ahead + timedelta(seconds=1)).strftime(backups.NAME_FORMAT)
+    assert backups.names(store)[0] == backup.name
+
+
+def test_a_backup_the_folder_has_no_room_for_is_not_started(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    folder, store = tmp_path / "world", tmp_path / "backups"
+    store.mkdir()
+    write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
+    usage = shutil.disk_usage(store)
+    monkeypatch.setattr(shutil, "disk_usage", lambda path: usage._replace(free=10))
+    with pytest.raises(BackupFailed, match=r"has 0 MiB free, and save 7 needs 0 MiB$"):
+        take(folder, store, "Meadowfold", NOW)
+    assert list(store.iterdir()) == []
+
+
+def test_a_backup_that_cannot_be_removed_stays_listed_and_says_why(tmp_path: Path) -> None:
+    store = tmp_path / "backups"
+    store.mkdir()
+    old, new = NOW - timedelta(days=1), NOW
+    held(store, old, new)
+    # Where the old one would be moved aside: a folder in the way.
+    blocked = store / f".partial-{old.strftime(backups.NAME_FORMAT)}"
+    blocked.mkdir()
+    (blocked / "file").write_text("in the way")
+
+    left, failure = backups.prune(store, keep=1, keep_daily=0)
+    assert left == [NOW_NAME, old.strftime(backups.NAME_FORMAT)]
+    assert failure is not None and failure.startswith(f"cannot remove backup {old.strftime(backups.NAME_FORMAT)}")
+
+
+def test_a_removal_cut_short_leaves_no_backup_behind(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    store = tmp_path / "backups"
+    store.mkdir()
+    held(store, NOW - timedelta(days=1), NOW)
+
+    def cut_short(path: Path, *args: object, **kwargs: object) -> None:
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(shutil, "rmtree", cut_short)
+    left, failure = backups.prune(store, keep=1, keep_daily=0)
+    assert left == [NOW_NAME]
+    assert failure is not None and "Input/output error" in failure
+
+
+def test_a_starting_turn_clears_cut_short_copies_and_backs_up_a_save_no_backup_holds(tmp_path: Path) -> None:
+    place = Place(tmp_path / "world", tmp_path / "backups", "Meadowfold")
+    place.backups.mkdir()
+    write_save(place.saves, 5, [{"chunk": 1, "size": 64, "version": 5, "objects": 5}], seconds_ago=3600)
+    first = take(place.saves, place.backups, "Meadowfold", NOW - timedelta(hours=1))
+    assert first is not None
+    # The game stopped with save 6, and the stop never backed it up.
+    write_save(place.saves, 6, [{"chunk": 1, "size": 64, "version": 6, "objects": 6}])
+    (place.backups / ".partial-20261118T204000Z").mkdir()
+
+    tended = backups.tend(place, Settings(every_s=3600, keep=24, keep_daily=14), NOW, None, starting=True)
+
+    assert tended.backup is not None and tended.backup.saved[0] == 6
+    assert tended.names == [NOW_NAME, first.name]
+    assert tended.newest == tended.backup.saved
+    assert (tended.failure, tended.take_failed) == (None, False)
+    assert not (place.backups / ".partial-20261118T204000Z").exists()
+    again = backups.tend(place, Settings(every_s=3600, keep=24, keep_daily=14), NOW, None, starting=True)
+    assert again.backup is None and again.newest == tended.backup.saved
