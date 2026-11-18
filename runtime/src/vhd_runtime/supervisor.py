@@ -360,12 +360,13 @@ class Supervisor:
 
     def _follow(self, current: Generation) -> tuple[Generation, Generation | None]:
         """The generation to run on, and a newer one that takes a restart, if any. A newer
-        generation with the same settings is adopted in place."""
+        generation that changes only what the runtime adopts in place, its backups and updates,
+        runs on without one."""
         newer = self._read_generation()
         if newer is None or newer.number <= current.number:
             return current, None
         if newer.same_settings(current):
-            _log.info("generation %d has the settings of %d; running on", newer.number, current.number)
+            _log.info("generation %d changes nothing %d restarts for; running on", newer.number, current.number)
             return newer, None
         return current, newer
 
