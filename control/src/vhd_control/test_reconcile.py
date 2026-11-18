@@ -5,7 +5,7 @@ import pytest
 
 from vhd_control.manifest import Backups, InvalidSettings, Settings, Updates, World, load
 from vhd_control.naming import child_id
-from vhd_control.reconcile import STATUS_INTERVAL_S, STATUS_URL, Generation, Service, reconcile
+from vhd_control.reconcile import LIVE, STATUS_INTERVAL_S, STATUS_URL, Generation, Service, reconcile
 from vhd_control.test_daemon import REPO, SCHEMAS
 
 # The manifest schema's defaults.
@@ -203,3 +203,18 @@ def test_a_new_backups_folder_makes_a_new_generation_with_the_same_documents() -
     assert moved.number == first.number + 1
     assert moved.backups == "/srv/backups"
     assert dict(moved.children) == dict(first.children)
+
+
+def test_the_live_settings_and_their_bounds_agree_across_manifest_and_contract() -> None:
+    manifest = SCHEMAS.document("schema/manifest.schema.json")["properties"]
+    contract = SCHEMAS.document("contracts/game-runtime.generation.schema.json")["properties"]
+    live = {
+        table
+        for table, spec in manifest.items()
+        if any(key.get("x-change-cost") == "live" for key in spec.get("properties", {}).values())
+    }
+    assert live == set(LIVE)
+    for table in LIVE:
+        bounds = manifest[table]["properties"]["every"]["x-seconds"]
+        every = contract[table]["properties"]["every_s"]
+        assert (every["minimum"], every["maximum"]) == (bounds["minimum"], bounds["maximum"])
