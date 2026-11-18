@@ -24,6 +24,10 @@ host's loopback unless the manifest opens it. Not the web map.
 by an LLM provider from facts the data layer computed (B7). Off without its
 secret.
 
+**Backup** — A copy of a world's newest complete save, which its game runtime
+takes while the world runs, into that world's own folder of the install's
+backups. A restore or an import replaces a world's save from one.
+
 **Board** — The `valhallowed` GitHub project, where delivery progress lives:
 one issue per slice or other piece of planned work, each in a column from
 Backlog to Done.
@@ -88,6 +92,9 @@ built-in service. Every default works with no setup.
 **Effective configuration** — The complete configuration reconcile derives from
 the manifest, secrets and defaults. Children read only this.
 
+**Export** — An operator action that copies one of a world's backups, the
+newest by default, into the install folder in the layout the game reads.
+
 **Exposure profile** — The set of ports and addresses an install opens beyond
 the host: LAN, public direct, public with TLS, or game only. Every port in a
 profile is a default the manifest can change.
@@ -112,6 +119,10 @@ Docker socket (G13).
 (memory and CPU per world, disk) with what the host has. A shortfall is a
 warning in status, never a silent failure. A port already taken shows at
 `vhd apply`, which is what publishes ports.
+
+**Import** — An operator action that takes a save the server manager put in
+the install folder, in either save format, validates it, keeps it as a backup
+of its world and restores it.
 
 **Ingress** — Where settings, secrets and operator actions enter VHD from
 outside. There is exactly one, and the control plane owns it.
@@ -166,8 +177,8 @@ importing a world, taking a backup or reading logs. Validated like the
 manifest.
 
 **Pending change** — A validated change waiting until it can apply: a
-game-server restart while players are online, or a change to the containers
-that waits for `vhd apply`.
+game-server restart, a restore or an import while players are online, or a
+change to the containers that waits for `vhd apply`.
 
 **Player** — A person playing in a world. Players use the game and the web map;
 they never touch the control plane.
@@ -198,6 +209,10 @@ between building VHD and running it.
 **Release** — A versioned set of VHD artifacts that share one version: the
 images, `compose.yaml`, the plugin artifact and the manifest and secrets
 schemas.
+
+**Restore** — An operator action that replaces a world's save with one of its
+backups, through a hold, once the save it replaces is backed up. World truth
+judges the load.
 
 **Retro** — The review a pull request passes before it is marked ready, and
 the fixes it calls for. AGENTS.md § Delivering says what it covers.
@@ -242,9 +257,10 @@ reports world truth, not container health.
 
 **Supervisor** — The game runtime's own process. It reads the generation,
 downloads SteamCMD and the dedicated server, starts the server with BepInEx
-and the plugin, stops it with a save, holds, and reports status. It restarts
-the game for a new generation only once it counts no players, unless the
-server manager confirmed the restart.
+and the plugin, stops it with a save, backs its world up, updates the server
+under the update policy, holds, and reports status. It restarts the game for a
+new generation only once it counts no players, unless the server manager
+confirmed the restart.
 
 **Telemetry** — What the plugin observes in a world and sends to intake (B2):
 chat, presence, positions and world events. Observations, so a failure drops
@@ -257,6 +273,10 @@ what each owns.
 
 **TUI** — The control plane's terminal interface. Same control API as the admin
 console; for hosts where a browser is unavailable or unwanted.
+
+**Update policy** — When a world's game runtime updates the dedicated server:
+by default once its world is empty after a newer game build appears, or only
+when it next starts (`at-start`).
 
 **Valhallowed (VHD)** — The published product: a self-hosted Valheim server
 with the plugin, telemetry, commands and the web map, configured through one
