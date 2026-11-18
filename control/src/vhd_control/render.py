@@ -16,7 +16,7 @@ GAME_RUNTIME_IMAGE = "game-runtime"
 DATA_LAYER_IMAGE = "data-layer"
 WEB_MAP_IMAGE = "web-map"
 IMAGES = (CONTROL_PLANE_IMAGE, GAME_RUNTIME_IMAGE, DATA_LAYER_IMAGE, WEB_MAP_IMAGE)
-STOP_GRACE = "150s"
+STOP_GRACE = "300s"
 # Long enough for the database to stop cleanly, so its next start needs no recovery.
 DATABASE_STOP_GRACE = "60s"
 DATABASE_VOLUME = "database-data"
@@ -75,8 +75,8 @@ def render(generation: Generation, host: Host) -> dict[str, object]:
         services[cid] = {
             "image": host.images[GAME_RUNTIME_IMAGE],
             "restart": "unless-stopped",
-            # Longer than the supervisor's own stop timeout, so it can kill the game and exit
-            # before Docker kills the container.
+            # Longer than the supervisor's own stop timeout, so it can kill the game, back up the
+            # save it stopped with, and exit before Docker kills the container.
             "stop_grace_period": STOP_GRACE,
             **LOCKED_DOWN,
             **LOGGING,
