@@ -1,8 +1,10 @@
+import errno
 import hashlib
 import json
 import os
 import re
 import shutil
+import stat
 import struct
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
@@ -172,7 +174,7 @@ def test_a_backup_it_cannot_write_fails_with_the_reason_and_is_no_backup(tmp_pat
     (store / f".partial-{NOW_NAME}").write_text("in the way")
     with pytest.raises(BackupFailed, match=f"^cannot write backup {NOW_NAME} into {store}: File exists$"):
         take(folder, store, "Meadowfold", NOW)
-    assert backups.names(store) == []
+    assert backups.names(store, NOW) == []
 
 
 @pytest.mark.parametrize(
@@ -202,11 +204,11 @@ def test_prune_keeps_the_newest_and_the_newest_of_each_day(tmp_path: Path) -> No
     held(store, *times)
     (store / "notes.txt").write_text("the server manager's own")
 
-    left, failure = backups.prune(store, keep=2, keep_daily=3)
+    left, failure = backups.prune(store, keep=2, keep_daily=3, now=NOW)
 
     assert failure is None
     assert left == ["20261118T180000Z", "20261118T120000Z", "20261117T180000Z", "20261116T180000Z"]
-    assert backups.names(store) == left
+    assert backups.names(store, NOW) == left
     assert (store / "notes.txt").exists()
 
 
@@ -214,15 +216,15 @@ def test_prune_never_removes_the_newest(tmp_path: Path) -> None:
     store = tmp_path / "backups"
     store.mkdir()
     held(store, NOW - timedelta(hours=1), NOW)
-    assert backups.prune(store, keep=1, keep_daily=0) == ([NOW_NAME], None)
+    assert backups.prune(store, keep=1, keep_daily=0, now=NOW) == ([NOW_NAME], None)
 
 
 def test_a_folder_without_its_record_is_no_backup(tmp_path: Path) -> None:
     store = tmp_path / "backups"
     store.mkdir()
     (store / NOW_NAME).mkdir()
-    assert backups.names(store) == []
-    assert backups.prune(store, keep=1, keep_daily=0) == ([], None)
+    assert backups.names(store, NOW) == []
+    assert backups.prune(store, keep=1, keep_daily=0, now=NOW) == ([], None)
     assert (store / NOW_NAME).exists()
 
 
@@ -253,19 +255,19 @@ def test_a_folder_named_for_a_time_that_does_not_exist_is_no_backup(tmp_path: Pa
     held(store, NOW)
     (store / "99999999T999999Z").mkdir()
     (store / "99999999T999999Z" / backups.RECORD).write_text("{}")
-    assert backups.names(store) == [NOW_NAME]
+    assert backups.names(store, NOW) == [NOW_NAME]
 
 
 def test_after_the_clock_goes_back_a_new_backup_still_comes_newest(tmp_path: Path) -> None:
     folder, store = tmp_path / "world", tmp_path / "backups"
     store.mkdir()
-    ahead = NOW + timedelta(days=2)
+    ahead = NOW + timedelta(hours=2)
     held(store, ahead)
     write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
     backup = take(folder, store, "Meadowfold", NOW)
     assert backup is not None
     assert backup.name == (ahead + timedelta(seconds=1)).strftime(backups.NAME_FORMAT)
-    assert backups.names(store)[0] == backup.name
+    assert backups.names(store, NOW)[0] == backup.name
 
 
 def test_a_backup_the_folder_has_no_room_for_is_not_started(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -273,10 +275,70 @@ def test_a_backup_the_folder_has_no_room_for_is_not_started(tmp_path: Path, monk
     store.mkdir()
     write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
     usage = shutil.disk_usage(store)
-    monkeypatch.setattr(shutil, "disk_usage", lambda path: usage._replace(free=10))
-    with pytest.raises(BackupFailed, match=r"has 0 MiB free, and save 7 needs 0 MiB$"):
+    # Room for the save, but not for the reserve the worlds and the database keep.
+    monkeypatch.setattr(shutil, "disk_usage", lambda path: usage._replace(free=backups.RESERVE))
+    with pytest.raises(BackupFailed, match=r"has 1024 MiB free; save 7 needs 0 MiB, and 1024 MiB must stay free$"):
         take(folder, store, "Meadowfold", NOW)
     assert list(store.iterdir()) == []
+
+
+def test_a_file_the_next_save_removes_before_the_room_is_reckoned_starts_the_copy_again(tmp_path: Path) -> None:
+    folder = tmp_path / "world"
+    write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
+    save = backups.newest_complete(folder)
+    assert save is not None
+    (folder / "00_01__64_1.chunk").unlink()
+    with pytest.raises(backups._Gone):
+        backups._room(folder, save, tmp_path)
+
+
+def test_a_file_system_that_cannot_sync_a_directory_still_takes_backups(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder, store = tmp_path / "world", tmp_path / "backups"
+    store.mkdir()
+    write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
+    fsync = os.fsync
+
+    def no_directories(descriptor: int) -> None:
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OSError(errno.EINVAL, "Invalid argument")
+        fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", no_directories)
+    backup = take(folder, store, "Meadowfold", NOW)
+    assert backup is not None and backups.names(store, NOW) == [backup.name]
+
+
+def test_a_backup_named_well_after_now_is_left_alone_and_named_in_the_failure(tmp_path: Path) -> None:
+    place = Place(tmp_path / "world", tmp_path / "backups", "Meadowfold")
+    place.backups.mkdir()
+    held(place.backups, datetime(9999, 12, 31, 23, 59, 59, tzinfo=UTC))
+    write_save(place.saves, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
+
+    tended = backups.tend(place, Settings(every_s=3600, keep=1, keep_daily=0), NOW, None, starting=True)
+
+    assert tended.backup is not None and tended.backup.name == NOW_NAME
+    assert tended.names == [NOW_NAME]
+    assert tended.failure == (
+        f"{place.backups} holds 99991231T235959Z, named for after now, which the runtime leaves alone as no backup"
+    )
+    assert (place.backups / "99991231T235959Z").exists()
+
+
+def test_a_save_folder_that_cannot_be_read_fails_the_take_by_name_and_still_prunes(tmp_path: Path) -> None:
+    place = Place(tmp_path / "world", tmp_path / "backups", "Meadowfold")
+    place.backups.mkdir()
+    held(place.backups, NOW - timedelta(days=1), NOW - timedelta(hours=1))
+    write_save(place.saves, 7, [])
+    (place.saves / "_main.7.chunks").unlink()
+    (place.saves / "_main.7.chunks").mkdir()
+
+    tended = backups.tend(place, Settings(every_s=3600, keep=1, keep_daily=0), NOW, None)
+
+    assert tended.take_failed
+    assert tended.failure is not None and "_main.7.chunks" in tended.failure
+    assert len(tended.names) == 1
 
 
 def test_a_backup_that_cannot_be_removed_stays_listed_and_says_why(tmp_path: Path) -> None:
@@ -289,7 +351,7 @@ def test_a_backup_that_cannot_be_removed_stays_listed_and_says_why(tmp_path: Pat
     blocked.mkdir()
     (blocked / "file").write_text("in the way")
 
-    left, failure = backups.prune(store, keep=1, keep_daily=0)
+    left, failure = backups.prune(store, keep=1, keep_daily=0, now=NOW)
     assert left == [NOW_NAME, old.strftime(backups.NAME_FORMAT)]
     assert failure is not None and failure.startswith(f"cannot remove backup {old.strftime(backups.NAME_FORMAT)}")
 
@@ -303,7 +365,7 @@ def test_a_removal_cut_short_leaves_no_backup_behind(tmp_path: Path, monkeypatch
         raise OSError(5, "Input/output error")
 
     monkeypatch.setattr(shutil, "rmtree", cut_short)
-    left, failure = backups.prune(store, keep=1, keep_daily=0)
+    left, failure = backups.prune(store, keep=1, keep_daily=0, now=NOW)
     assert left == [NOW_NAME]
     assert failure is not None and "Input/output error" in failure
 

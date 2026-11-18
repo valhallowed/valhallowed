@@ -19,6 +19,7 @@ Every function here may block on the backups folder's disk, so the supervisor ru
 loop, through tend.
 """
 
+import errno
 import hashlib
 import json
 import os
@@ -41,6 +42,12 @@ ATTEMPTS = 3
 CHUNKS_MAX_BYTES = 1 << 20
 COPY_BLOCK = 1 << 20
 MIB = 1 << 20
+# What a copy leaves free on the backups folder's disk, which it may share with the worlds and the
+# database: a copy that would leave less is not started.
+RESERVE = 1 << 30
+# A backup named for more than this after now is no backup: one taken while the clock ran that far
+# ahead would otherwise stay newest, and drag every later name after it.
+AHEAD = timedelta(days=1)
 
 _OK = re.compile(r"^_main\.([0-9]+)\.ok$")
 # The .chunks file, as the game writes it (Game facts): little-endian 42, the save's objects, the
@@ -118,16 +125,16 @@ def tend(place: Place, settings: Settings, now: datetime, last: Saved | None, *,
     folder cannot be listed."""
     if starting:
         clear_partials(place.backups)
-        held = names(place.backups)
+        held = names(place.backups, now)
         last = last_saved(place.backups, held[0]) if held else None
     failure, take_failed = None, False
     try:
         backup = take(place.saves, place.backups, place.world, now, last)
-    except BackupFailed as error:
+    except (BackupFailed, OSError) as error:
         backup, failure, take_failed = None, str(error), True
     newest = backup.saved if backup is not None else last
-    kept, pruned = prune(place.backups, settings.keep, settings.keep_daily)
-    return Tended(backup, kept, newest, failure or pruned, take_failed)
+    kept, pruned = prune(place.backups, settings.keep, settings.keep_daily, now)
+    return Tended(backup, kept, newest, failure or pruned or _ahead(place.backups, now), take_failed)
 
 
 def newest_complete(folder: Path) -> Save | None:
@@ -165,7 +172,8 @@ def take(folder: Path, backups: Path, world: str, now: datetime, last: Saved | N
     """Back up the world's newest complete save: the new backup, or None when the world has not
     saved, or its newest save is the one the newest backup holds. A copy that loses a file to
     the next save, or finds the save not whole, starts again from the newest complete save.
-    Raises BackupFailed once it has tried ATTEMPTS times, or when the folder lacks the room."""
+    Raises BackupFailed once it has tried ATTEMPTS times, or when the folder lacks the room, and
+    OSError when the save folder cannot be read."""
     failure = "the world saved again during each copy"
     for _ in range(ATTEMPTS):
         try:
@@ -224,32 +232,40 @@ def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) ->
             os.fsync(writer.fileno())
         _sync(partial)
         partial.rename(backups / name)
-        _sync(backups)
     except _Gone:
         shutil.rmtree(partial, ignore_errors=True)
         raise
     except OSError as error:
         shutil.rmtree(partial, ignore_errors=True)
         raise BackupFailed(f"cannot write backup {name} into {backups}: {error.strerror or error}") from error
+    # The backup is whole and in place; a sync that fails now loses at most its name in a power cut.
+    try:
+        _sync(backups)
+    except OSError:
+        pass
     return Backup(name=name, saved=save.saved)
 
 
 def _name_time(backups: Path, now: datetime) -> datetime:
     """When a new backup counts as taken: now, or a second after the newest, if the clock has gone
     back since that was taken. Names order backups, so a new one always comes newest."""
-    held = names(backups)
+    held = names(backups, now)
     newest = taken(held[0]) + timedelta(seconds=1) if held else now
     return max(now.replace(microsecond=0), newest)
 
 
 def _room(folder: Path, save: Save, backups: Path) -> None:
-    """Refuse a copy the backups folder has no room for, before filling the disk it may share with
-    the worlds and the database."""
-    needed = sum((folder / file).stat().st_size for file in save.files)
+    """Refuse a copy that would leave less than RESERVE free on the backups folder's disk, before
+    it fills the disk the folder may share with the worlds and the database."""
+    try:
+        needed = sum((folder / file).stat().st_size for file in save.files)
+    except FileNotFoundError as error:
+        raise _Gone(error.filename) from error
     free = shutil.disk_usage(backups).free
-    if free < needed:
+    if free - needed < RESERVE:
         raise BackupFailed(
-            f"the backup folder {backups} has {free // MIB} MiB free, and save {save.number} needs {needed // MIB} MiB"
+            f"the backup folder {backups} has {free // MIB} MiB free; save {save.number} needs {needed // MIB} MiB, "
+            f"and {RESERVE // MIB} MiB must stay free"
         )
 
 
@@ -273,10 +289,14 @@ def _copy_file(source: Path, target: Path) -> dict[str, object]:
 
 
 def _sync(directory: Path) -> None:
-    """Sync a directory's entries, so a rename into it survives a power cut."""
+    """Sync a directory's entries, so a rename into it survives a power cut. A file system that
+    cannot sync a directory, as some network mounts cannot, costs that and nothing else."""
     descriptor = os.open(directory, os.O_RDONLY)
     try:
         os.fsync(descriptor)
+    except OSError as error:
+        if error.errno not in (errno.EINVAL, errno.ENOTSUP):
+            raise
     finally:
         os.close(descriptor)
 
@@ -296,13 +316,28 @@ def _is_name(name: str) -> bool:
     return True
 
 
-def names(backups: Path) -> list[str]:
-    """The backups in the folder, newest first: folders named for a time that exists, holding a
-    record. Anything else there is not a backup, and is left alone."""
+def names(backups: Path, now: datetime) -> list[str]:
+    """The backups in the folder, newest first: folders named for a time that exists and is not
+    more than AHEAD after now, holding a record. Anything else there is not a backup, and is left
+    alone."""
     return sorted(
-        (entry.name for entry in backups.iterdir() if _is_name(entry.name) and (entry / RECORD).is_file()),
+        (
+            entry.name
+            for entry in backups.iterdir()
+            if _is_name(entry.name) and taken(entry.name) <= now + AHEAD and (entry / RECORD).is_file()
+        ),
         reverse=True,
     )
+
+
+def _ahead(backups: Path, now: datetime) -> str | None:
+    """Why a folder named for a time well after now is left alone, if one is."""
+    ahead = sorted(
+        entry.name for entry in backups.iterdir() if _is_name(entry.name) and taken(entry.name) > now + AHEAD
+    )
+    if not ahead:
+        return None
+    return f"{backups} holds {', '.join(ahead[:3])}, named for after now, which the runtime leaves alone as no backup"
 
 
 def last_saved(backups: Path, name: str) -> Saved | None:
@@ -319,12 +354,12 @@ def last_saved(backups: Path, name: str) -> Saved | None:
     return save, written_ns
 
 
-def prune(backups: Path, keep: int, keep_daily: int) -> tuple[list[str], str | None]:
+def prune(backups: Path, keep: int, keep_daily: int, now: datetime) -> tuple[list[str], str | None]:
     """Remove the backups the settings no longer keep, oldest first: the newest keep stay, and the
     newest of each of the newest keep_daily days, in UTC, that hold one; the newest backup is
     always among them. Each is renamed out of the backups first, so one cut short is never left as
     a backup. Returns the backups left, newest first, and why one could not be removed."""
-    held = names(backups)
+    held = names(backups, now)
     kept = set(held[:keep])
     days: dict[str, str] = {}
     for name in held:
@@ -340,7 +375,7 @@ def prune(backups: Path, keep: int, keep_daily: int) -> tuple[list[str], str | N
             shutil.rmtree(doomed)
         except OSError as error:
             failure = failure or f"cannot remove backup {name} from {backups}: {error.strerror or error}"
-    return names(backups), failure
+    return names(backups, now), failure
 
 
 def clear_partials(backups: Path) -> None:
