@@ -55,6 +55,9 @@ class State:
     # The child ids whose data volumes each service's container mounts, by service name, as vhd
     # apply created it. Missing for a service until vhd apply has run since the web map mounts them.
     mounts_applied: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # The host folder of the worlds' backups, as the manifest named it when vhd apply created their
+    # containers. None until vhd apply has run since backups.
+    backups_applied: str | None = None
 
 
 class Store:
@@ -93,6 +96,7 @@ class Store:
             override=document.get("override"),
             services_applied=_services_applied(document.get("services_applied")),
             mounts_applied={name: tuple(ids) for name, ids in document.get("mounts_applied", {}).items()},
+            backups_applied=document.get("backups_applied"),
         )
 
     def save(self, state: State) -> None:
@@ -106,6 +110,7 @@ class Store:
             "override": state.override,
             "services_applied": state.services_applied,
             "mounts_applied": state.mounts_applied,
+            "backups_applied": state.backups_applied,
         }
         # It holds every world's secrets, so only its owner reads it.
         self._write(self.root / STATE_FILE, document, 0o600)
@@ -240,14 +245,16 @@ def _generation_document(generation: Generation) -> dict[str, object]:
         "number": generation.number,
         "children": {c: _child_document(d) for c, d in generation.children.items()},
         "services": {s: _service_document(d) for s, d in generation.services.items()},
+        "backups": generation.backups,
     }
 
 
 def _generation(document: Mapping[str, Any]) -> Generation:
-    """A state.json from a release before the data layer has no services; the next pass
-    reconciles them, with new passwords."""
+    """A state.json from a release before the data layer has no services, and one from before
+    backups no backups folder; the next pass reconciles them, the services with new passwords."""
     return Generation(
         number=cast(int, document["number"]),
         children={c: _child(d) for c, d in cast(dict[str, Any], document["children"]).items()},
         services={s: _service(d) for s, d in cast(dict[str, Any], document.get("services", {})).items()},
+        backups=cast(str, document.get("backups", "")),
     )

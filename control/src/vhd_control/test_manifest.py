@@ -3,8 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from vhd_control.manifest import InvalidSettings, Settings, World, load
+from vhd_control.manifest import Backups, InvalidSettings, Settings, Updates, World, load
 from vhd_control.test_daemon import REPO, SCHEMAS
+from vhd_control.test_reconcile import BACKUPS, UPDATES
 
 EXAMPLES = REPO / "schema" / "examples"
 
@@ -18,7 +19,28 @@ def install(tmp_path: Path, manifest: str, secrets: str | None = None) -> Path:
 
 def test_one_world_takes_every_default_from_the_schema(tmp_path: Path) -> None:
     settings = load(install(tmp_path, "valid/manifest-one-world.toml"), SCHEMAS)
-    assert settings == Settings(worlds=(World("Meadowfold", 2456, None),), web_map_port=8456)
+    assert settings == Settings(
+        worlds=(World("Meadowfold", 2456, None),), web_map_port=8456, backups=BACKUPS, updates=UPDATES
+    )
+
+
+def test_backups_and_updates_take_their_units_from_the_manifest(tmp_path: Path) -> None:
+    settings = load(install(tmp_path, "valid/manifest-backups-and-updates.toml"), SCHEMAS)
+    assert settings.backups == Backups(path="/srv/vhd-backups", every_s=1800, keep=48, keep_daily=30)
+    assert settings.updates == Updates(policy="at-start", every_s=3600)
+
+
+@pytest.mark.parametrize(
+    ("table", "value", "refusal"),
+    [
+        ("backups", "4m", r"backups/every: '4m' is outside 5m to 1d"),
+        ("updates", "2d", r"updates/every: '2d' is outside 5m to 1d"),
+    ],
+)
+def test_a_duration_outside_its_range_is_refused(tmp_path: Path, table: str, value: str, refusal: str) -> None:
+    (tmp_path / "manifest.toml").write_text(f'schema = 1\n\n[world.Meadowfold]\n\n[{table}]\nevery = "{value}"\n')
+    with pytest.raises(InvalidSettings, match=rf"^manifest\.toml at {refusal}$"):
+        load(tmp_path, SCHEMAS)
 
 
 def test_secrets_reach_their_world(tmp_path: Path) -> None:
@@ -67,3 +89,9 @@ def test_unreadable_toml_names_the_file(tmp_path: Path) -> None:
 def test_a_missing_manifest_is_refused(tmp_path: Path) -> None:
     with pytest.raises(InvalidSettings, match=r"^manifest\.toml: "):
         load(tmp_path, SCHEMAS)
+
+
+@pytest.mark.parametrize("path", ["./backups", "backups/", "backups//"])
+def test_a_backups_path_is_normalized_so_one_folder_has_one_name(tmp_path: Path, path: str) -> None:
+    (tmp_path / "manifest.toml").write_text(f'schema = 1\n\n[world.Meadowfold]\n\n[backups]\npath = "{path}"\n')
+    assert load(tmp_path, SCHEMAS).backups.path == "backups"

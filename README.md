@@ -44,7 +44,7 @@ host's Compose would otherwise call the install's own containers orphans of
 
 Edit either file and the control plane applies the change, keeping a game-server
 restart pending while players are online. A change to the containers themselves,
-such as a new world or port, waits for the next `vhd apply`.
+such as a new world, port or backups folder, waits for the next `vhd apply`.
 
 ## A held world
 

@@ -36,7 +36,10 @@ cli=(docker compose -p "$project" -f "$install/compose.yaml")
 
 # Whatever a run left, a failed first apply included: everything the project labels.
 label="label=com.docker.compose.project=$project"
-trap '"${cli[@]}" --profile tools down --volumes --remove-orphans >/dev/null 2>&1 || true
+# The worlds' backup folders belong to root and the game runtime's user, so vhd,
+# which runs as root, removes them before the install folder goes.
+trap '"${cli[@]}" run --rm --entrypoint rm vhd -rf /install/backups >/dev/null 2>&1 || true
+  "${cli[@]}" --profile tools down --volumes --remove-orphans >/dev/null 2>&1 || true
   docker ps -aq --filter "$label" | xargs -r docker rm --force >/dev/null 2>&1 || true
   docker volume ls -q --filter "$label" | xargs -r docker volume rm --force >/dev/null 2>&1 || true
   docker network ls -q --filter "$label" | xargs -r docker network rm >/dev/null 2>&1 || true

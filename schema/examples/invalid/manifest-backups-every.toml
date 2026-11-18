@@ -1,0 +1,7 @@
+# expect: '90s' does not match
+schema = 1
+
+[world.Meadowfold]
+
+[backups]
+every = "90s"

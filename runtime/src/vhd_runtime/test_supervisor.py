@@ -95,16 +95,23 @@ class World:
         self.steamcmd_runs: list[list[str]] = []
 
     def generation(
-        self, number: int = 1, password: str | None = None, secrets: bool = True, disconnect: bool = False
+        self,
+        number: int = 1,
+        password: str | None = None,
+        secrets: bool = True,
+        disconnect: bool = False,
+        keep: int = 24,
     ) -> None:
         """Write a generation, and unless told not to, its secrets, as the control plane does."""
         if secrets:
             self.secrets(number, password)
         document: dict[str, object] = {
-            "contract": 3,
+            "contract": 4,
             "generation": number,
             "world": {"name": "Meadowfold", "port": 2456},
             "plugin": {"status_interval_s": 5, "intake_url": "http://intake:9458/events"},
+            "backups": {"every_s": 3600, "keep": keep, "keep_daily": 14},
+            "updates": {"policy": "when-empty", "every_s": 900},
             "status_url": STATUS_URL,
         }
         if disconnect:
@@ -578,6 +585,18 @@ def test_a_newer_generation_with_the_same_settings_runs_on(world: World) -> None
     assert sup.run() == 0
     assert len(world.launches) == 1
     assert world.process.signals == [signal.SIGINT]
+    assert world.reports[-1]["generation"] == 2
+
+
+def test_a_newer_generation_that_changes_only_backups_runs_on_with_them(world: World) -> None:
+    world.generation(1)
+    sup = world.supervisor()
+    world.time.at(30, lambda: world.plugin_reports(10))
+    world.time.at(60, lambda: world.generation(2, keep=48))
+    world.stop_at(120, sup)
+
+    assert sup.run() == 0
+    assert len(world.launches) == 1
     assert world.reports[-1]["generation"] == 2
 
 

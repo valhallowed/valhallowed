@@ -3,15 +3,19 @@ from pathlib import Path
 
 import pytest
 
-from vhd_runtime.generation import Generation, IncompleteGeneration, InvalidGeneration, Reader
+from vhd_runtime.generation import Backups, Generation, IncompleteGeneration, InvalidGeneration, Reader, Updates
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "contracts"
 INTAKE = "http://intake:9458/events"
+BACKUPS = Backups(every_s=3600, keep=24, keep_daily=14)
+UPDATES = Updates(policy="when-empty", every_s=900)
 MINIMAL = {
-    "contract": 3,
+    "contract": 4,
     "generation": 4,
     "world": {"name": "Meadowfold", "port": 2456},
     "plugin": {"status_interval_s": 5, "intake_url": "http://intake:9458/events"},
+    "backups": {"every_s": 3600, "keep": 24, "keep_daily": 14},
+    "updates": {"policy": "when-empty", "every_s": 900},
 }
 
 
@@ -37,6 +41,8 @@ def test_reads_generation_and_password(tmp_path: Path) -> None:
         status_url="http://control-plane:9457/status",
         intake_url=INTAKE,
         password="hearth-and-horn",
+        backups=BACKUPS,
+        updates=UPDATES,
     )
 
 
@@ -84,7 +90,8 @@ def test_a_short_password_is_refused_without_being_quoted(tmp_path: Path) -> Non
 
 
 def test_a_generation_never_shows_its_password_in_a_repr() -> None:
-    assert "hearth-and-horn" not in repr(Generation(4, "Meadowfold", 2456, 5, None, INTAKE, "hearth-and-horn"))
+    generation = Generation(4, "Meadowfold", 2456, 5, None, INTAKE, "hearth-and-horn", BACKUPS, UPDATES)
+    assert "hearth-and-horn" not in repr(generation)
 
 
 def test_reads_a_confirmed_restart(tmp_path: Path) -> None:
@@ -95,12 +102,18 @@ def test_reads_a_confirmed_restart(tmp_path: Path) -> None:
     assert generation.disconnect_players
 
 
-def test_same_settings_ignores_only_the_number_and_the_confirmation() -> None:
-    first = Generation(4, "Meadowfold", 2456, 5, None, INTAKE, None)
-    assert first.same_settings(Generation(5, "Meadowfold", 2456, 5, None, INTAKE, None))
-    assert first.same_settings(Generation(5, "Meadowfold", 2456, 5, None, INTAKE, None, disconnect_players=True))
-    assert not first.same_settings(Generation(5, "Meadowfold", 2456, 5, None, INTAKE, "hearth-and-horn"))
-    assert not first.same_settings(Generation(5, "Meadowfold", 2459, 5, None, INTAKE, None))
+def test_same_settings_ignores_the_number_the_confirmation_and_what_is_adopted_in_place() -> None:
+    first = Generation(4, "Meadowfold", 2456, 5, None, INTAKE, None, BACKUPS, UPDATES)
+    assert first.same_settings(Generation(5, "Meadowfold", 2456, 5, None, INTAKE, None, BACKUPS, UPDATES))
+    assert first.same_settings(
+        Generation(5, "Meadowfold", 2456, 5, None, INTAKE, None, BACKUPS, UPDATES, disconnect_players=True)
+    )
+    assert first.same_settings(
+        Generation(5, "Meadowfold", 2456, 5, None, INTAKE, None, Backups(1800, 48, 0), Updates("at-start", 3600))
+    )
+    password = Generation(5, "Meadowfold", 2456, 5, None, INTAKE, "hearth-and-horn", BACKUPS, UPDATES)
+    assert not first.same_settings(password)
+    assert not first.same_settings(Generation(5, "Meadowfold", 2459, 5, None, INTAKE, None, BACKUPS, UPDATES))
 
 
 def test_refuses_an_unknown_contract_version(tmp_path: Path) -> None:

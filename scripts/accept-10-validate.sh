@@ -2,7 +2,8 @@
 # Acceptance check: vhd validate, run from the control plane's image against the
 # installed compose file and manifest, reconciles the manifest: it reports the
 # world's ports and password state and the web map's port as the manifest sets
-# them. See accept.sh for the ACCEPT_ variables.
+# them, and the backups and updates the manifest leaves to their defaults. See
+# accept.sh for the ACCEPT_ variables.
 set -euo pipefail
 
 cli=(docker compose -p "$ACCEPT_PROJECT" -f "$ACCEPT_INSTALL/compose.yaml")
@@ -10,7 +11,9 @@ cli=(docker compose -p "$ACCEPT_PROJECT" -f "$ACCEPT_INSTALL/compose.yaml")
 # Compose reports its own progress on stderr; vhd's answer is stdout.
 expected_validate=$(printf '%s\n' \
   "world $ACCEPT_WORLD_NAME: udp $ACCEPT_WORLD_PORT-$((ACCEPT_WORLD_PORT + 2)), password unset" \
-  "web map: tcp $ACCEPT_WEB_MAP_PORT")
+  "web map: tcp $ACCEPT_WEB_MAP_PORT" \
+  "backups: into backups/, relative to the install folder, after a new save at most every 1h, keeping the newest 24 and 14 daily" \
+  "updates: when-empty, checking every 15m")
 if ! got=$("${cli[@]}" run --rm vhd validate) || [[ $got != "$expected_validate" ]]; then
   echo "accept: vhd validate did not reconcile the manifest:" >&2
   echo "$got" >&2

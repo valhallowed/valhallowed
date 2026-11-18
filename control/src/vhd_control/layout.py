@@ -21,6 +21,8 @@ WEB_MAP_PORT = 8456
 # names the same directory in runtime/src/vhd_runtime/supervisor.py, Paths.map_export.
 MAP_EXPORT = "map-export"
 WEB_MAP_EXPORTS = PurePosixPath("/map-export")
+# Where each world's runtime mounts its own folder of the install's backups.
+BACKUPS = PurePosixPath("/backups")
 # The database the services share, and the role each service signs in as.
 DATABASE_NAME = "vhd"
 INTAKE_ROLE = "intake"

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Valhallowed manifest",
-  "description": "The settings of one install, written in TOML (G18). A later version only adds settings, or migrates a renamed key. Reconcile enforces what this schema cannot express: no two worlds' port ranges overlap.",
+  "description": "The settings of one install, written in TOML (G18). A later version only adds settings, or migrates a renamed key. The control plane enforces what this schema cannot express: no two worlds' port ranges overlap, and each duration lies within the range its x-seconds states.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "world"],
@@ -32,6 +32,72 @@
           "x-applied-by": "vhd apply"
         }
       }
+    },
+    "backups": {
+      "description": "Each world's backups: copies of its newest complete save, taken while the world runs, after every clean stop, and before any action replaces its save.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "The host folder backups live in, each world in a folder of its own. Relative to the install folder unless it starts with /, and without a colon, which Docker's volume syntax reserves. A folder on another disk keeps backups apart from the worlds they protect. vhd apply makes the folder, which then belongs to root, and each world's folder, which belongs to the game runtime's user, so removing them takes root. A world's folder stays when the world is removed or the path changes, and a world added again under the same save name finds its backups there.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[^\\u0000-\\u001f:]+$",
+          "default": "backups",
+          "x-change-cost": "game-server restart",
+          "x-applied-by": "vhd apply"
+        },
+        "every": {
+          "description": "How often, at most, a world backs up a new save: minutes, hours or days, such as 30m or 1h, from 5m to 1d.",
+          "$ref": "#/$defs/duration",
+          "default": "1h",
+          "x-seconds": { "minimum": 300, "maximum": 86400 },
+          "x-change-cost": "live",
+          "x-applied-by": "control plane"
+        },
+        "keep": {
+          "description": "How many of its newest backups a world keeps, besides its daily ones.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 24,
+          "x-change-cost": "live",
+          "x-applied-by": "control plane"
+        },
+        "keep_daily": {
+          "description": "How many daily backups a world keeps, one a day. 0 keeps none.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3650,
+          "default": 14,
+          "x-change-cost": "live",
+          "x-applied-by": "control plane"
+        }
+      }
+    },
+    "updates": {
+      "description": "The update policy: when each world updates the dedicated server.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "policy": {
+          "description": "when-empty: a world that finds a newer game build restarts to update once no players are online. at-start: it updates only when it next starts.",
+          "type": "string",
+          "enum": ["when-empty", "at-start"],
+          "default": "when-empty",
+          "x-change-cost": "live",
+          "x-applied-by": "control plane"
+        },
+        "every": {
+          "description": "How often each world checks Steam for a newer game build: minutes, hours or days, such as 15m, from 5m to 1d.",
+          "$ref": "#/$defs/duration",
+          "default": "15m",
+          "x-seconds": { "minimum": 300, "maximum": 86400 },
+          "x-change-cost": "live",
+          "x-applied-by": "control plane"
+        }
+      }
     }
   },
   "if": {
@@ -41,6 +107,11 @@
     "properties": { "world": { "additionalProperties": { "required": ["port"] } } }
   },
   "$defs": {
+    "duration": {
+      "description": "A length of time: a whole number of minutes, hours or days, such as 15m, 1h or 1d.",
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,3}[mhd]$"
+    },
     "save_name": {
       "description": "A world's save name: the save the game loads, or creates when none has that name. VHD accepts 1 to 64 letters, digits, spaces, hyphens and underscores, starting and ending with a letter or digit. That is stricter than the game, and widens only on evidence.",
       "type": "string",

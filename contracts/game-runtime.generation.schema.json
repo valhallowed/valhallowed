@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Game runtime generation",
-  "description": "B1: the effective configuration the control plane hands one game runtime, as generation.json in that runtime's own directory of the generations volume, beside the secrets.json of the same generation. The runtime validates both, refuses a contract version it does not know, and keeps running its last good generation. Any change to this document other than its generation number and disconnect_players, or to its secrets, costs the world a game-server restart; a newer generation equal in everything else is adopted without one. The runtime makes that restart only once it counts no players, unless disconnect_players says the server manager confirmed it.",
+  "description": "B1: the effective configuration the control plane hands one game runtime, as generation.json in that runtime's own directory of the generations volume, beside the secrets.json of the same generation. The runtime validates both, refuses a contract version it does not know, and keeps running its last good generation. Any change to this document other than its generation number, disconnect_players, backups and updates, or to its secrets, costs the world a game-server restart; a newer generation that differs in nothing else is adopted without one, its backups and updates with it. The runtime makes that restart only once it counts no players, unless disconnect_players says the server manager confirmed it.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["contract", "generation", "world", "plugin"],
+  "required": ["contract", "generation", "world", "plugin", "backups", "updates"],
   "properties": {
     "contract": {
       "description": "The version of this contract.",
-      "const": 3
+      "const": 4
     },
     "generation": {
       "description": "The generation number. A higher number replaces a lower one.",
@@ -47,6 +47,46 @@
           "description": "Where the plugin posts telemetry batches (B2): intake's POST /events on the install network.",
           "type": "string",
           "pattern": "^http://[A-Za-z0-9.-]+(:[0-9]{1,5})?/[A-Za-z0-9/._-]*$"
+        }
+      }
+    },
+    "backups": {
+      "description": "How the runtime backs up its world. Adopted in place: a change costs no restart.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["every_s", "keep", "keep_daily"],
+      "properties": {
+        "every_s": {
+          "description": "How often, at most, the runtime backs up a new save, in seconds.",
+          "type": "integer",
+          "minimum": 300,
+          "maximum": 86400
+        },
+        "keep": {
+          "description": "How many of its newest backups the runtime keeps, besides its daily ones.",
+          "$ref": "../schema/manifest.schema.json#/properties/backups/properties/keep"
+        },
+        "keep_daily": {
+          "description": "How many daily backups the runtime keeps, one a day.",
+          "$ref": "../schema/manifest.schema.json#/properties/backups/properties/keep_daily"
+        }
+      }
+    },
+    "updates": {
+      "description": "The update policy. Adopted in place: a change costs no restart.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy", "every_s"],
+      "properties": {
+        "policy": {
+          "description": "when-empty or at-start, as the manifest's updates.policy says.",
+          "$ref": "../schema/manifest.schema.json#/properties/updates/properties/policy"
+        },
+        "every_s": {
+          "description": "How often the runtime checks Steam for a newer game build, in seconds.",
+          "type": "integer",
+          "minimum": 300,
+          "maximum": 86400
         }
       }
     },

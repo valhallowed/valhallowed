@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from vhd_control import client, layout
-from vhd_control.apply import WAIT_TIMEOUT_S, Apply, Refused
+from vhd_control.apply import MAKE_BACKUP_FOLDERS, WAIT_TIMEOUT_S, Apply, Refused
 from vhd_control.docker import DockerError
 from vhd_control.manifest import load
 from vhd_control.reconcile import reconcile
@@ -31,12 +31,13 @@ class FakeDocker:
         self.running: list[str] = []
         self.mounts = {"/install": "/srv/vhd", "/var/run/docker.sock": "/var/run/docker.sock"}
         self.streamed: list[list[str]] = []
-        # The volume and one-off container commands that prepare each world's map export directory,
-        # and whether the one-off container fails.
+        # The volume and one-off container commands that prepare each world's map export directory
+        # and backup folder, and whether a one-off container fails: any, or the backup folders'.
         self.prepared: list[list[str]] = []
         # How many of them had run when each Compose command did.
         self.compose_after_prepared: list[int] = []
         self.fail_prepare = False
+        self.fail_backups = False
         # Images the host lacks.
         self.missing: set[str] = set()
         # How many coming Compose runs fail, and whether the next is interrupted.
@@ -57,6 +58,8 @@ class FakeDocker:
         if args[0] in ("volume", "run"):
             if self.fail_prepare and args[0] == "run":
                 raise DockerError("docker run: mkdir: Permission denied")
+            if self.fail_backups and MAKE_BACKUP_FOLDERS in args:
+                raise DockerError("docker run: exited with 1")
             self.prepared.append(args)
             return ""
         if args[0] == "ps":
@@ -208,9 +211,10 @@ def test_the_rendered_install_mounts_each_world_only_its_own_generation(setup: S
 def test_each_world_gets_its_map_export_directory_made_by_the_runtime_image_and_user(setup: Setup) -> None:
     setup.apply()
 
-    assert [args[0] for args in setup.docker.prepared] == ["volume", "run", "volume", "run"]
+    # Each world's volume and directory, then one run for every world's backup folder.
+    assert [args[0] for args in setup.docker.prepared] == ["volume", "run", "volume", "run", "run"]
     # Before Compose runs, which cannot mount a subpath that is not there.
-    assert setup.docker.compose_after_prepared == [4]
+    assert setup.docker.compose_after_prepared == [5]
     volumes = [args for args in setup.docker.prepared if args[0] == "volume"]
     assert volumes == [
         [
@@ -219,7 +223,7 @@ def test_each_world_gets_its_map_export_directory_made_by_the_runtime_image_and_
         ]
         for cid in (ASHWAKE, MEADOWFOLD)
     ]  # fmt: skip
-    runs = [args for args in setup.docker.prepared if args[0] == "run"]
+    runs = [args for args in setup.docker.prepared if args[0] == "run" and "mkdir" in args]
     assert runs[0] == [
         # No --user: the image's own USER makes the directory, so its uid is written in the Dockerfile alone.
         "run", "--rm", "--pull", "never", "--network", "none", "--entrypoint", "mkdir",
@@ -261,7 +265,79 @@ def test_a_removed_world_gets_no_volume_and_no_map_export_directory(setup: Setup
 
     assert [args[-1] for args in setup.docker.prepared if args[0] == "volume"] == [f"valhallowed_{MEADOWFOLD}-data"]
     assert all(ASHWAKE not in " ".join(args) for args in setup.docker.prepared)
-    assert len([args for args in setup.docker.prepared if args[0] == "run"]) == 1
+    assert len([args for args in setup.docker.prepared if args[0] == "run"]) == 2
+
+
+def test_one_run_makes_every_worlds_backup_folder_as_the_runtime_user(setup: Setup) -> None:
+    setup.apply()
+
+    (run,) = [args for args in setup.docker.prepared if MAKE_BACKUP_FOLDERS in args]
+    assert run == [
+        # Root with only what mkdir and chown take; the image's own user by name, so its uid is
+        # written in the Dockerfile alone.
+        "run", "--rm", "--pull", "never", "--network", "none", "--user", "0", "--entrypoint", "sh",
+        "--cap-drop=ALL", "--cap-add=CHOWN", "--cap-add=DAC_OVERRIDE", "--security-opt=no-new-privileges:true",
+        "--volume", "/srv/vhd/backups:/backups",
+        IMAGES["game-runtime"], "-c", MAKE_BACKUP_FOLDERS, "sh", ASHWAKE, MEADOWFOLD,
+    ]  # fmt: skip
+    assert '/backups/$d"' in MAKE_BACKUP_FOLDERS and "chown vhd:vhd" in MAKE_BACKUP_FOLDERS
+
+
+def test_each_world_mounts_only_its_own_backup_folder(setup: Setup) -> None:
+    setup.apply()
+    services = setup.rendered()["services"]
+    for cid in (MEADOWFOLD, ASHWAKE):
+        backups = [v for v in services[cid]["volumes"] if v["target"] == "/backups"]
+        assert backups == [{"type": "bind", "source": f"/srv/vhd/backups/{cid}", "target": "/backups"}]
+    assert all(
+        v.get("source", "").startswith("/srv/vhd/backups") is False
+        for name, service in services.items()
+        if name not in (MEADOWFOLD, ASHWAKE)
+        for v in service.get("volumes", [])
+    )
+    assert Store(setup.volume).load().backups_applied == "backups"
+
+
+def test_a_backups_folder_the_manifest_names_is_mounted_as_named(setup: Setup) -> None:
+    (setup.install / "manifest.toml").write_text(TWO_WORLDS + '\n[backups]\npath = "/mnt/disk/../vhd-backups"\n')
+    setup.apply()
+
+    backups = [v for v in setup.rendered()["services"][MEADOWFOLD]["volumes"] if v["target"] == "/backups"]
+    assert backups[0]["source"] == f"/mnt/vhd-backups/{MEADOWFOLD}"
+    assert "/mnt/vhd-backups:/backups" in next(args for args in setup.docker.prepared if MAKE_BACKUP_FOLDERS in args)
+
+
+def test_a_backup_folder_that_cannot_be_made_refuses_the_apply_before_anything_changes(setup: Setup) -> None:
+    setup.docker.fail_backups = True
+    with pytest.raises(Refused, match=r"could not make the worlds' backup folders in /srv/vhd/backups.*apply again"):
+        setup.apply()
+
+    assert setup.docker.streamed == []
+    assert Store(setup.volume).load().applied is None
+
+
+def test_a_backups_change_restarts_no_world_and_asks_nothing(setup: Setup) -> None:
+    setup.apply()
+    setup.docker.running = [MEADOWFOLD, ASHWAKE]
+    setup.players("Meadowfold", 2)
+    (setup.install / "manifest.toml").write_text(TWO_WORLDS + '\n[backups]\nkeep = 48\n\n[updates]\nevery = "1h"\n')
+    setup.apply()
+
+    assert "restarting" not in setup.out.getvalue()
+    assert setup.document(MEADOWFOLD)["backups"]["keep"] == 48
+    assert "disconnect_players" not in setup.document(MEADOWFOLD)
+
+
+def test_a_new_backups_folder_restarts_the_worlds_with_players_only_when_confirmed(setup: Setup) -> None:
+    setup.apply()
+    setup.docker.running = [MEADOWFOLD, ASHWAKE]
+    setup.players("Meadowfold", 2)
+    (setup.install / "manifest.toml").write_text(TWO_WORLDS + '\n[backups]\npath = "/srv/backups"\n')
+
+    with pytest.raises(Refused, match="players may be online"):
+        setup.apply()
+    setup.apply(disconnect_players=True)
+    assert Store(setup.volume).load().backups_applied == "/srv/backups"
 
 
 def test_the_web_map_mounts_each_worlds_map_export_read_only(setup: Setup) -> None:
@@ -663,6 +739,29 @@ def test_disconnect_players_frees_a_runtime_waiting_for_an_empty_world(setup: Se
 
     assert setup.document(MEADOWFOLD)["disconnect_players"] is True
     assert setup.handed(MEADOWFOLD) == (2, "hearth-and-horn")
+
+
+@pytest.mark.parametrize("live", ["", "\n[backups]\nkeep = 48\n"])
+def test_a_runtime_waiting_for_an_empty_world_still_needs_confirmation_after_a_live_change(
+    setup: Setup, live: str
+) -> None:
+    setup.apply()
+    setup.docker.running = [MEADOWFOLD, ASHWAKE]
+    # Generation 2, a new password, was handed while the world looked empty; a player joined, and
+    # the runtime still runs generation 1. Then the manifest changes what the runtime adopts in place.
+    (setup.install / "secrets.toml").write_text(PASSWORD)
+    store = Store(setup.volume)
+    with store.locked():
+        state = store.load()
+        generation = reconcile(load(setup.install, SCHEMAS), state.generation)
+        store.hand(state, MEADOWFOLD, generation.children[MEADOWFOLD], generation.number)
+        state.generation = generation
+        store.save(state)
+    setup.players("Meadowfold", 2)
+    (setup.install / "manifest.toml").write_text(TWO_WORLDS + live)
+
+    with pytest.raises(Refused, match=r"restarts Meadowfold \(2 player\(s\)\)"):
+        setup.apply()
 
 
 def test_a_second_apply_while_one_runs_is_refused(setup: Setup) -> None:

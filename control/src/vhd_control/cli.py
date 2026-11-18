@@ -13,7 +13,7 @@ from vhd_control.apply import Apply, Refused
 from vhd_control.daemon import Daemon
 from vhd_control.docker import Cli, DockerError
 from vhd_control.listeners import control_server, status_server
-from vhd_control.manifest import InvalidSettings
+from vhd_control.manifest import InvalidSettings, duration
 from vhd_control.reconcile import last_port, reconcile
 from vhd_control.schemas import Schemas
 from vhd_control.status import StatusBook
@@ -64,6 +64,15 @@ def validate(schemas: Schemas, out: TextIO) -> None:
         password = "set" if world.password is not None else "unset"
         print(f"world {world.name}: udp {world.port}-{last_port(world.port)}, password {password}", file=out)
     print(f"web map: tcp {settings.web_map_port}", file=out)
+    backups = settings.backups
+    where = backups.path if backups.path.startswith("/") else f"{backups.path}/, relative to the install folder"
+    print(
+        f"backups: into {where}, after a new save at most every {duration(backups.every_s)}, "
+        f"keeping the newest {backups.keep} and {backups.keep_daily} daily",
+        file=out,
+    )
+    updates = settings.updates
+    print(f"updates: {updates.policy}, checking every {duration(updates.every_s)}", file=out)
 
 
 def show_status(status: dict[str, Any], out: TextIO) -> None:

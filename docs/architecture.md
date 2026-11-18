@@ -87,8 +87,8 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
 - **Setting names.** Keys are snake_case. A capability's settings sit in a
   table named for it (`web_map`, `chat_relay`); a world's sit under
   `world.<save name>`. A secret's key mirrors the manifest path it belongs to
-  (`world.<save name>.password`). A port is an integer; any other quantity is
-  a string that carries its unit (`5s`, `6GiB`).
+  (`world.<save name>.password`). A port or a count is an integer; any other
+  quantity is a string that carries its unit (`15m`, `6GiB`).
 - **Reconcile.** The manifest, secrets and defaults produce one effective
   configuration (a generation). All or nothing: an invalid manifest on hot
   reload is rejected and the last good generation keeps running. Reconcile

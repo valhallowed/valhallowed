@@ -4,6 +4,7 @@ Every bind mount names a host path, because the Compose that runs this file runs
 vhd and hands the paths to the host's Docker.
 """
 
+import posixpath
 from dataclasses import dataclass
 
 from vhd_control import layout
@@ -29,6 +30,12 @@ NOTE = "Rendered by vhd apply from manifest.toml and the release's compose.yaml.
 def data_volume(child_id: str) -> str:
     """The name of a world's data volume in the compose file; Compose prefixes the project's."""
     return f"{child_id}-data"
+
+
+def backups_folder(generation: Generation, host: "Host") -> str:
+    """The backups folder on the host: the manifest's path, against the install folder unless it
+    is absolute."""
+    return posixpath.normpath(posixpath.join(host.install, generation.backups))
 
 
 @dataclass(frozen=True)
@@ -83,6 +90,12 @@ def render(generation: Generation, host: Host) -> dict[str, object]:
                     "volume": {"subpath": f"{cid}/{child.port}"},
                 },
                 {"type": "volume", "source": data_volume(cid), "target": "/data"},
+                # Its own folder of the backups alone, so no world reaches another's.
+                {
+                    "type": "bind",
+                    "source": posixpath.join(backups_folder(generation, host), cid),
+                    "target": str(layout.BACKUPS),
+                },
             ],
         }
         volumes[data_volume(cid)] = {}
