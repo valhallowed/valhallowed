@@ -25,7 +25,8 @@ class WorldStatus:
 
 
 class Backups(TypedDict):
-    """A world's backups in its status: their names, newest first, and why the last one failed."""
+    """A world's backups in its status: their names, newest first, and why the runtime could not
+    take or keep one."""
 
     names: list[str]
     failure: NotRequired[str]

@@ -1,5 +1,5 @@
 {
-  "description": "Save 42 is being written: its chunks and .db2 are on disk, but not its .ok. A backup takes save 41 and none of save 42's files.",
+  "description": "Save 42 is being written: its chunks, .chunks, .db2 and .fwl2 are on disk, but not its .ok. A backup takes save 41 and none of save 42's files.",
   "saves": [
     {
       "number": 41,

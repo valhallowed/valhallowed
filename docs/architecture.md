@@ -155,8 +155,10 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
 - **Status reports world truth, not container health:** whether the world
   loaded, and its object count against the save. A world whose runtime has not
   reported for three of its reporting intervals shows as unknown, never as its
-  last state. A data-layer service reports starting, running or failing, with
-  the reason, and intake its counts of events taken and dropped.
+  last state. A world's status also names its backups, and why its runtime
+  could not take or keep one. A data-layer service reports starting, running
+  or failing, with the reason, and intake its counts of events taken and
+  dropped.
 
 ### Game runtimes
 
@@ -194,19 +196,23 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   notices it. It copies only the files that save names, none of which the game
   rewrites in place; a file the next save removes mid-copy starts the copy
   again from the newest complete save, so a partial copy is never kept. A
-  runtime takes a backup after a new save, at most hourly, and keeps one a day
-  besides; after every clean stop; and before any action replaces the save.
-  It keeps the newest 24 and the daily ones for 14 days, removes the oldest
-  first, and never removes the newest. How often and how many are defaults the
-  manifest can change. Backups live in a `backups` folder in the install
-  folder, a folder for each world that only its runtime mounts. A Docker volume
-  would go, with the world it protects, on `docker compose down -v`; a folder
-  stays, and the server manager copies it off the host with any tool. The
-  manifest can name another host path, such as another disk (G3). A runtime
-  names its world's backups and the newest one's age in its status, and the
-  control plane learns them from there, so it mounts no world's backups. The dedicated
-  server's own backups (§ Game facts) sit beside the save, in the world's
-  volume, and go with it.
+  runtime takes a backup after a new save, at most hourly; after every clean
+  stop; at each start, of a save no backup holds yet, such as one a stop cut
+  short did not back up; and before any action replaces the save. It keeps the
+  newest 24, and the newest backup of each of the newest 14 days (UTC) that
+  have one, removes the oldest first, and never removes the newest. How often
+  and how many are defaults the manifest can change, each count at most 100,
+  so a status names at most 200 backups. Backups live in a `backups` folder in
+  the install folder, a folder for each world that only its runtime mounts. A
+  Docker volume would go, with the world it protects, on
+  `docker compose down -v`; a folder stays, and the server manager copies it
+  off the host with any tool. The manifest can name another host path, such as
+  another disk (G3). A runtime reports the names of its world's backups,
+  newest first, each the time it was taken in UTC, and why it could not take
+  or keep one; the control plane learns them from there, so it mounts no
+  world's backups, and `vhd status` shows how many there are and the newest
+  one's age. The dedicated server's own backups (§ Game facts) sit beside the
+  save, in the world's volume, and go with it.
 - **Restore, import and export share one path.** A restore puts the world's
   runtime on hold: the runtime stops the game with a save, backs that save up,
   validates the backup it was asked for and replaces the save with it, then
@@ -465,6 +471,13 @@ What any design here must respect about the game.
   new file with a higher version in its name, and the previous save's files
   are removed only once the new save is complete, so no file of a complete
   save is rewritten in place.
+- A 1.0+ save lives in `worlds_local/<save name>/` in the server's save
+  directory. Its `_main.<n>.chunks` names the save's chunk files and counts its
+  objects: little-endian, 42 in 16 bits, then the object count and the number
+  of chunks in 32 bits each, then 11 bytes for each chunk: its index (16 bits),
+  size (8), version (32) and objects (32). A chunk's file is named for its
+  index's two bytes in hex, its size and its version:
+  `<high>_<low>__<size>_<version>.chunk`.
 - The server saves the world when it stops cleanly, and every 30 minutes
   unless told otherwise. It also keeps backups of its own beside the save, two
   unless told otherwise.
