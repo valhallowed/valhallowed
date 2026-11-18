@@ -196,7 +196,7 @@
     sm: N('People', 'Server manager', [['Reaches', 'the TUI inside the control plane container, or the admin console on 127.0.0.1:9456, on the host or through the host’s SSH']]),
     proxy: N('Bundled or yours', 'TLS', [['Does', 'terminates TLS on 443 and forwards to the web map on loopback'], ['Options', 'bundled TLS with automatic certificates for a hostname or a bare public IP, or your own reverse proxy (O12)']]),
     docker: N('Host', 'Docker engine', [['Does', 'pulls VHD images from the registry and runs the install'], ['Not', 'part of VHD; the host’s own']]),
-    gr: N('Game runtime', 'Game runtime × worlds', [['Listens', 'three udp world ports per world, on all interfaces; defaults, set per world'], ['Outbound', 'Steam CDN for the server download and updates']]),
+    gr: N('Game runtime', 'Game runtime × worlds', [['Listens', 'three udp world ports per world, on all interfaces; defaults, set per world'], ['Outbound', 'Steam, for the server download, its updates and the newest build']]),
     wm: N('Data layer', 'Web map', [['LAN', 'tcp 8456 on all interfaces, plain HTTP'], ['Public, direct', 'the same port, open to the internet'], ['Public with TLS', '127.0.0.1:8456 behind TLS'], ['Game only', 'off']]),
     cp: N('Control plane', 'Control plane', [['Listens', 'status from the children, on the install network only; the control API on a socket only vhd shares; the admin console on 127.0.0.1:9456 by default, once it exists'], ['Outbound', 'Steam, for the game update check']]),
     ib: N('Data layer', 'Intake · broker', [['Listens', 'install network only; intake on tcp 9458'], ['Callers', 'the plugin; the web map and chat relay through the broker']]),
