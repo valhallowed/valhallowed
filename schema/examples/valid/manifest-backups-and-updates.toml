@@ -1,4 +1,4 @@
-# Backups on another disk, kept longer, and a world that updates only when it starts.
+# Backups on another disk, kept longer, and worlds that update only when they start.
 schema = 1
 
 [world.Meadowfold]

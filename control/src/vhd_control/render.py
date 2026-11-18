@@ -33,8 +33,8 @@ def data_volume(child_id: str) -> str:
 
 
 def backups_folder(generation: Generation, host: "Host") -> str:
-    """The host folder of every world's backups: the manifest's, against the install folder unless
-    it is absolute."""
+    """The backups folder on the host: the manifest's path, against the install folder unless it
+    is absolute."""
     return posixpath.normpath(posixpath.join(host.install, generation.backups))
 
 
