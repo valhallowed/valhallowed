@@ -189,8 +189,10 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   hold: a world that held objects, or had a save and no count, fails when it
   loads empty or when the plugin never reports it.
 - **Hold.** An action that replaces a world's files, such as import or
-  restore, puts its runtime on hold: the game stops and the container stays
-  up until the action finishes. No Docker socket is needed (G13).
+  restore, puts its runtime on hold: the game is not running while the files
+  change. A runtime replaces them when it starts, before it installs or
+  launches the game, so a running world first stops with a save and its
+  container starts again, once. No Docker socket is needed (G13).
 - **Backups.** A runtime copies its world's newest complete save (§ Game
   facts) while the game runs, so a backup needs no pause and no player
   notices it. It copies only the files that save names, none of which the game
@@ -215,11 +217,21 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   one's age. The dedicated server's own backups (§ Game facts) sit beside the
   save, in the world's volume, and go with it.
 - **Restore, import and export share one path.** A restore puts the world's
-  runtime on hold: the runtime stops the game with a save, backs that save up,
-  validates the backup it was asked for and replaces the save with it, then
-  starts the game, and world truth judges the load. A restored save that fails
-  world truth is replaced by the backup taken just before it, and status says
-  why. An import is a save, in either save format, that the server manager puts
+  runtime on hold: the runtime stops the game with a save and, at its next
+  start, backs that save up, checks the backup it was asked for against the
+  backup's record and the save format, and swaps it in for the save, which it
+  keeps aside; then it installs and starts the game, and world truth judges
+  the load against the backup's object count. A restored save that loads
+  empty is swapped back for the save it replaced, and status says why; a load
+  the plugin never reports is no verdict on the save, so the world is held
+  and the restore waits. Once a restored save passes, the save it replaced is
+  removed. A save that cannot be backed up, as one missing a file, is still
+  kept aside until then, since a broken save is what a restore is for.
+  Whether the dedicated server keeps its own backups of a 1.0+ save inside the
+  save's folder, where a restore sets them aside with it, is not verified.
+  Each step is recorded in the world's data volume before it is taken, so a
+  restore cut short is carried forward or back at the next start, and a
+  restore's id is done once. An import is a save, in either save format, that the server manager puts
   in the install folder: `vhd import` validates it and keeps it as a backup of
   its world, which is then restored like any other, and the runtime validates
   it again before it replaces anything. A world that has never started loads

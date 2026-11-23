@@ -111,9 +111,9 @@ Reconcile produces it whole or not at all: when a new manifest is rejected,
 the last good generation keeps running. Each child receives its own part, its
 generation document (B1), and adopts all of it or none.
 
-**Hold** — A game runtime with its game stopped and its container up: after
-the world failed world truth, or so its files can be replaced without a
-Docker socket (G13).
+**Hold** — A game runtime whose game is not running: after the world failed
+world truth, or while its files are replaced at a start, before the game
+launches, without a Docker socket (G13).
 
 **Host check** — The control plane's comparison of what the manifest asks for
 (memory and CPU per world, disk) with what the host has. A shortfall is a
@@ -211,8 +211,9 @@ images, `compose.yaml`, the plugin artifact and the manifest and secrets
 schemas.
 
 **Restore** — An operator action that replaces a world's save with one of its
-backups, through a hold, once the save it replaces is backed up. World truth
-judges the load.
+backups, through a hold, once the save it replaces is backed up, or, when it
+cannot be, kept aside. World truth judges the load, and a restored save that
+loads empty is swapped back.
 
 **Retro** — The review a pull request passes before it is marked ready, and
 the fixes it calls for. AGENTS.md § Delivering says what it covers.
