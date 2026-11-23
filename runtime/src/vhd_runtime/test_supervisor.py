@@ -1070,6 +1070,26 @@ def restore_reasons(world: World) -> list[object]:
     return [cast(dict[str, object], r["restore"]).get("reason") for r in world.reports if "restore" in r]
 
 
+def test_a_restore_checks_its_backup_with_the_record_contract_read_at_the_start(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    world.game_saves(5)
+    world.remember("Meadowfold", 105)
+    name = world.backup_of(3)
+    world.generation(restore=name)
+    sup = world.supervisor()
+
+    def read_again(contracts: Path) -> object:
+        raise AssertionError("read the record's contract again")
+
+    monkeypatch.setattr(restore, "record_contract", read_again)
+    world.plugin_running(103)
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert world.restores() == ["restoring", "done"]
+
+
 def test_a_restore_swaps_the_backup_in_before_the_install_and_world_truth_passes_it(world: World) -> None:
     world.game_saves(5)
     world.remember("Meadowfold", 105)

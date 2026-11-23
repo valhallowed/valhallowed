@@ -823,21 +823,36 @@ def test_a_stop_while_the_results_contract_loads_is_held_and_stops_the_import_at
 
     put_save(mounts)
     load = generation.validator
+    copy_file, lock_folder = backups.copy_file, backups.lock_folder
+    copies: list[str] = []
+    locks: list[str] = []
 
     def stopped_while_loading(path: Path) -> Any:
         if path.name == transfer.RESULT_CONTRACT:
             signal.raise_signal(signal.SIGINT)
         return load(path)
 
+    def counted(source: Path, target: Path, limit: int | None = None, **kwargs: Any) -> dict[str, object]:
+        copies.append(source.name)
+        return copy_file(source, target, limit, **kwargs)
+
+    def locked(folder: Path) -> int:
+        locks.append(folder.name)
+        return lock_folder(folder)
+
     previous = signal.signal(signal.SIGINT, unheld)
     try:
         monkeypatch.setattr(generation, "validator", stopped_while_loading)
+        monkeypatch.setattr(backups, "copy_file", counted)
+        monkeypatch.setattr(backups, "lock_folder", locked)
         code, result = act(mounts, capsys)
         assert signal.getsignal(signal.SIGINT) is unheld
     finally:
         signal.signal(signal.SIGINT, previous)
     assert (code, result["reason"]) == (1, "import stopped by SIGINT before it finished")
-    assert kept(mounts) == []
+    # Held through the staging's lock, and taken as the first copy opened: no file was copied.
+    assert len(locks) == 1 and copies == []
+    assert kept(mounts) == [] and not any(mounts.backups.glob(f"{backups.IMPORT_STAGING}*"))
 
 
 def test_a_results_contract_that_is_no_schema_is_refused_with_a_result_line(
