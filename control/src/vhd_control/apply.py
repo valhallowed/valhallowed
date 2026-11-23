@@ -464,8 +464,9 @@ def _restarts(
     """The running worlds this apply restarts, by child id: those whose container changes, whose
     documents change in a way the runtime cannot adopt in place, whose runtime still waits on
     documents it was handed, whose generation carries a restore its runtime has not acted on, or
-    which the manifest no longer has. A restore counts whether handed or not, so a world is stopped
-    before Compose recreates it, and --disconnect-players confirms it."""
+    which the manifest no longer has. A restore counts whether handed or not, so --disconnect-players
+    confirms it, and a world whose container Compose also recreates is stopped first
+    (_stop_recreated); a restore alone stops nothing here, since its runtime restarts the game."""
     restarts: dict[str, _Restart] = {}
     for cid, child in generation.children.items():
         if cid not in running:
