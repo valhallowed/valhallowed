@@ -117,9 +117,14 @@ def test_a_restore_of_a_backup_whose_record_breaks_its_contract_fails_closed(
     assert not place.staged.exists()
 
 
-def test_a_records_contract_that_cannot_be_read_fails_closed(tmp_path: Path) -> None:
+@pytest.mark.parametrize("text", [None, "[]"])
+def test_a_records_contract_that_cannot_be_read_fails_closed(tmp_path: Path, text: str | None) -> None:
+    contracts = tmp_path / "contracts"
+    contracts.mkdir()
+    if text is not None:
+        (contracts / restore.RECORD_CONTRACT).write_text(text)
     with pytest.raises(RestoreFailed, match=r"^cannot read the contract of a backup's record"):
-        restore.record_contract(tmp_path / "no-contracts")
+        restore.record_contract(contracts)
 
 
 def test_a_damaged_file_is_refused_and_nothing_stays_staged(place: Place) -> None:

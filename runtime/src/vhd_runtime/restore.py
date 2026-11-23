@@ -261,7 +261,7 @@ def record_contract(contracts: Path) -> Draft202012Validator:
     cannot be read."""
     try:
         return generation.validator(contracts / RECORD_CONTRACT)
-    except (OSError, ValueError) as error:
+    except Exception as error:
         raise RestoreFailed(f"cannot read the contract of a backup's record: {error}") from error
 
 
