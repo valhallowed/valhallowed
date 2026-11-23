@@ -28,7 +28,8 @@ import secrets
 import shutil
 import signal
 import stat
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -122,8 +123,10 @@ def is_save_name(world: str) -> bool:
 def run(action: Action, world: str, contracts: Path, act: Callable[[], Result]) -> int:
     """Run one action and print its result, once it keeps its contract in the contracts folder, as
     the last line on standard output: 0 when done, 1 when refused. A SIGTERM or SIGINT stops the
-    action, which removes what it wrote; that, and anything else raised but SystemExit, is a
-    refusal with its reason, never a traceback."""
+    action while it copies, which removes what it wrote; one that comes before waits for the copy,
+    and one that comes after waits for the result, so it never cuts short what the action keeps,
+    its cleanup or its result. A stop, and anything else raised but SystemExit, is a refusal with
+    its reason, never a traceback."""
     result: Result
     try:
         contract = generation.validator(contracts / RESULT_CONTRACT)
@@ -133,29 +136,52 @@ def run(action: Action, world: str, contracts: Path, act: Callable[[], Result]) 
         print(json.dumps(result), flush=True)
         return 1
     previous = {signum: signal.signal(signum, _stop) for signum in STOP_SIGNALS}
+    mask = signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
     try:
-        result = act()
+        result = _outcome(action, world, act)
+        breach = _breach(action, contract, result)
+        if breach is not None:
+            _log.error("%s of %s refused: %s: %s", action, world, breach, result)
+            result = _refused(action, world, breach)
+        print(json.dumps(result), flush=True)
+    finally:
+        # A stop still held came once the action could no longer stop: its result answers it.
+        for signum in STOP_SIGNALS:
+            signal.signal(signum, signal.SIG_IGN)
+        signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+    return 0 if result["outcome"] == "done" else 1
+
+
+def _outcome(action: Action, world: str, act: Callable[[], Result]) -> Result:
+    """The action's result, or its refusal with the reason."""
+    try:
+        return act()
     except Refused as error:
         _log.error("%s of %s refused: %s", action, world, error)
-        result = _refused(action, world, str(error))
+        return _refused(action, world, str(error))
     except Stopped as error:
         _log.error("%s of %s %s", action, world, error)
-        result = _refused(action, world, f"{action} {error}")
+        return _refused(action, world, f"{action} {error}")
     except SystemExit:
         raise
     except BaseException as error:
         _log.exception("%s of %s stopped on an unexpected error", action, world)
         what = f"{type(error).__name__}: {error}" if str(error) else type(error).__name__
-        result = _refused(action, world, f"{action} stopped on an unexpected error: {what}")
+        return _refused(action, world, f"{action} stopped on an unexpected error: {what}")
+
+
+@contextmanager
+def _stoppable() -> Iterator[None]:
+    """Where a stop stops the action: its copies, the one step that takes long. run holds a stop
+    everywhere else."""
+    held = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+    try:
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, STOP_SIGNALS)
+        yield
     finally:
-        for signum, handler in previous.items():
-            signal.signal(signum, handler)
-    breach = _breach(action, contract, result)
-    if breach is not None:
-        _log.error("%s of %s refused: %s: %s", action, world, breach, result)
-        result = _refused(action, world, breach)
-    print(json.dumps(result), flush=True)
-    return 0 if result["outcome"] == "done" else 1
+        signal.pthread_sigmask(signal.SIG_SETMASK, held)
 
 
 def _breach(action: Action, contract: Draft202012Validator, result: Result) -> str | None:
@@ -247,7 +273,8 @@ def export_backup(mounts: Mounts, world: str, backup: str | None, now: Callable[
         raise Refused(f"cannot read the install folder: {error.strerror or error}") from error
     target, written = _export_target(mounts.exported, world)
     try:
-        objects = restore.copy_checked(source, target, name, record.number, record.files)
+        with _stoppable():
+            objects = restore.copy_checked(source, target, name, record.number, record.files)
         backups.sync(target)
         backups.sync(target.parent)
     except restore.RestoreFailed as error:
@@ -390,7 +417,8 @@ def _keep(
     for name in sorted(scanned, key=lambda file: (file.startswith("_main."), file)):
         try:
             size = scanned[name].st_size
-            copied = backups.copy_file(found.folder / name, staging / name, size, unchanged=scanned[name])
+            with _stoppable():
+                copied = backups.copy_file(found.folder / name, staging / name, size, unchanged=scanned[name])
         except backups.Gone as error:
             raise Refused(f"the save's {name} went while it was copied") from error
         except backups.Changed as error:

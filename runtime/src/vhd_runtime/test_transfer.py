@@ -649,6 +649,120 @@ def test_an_export_a_signal_stops_removes_what_it_wrote(
     assert list(mounts.exported.iterdir()) == []
 
 
+def stops_now() -> None:
+    """vhd, or Docker on its behalf, sending SIGTERM to the action at this point."""
+    signal.raise_signal(signal.SIGTERM)
+
+
+def test_a_stop_once_an_import_named_its_backup_waits_for_the_result_which_says_done(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    put_save(mounts)
+    before = {each: signal.getsignal(each) for each in transfer.STOP_SIGNALS}
+    mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+    sync = backups.sync
+
+    def stopped_after_naming(directory: Path) -> None:
+        if directory == mounts.backups:
+            stops_now()
+        sync(directory)
+
+    monkeypatch.setattr(backups, "sync", stopped_after_naming)
+    code, result = act(mounts, capsys)
+    assert (code, result["outcome"], result["backup"]) == (0, "done", NOW_NAME)
+    assert kept(mounts) == [NOW_NAME]
+    assert {each: signal.getsignal(each) for each in transfer.STOP_SIGNALS} == before
+    assert signal.pthread_sigmask(signal.SIG_BLOCK, ()) == mask
+
+
+def test_a_stop_once_an_export_copied_the_backup_waits_for_the_result_which_says_done(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    name = backup_of(mounts, 41, NOW)
+    summary = transfer._summary
+
+    def stopped_after_copying(number: int, objects: int, written_ns: int) -> transfer.SaveSummary:
+        stops_now()
+        return summary(number, objects, written_ns)
+
+    monkeypatch.setattr(transfer, "_summary", stopped_after_copying)
+    code, result = export(mounts, capsys)
+    assert (code, result["outcome"], result["backup"]) == (0, "done", name)
+    save = backups.newest_complete(exported(mounts))
+    assert save is not None and save.number == 41
+
+
+def test_a_stop_during_the_cleanup_of_a_refused_import_lets_it_finish_and_keeps_the_reason(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    put_save(mounts)
+    open_regular = backups.open_regular
+    rmtree = shutil.rmtree
+
+    def reverse(path: Path) -> None:
+        path.write_bytes(path.read_bytes()[::-1])
+
+    def written_as_read(source: Path) -> WrittenAsRead:
+        reader = open_regular(source)
+        return WrittenAsRead(reader, (lambda: reverse(source)) if source.name == "_main.41.db2" else lambda: None)
+
+    def stopped_while_removing(path: Path, *args: Any, **kwargs: Any) -> None:
+        stops_now()
+        rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(backups, "open_regular", written_as_read)
+    monkeypatch.setattr(shutil, "rmtree", stopped_while_removing)
+    code, result = act(mounts, capsys)
+    assert (code, result["reason"]) == (1, "the save's _main.41.db2 changed while it was copied")
+    assert kept(mounts) == []
+
+
+def test_a_stop_while_a_refusal_is_logged_still_ends_with_its_result_line(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refused() -> transfer.Result:
+        raise transfer.Refused("the save folder holds no complete save: no _main.<n>.ok")
+
+    monkeypatch.setattr(transfer._log, "error", lambda *args: stops_now())
+    code = transfer.run("import", WORLD, CONTRACTS, refused)
+    result = result_of(capsys)
+    assert (code, result["reason"]) == (1, "the save folder holds no complete save: no _main.<n>.ok")
+
+
+def test_a_stop_before_an_import_locks_its_staging_stops_it_at_the_copy_and_removes_it(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    put_save(mounts)
+    mkdir = Path.mkdir
+
+    def stopped_once_made(self: Path, *args: Any, **kwargs: Any) -> None:
+        mkdir(self, *args, **kwargs)
+        if self.name.startswith(backups.IMPORT_STAGING):
+            stops_now()
+
+    monkeypatch.setattr(Path, "mkdir", stopped_once_made)
+    code, result = act(mounts, capsys)
+    assert (code, result["reason"]) == (1, "import stopped by SIGTERM before it finished")
+    assert kept(mounts) == []
+
+
+def test_a_stop_before_an_export_makes_the_save_folder_stops_it_at_the_copy_and_removes_what_it_made(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    backup_of(mounts, 41, NOW)
+    mkdir = Path.mkdir
+
+    def stopped_once_made(self: Path, *args: Any, **kwargs: Any) -> None:
+        mkdir(self, *args, **kwargs)
+        if self.name == "worlds_local":
+            stops_now()
+
+    monkeypatch.setattr(Path, "mkdir", stopped_once_made)
+    code, result = export(mounts, capsys)
+    assert (code, result["reason"]) == (1, "export stopped by SIGTERM before it finished")
+    assert list(mounts.exported.iterdir()) == []
+
+
 def test_an_interrupt_still_ends_with_a_result_line(capsys: pytest.CaptureFixture[str]) -> None:
     def interrupted() -> transfer.Result:
         raise KeyboardInterrupt
