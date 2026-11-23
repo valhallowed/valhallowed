@@ -294,12 +294,7 @@ class Supervisor:
             # Until the restart, the stop's backup and every turn before it keep the backup asked for.
             self._spare = due.backup if due is not None else None
             if newer is not None and self._may_restart(state, newer, current):
-                why = (
-                    f"a newer generation restores backup {due.backup}"
-                    if due is not None
-                    else "a newer generation changes this world's settings"
-                )
-                return self._shut_down(process, state, why, generation, reporter)
+                return self._shut_down(process, state, self._why_restart(newer, due), generation, reporter)
             previous = state
             if state in (State.LOADING, State.UNVERIFIED) and fresh is not None:
                 state, reason = self._on_report(process, generation.world, fresh.objects, save_existed)
@@ -712,6 +707,13 @@ class Supervisor:
         if reason is not None:
             report["reason"] = _reason(reason)
         self._restore_report = report
+
+    def _why_restart(self, newer: Generation, due: Restore | None) -> str:
+        if due is not None:
+            return f"a newer generation restores backup {due.backup}"
+        if self._drops_judged(newer):
+            return "a newer generation drops the restore world truth has not judged"
+        return "a newer generation changes this world's settings"
 
     def _drops_judged(self, generation: Generation) -> bool:
         """Whether the generation no longer asks for the restore world truth has not judged yet,

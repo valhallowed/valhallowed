@@ -105,7 +105,8 @@ class Done:
 
 
 def read_intent(place: Place) -> Intent | None:
-    """The restore under way, or None. A record of any other shape is none: only this runtime writes it."""
+    """The restore under way, or None. A record missing a key, or with a bad value, is none: only this
+    runtime writes it."""
     record = _read(place.intent)
     if (
         record is None
