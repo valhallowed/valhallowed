@@ -366,7 +366,7 @@ def copy_file(
     and no more than limit bytes, raising OSError otherwise. Given the file as a scan found it, as
     for a file no game writes, it raises Changed unless the file it opens, that file once copied,
     and the file at its path once copied are each the one the scan found, unchanged: the same
-    inode, size, and modification and change times."""
+    device, inode, size, and modification and change times."""
     try:
         reader = open_regular(source) if limit is not None else source.open("rb")
     except FileNotFoundError as error:
