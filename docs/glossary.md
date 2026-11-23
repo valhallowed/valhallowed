@@ -112,17 +112,18 @@ the last good generation keeps running. Each child receives its own part, its
 generation document (B1), and adopts all of it or none.
 
 **Hold** — A game runtime whose game is not running: after the world failed
-world truth, or while its files are replaced at a start, before the game
-launches, without a Docker socket (G13).
+world truth, while its files are replaced at a start, before the game
+launches, or for a world with no save whose restore did not end done, so no
+empty world is made in its place. Without a Docker socket (G13).
 
 **Host check** — The control plane's comparison of what the manifest asks for
 (memory and CPU per world, disk) with what the host has. A shortfall is a
 warning in status, never a silent failure. A port already taken shows at
 `vhd apply`, which is what publishes ports.
 
-**Import** — An operator action that takes a save the server manager put in
-the install folder, in either save format, validates it, keeps it as a backup
-of its world and restores it.
+**Import** — An operator action that takes a 1.0+ save the server manager put
+in the install folder, validates it, keeps it as a backup of its world and
+restores it.
 
 **Ingress** — Where settings, secrets and operator actions enter VHD from
 outside. There is exactly one, and the control plane owns it.

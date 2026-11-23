@@ -230,8 +230,12 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   newest first, each the time it was taken in UTC, and why it could not take
   or keep one; the control plane learns them from there, so it mounts no
   world's backups, and `vhd status` shows how many there are and the newest
-  one's age. The dedicated server's own backups (§ Game facts) sit beside the
-  save, in the world's volume, and go with it.
+  one's age. Each backup carries its record
+  ([`game-runtime.backup`](../contracts/game-runtime.backup.schema.json)): the
+  save it holds, its object count, and each file's size and SHA-256, which a
+  restore and an export check before they use the files, and whether the
+  runtime or an import took it. The dedicated server's own backups (§ Game
+  facts) sit beside the save, in the world's volume, and go with it.
 - **Restore, import and export share one path.** A restore puts the world's
   runtime on hold: the runtime stops the game with a save, which the stop
   backs up as every clean stop does, or its next start does when the stop did
@@ -253,13 +257,25 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   save inside the save's folder, where a restore sets them aside with it, is
   not verified. Each step is recorded in the world's data volume before it is
   taken, so a restore cut short is carried forward or back at the next start,
-  and a restore's id is done once. An import is a save, in either save format,
-  that the server manager puts in the install folder: `vhd import` validates
-  it and keeps it as a backup of its world, which is then restored like any
-  other, and the runtime validates it again before it replaces anything. A
-  world that has never started loads an imported save at its first start, so
-  no empty world is made first. An export copies a backup, the newest by
-  default, into the install folder in the layout the game reads. A restore or
+  and a restore's id is done once. An import is a 1.0+ save that the server
+  manager puts in the install folder: `vhd import` runs the game runtime's
+  image once to validate it, read-only, and keep it as a backup of its world,
+  which is then restored like any other, and the runtime validates it again
+  before it replaces anything. It takes a folder named for the world's save
+  name holding exactly one complete save and nothing else, of regular files
+  only, at most 4 GiB: more than one complete save is refused, since the game
+  picks the newest by modification time, which a copy may have lost. It
+  copies into a staging folder that the runtime's backup turns leave alone,
+  and names it as a backup only once whole; a start removes staging an import
+  left more than an hour ago. Its result
+  ([`game-runtime.import-export`](../contracts/game-runtime.import-export.schema.json))
+  is the one line `vhd` reads. A world that has never started loads an
+  imported save at its first start, so no empty world is made first, and a
+  world with no save whose restore did not end done is held rather than
+  started empty, across restarts, until another restore is asked for or its
+  data volume is removed. An export copies a backup, the newest by default,
+  into the install folder in the layout the game reads, after checking it
+  against its record. A restore or
   an import waits as a pending change while its world has players online, like
   a game-server restart, unless the server manager confirms it; a restore
   waits in its runtime (Restart gating is shared), and `vhd apply` counts one
@@ -381,7 +397,7 @@ boundary, and every boundary follows one standard. Each contract lives in
 
 | # | Boundary | Crosses | Contract | On failure |
 |---|---|---|---|---|
-| I0 | Ingress | Manifest, secrets, operator actions into the control plane | Manifest schema, secrets schema, control API | Reject whole; the last good generation keeps running |
+| I0 | Ingress | Manifest, secrets, operator actions into the control plane | Manifest schema, secrets schema, control API, an import's or an export's result | Reject whole; the last good generation keeps running |
 | B1 | Control plane → children | Effective configuration and scoped secrets; status back | Generation schema | The child keeps its last good generation |
 | B2 | Plugin → intake | Telemetry events | Event schema | Fail soft |
 | B3 | Broker ↔ plugin | Commands and their outcomes | Command verbs, limits, idempotency key | Fail closed |
@@ -485,7 +501,10 @@ Follows from G4 and G12.
    operator actions (world import and export, backups, logs), the update policy,
    the host check, exposure profiles, each world's resource limits, the TUI and
    the admin console. Backups and world import lead it, since a world with a
-   history cannot move onto an install without them.
+   history cannot move onto an install without them. Importing a pre-1.0 save
+   follows, once the game facts it rests on are settled on a real server: the
+   save's files, which save loads when both formats exist, and whether the
+   server converts and removes the pre-1.0 one.
 
 ## Game facts
 
