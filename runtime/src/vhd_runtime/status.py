@@ -32,6 +32,14 @@ class Backups(TypedDict):
     failure: NotRequired[str]
 
 
+class Restore(TypedDict):
+    """The newest restore the runtime acted on: its id, its outcome, and why."""
+
+    id: str
+    outcome: str
+    reason: NotRequired[str]
+
+
 class RuntimeStatus(TypedDict):
     """One status report, as contracts/game-runtime.status.schema.json defines it."""
 
@@ -44,6 +52,7 @@ class RuntimeStatus(TypedDict):
     objects: NotRequired[int]
     players: NotRequired[int]
     backups: NotRequired[Backups]
+    restore: NotRequired[Restore]
 
 
 Post = Callable[[str, bytes, float], None]

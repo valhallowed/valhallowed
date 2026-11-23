@@ -3,7 +3,15 @@ from pathlib import Path
 
 import pytest
 
-from vhd_runtime.generation import Backups, Generation, IncompleteGeneration, InvalidGeneration, Reader, Updates
+from vhd_runtime.generation import (
+    Backups,
+    Generation,
+    IncompleteGeneration,
+    InvalidGeneration,
+    Reader,
+    Restore,
+    Updates,
+)
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "contracts"
 INTAKE = "http://intake:9458/events"
@@ -100,6 +108,22 @@ def test_reads_a_confirmed_restart(tmp_path: Path) -> None:
     generation = Reader(tmp_path, CONTRACTS).read()
     assert generation is not None
     assert generation.disconnect_players
+
+
+def test_reads_a_restore(tmp_path: Path) -> None:
+    restore = {"id": "5f0c9a3e1b7d4c2a8e6f0b1d3c5a7e9f", "backup": "20261118T194011Z"}
+    write(tmp_path, "generation.json", {**MINIMAL, "restore": restore})
+    write(tmp_path, "secrets.json", {"contract": 1, "generation": 4})
+    generation = Reader(tmp_path, CONTRACTS).read()
+    assert generation is not None
+    assert generation.restore == Restore(**restore)
+
+
+def test_same_settings_ignores_a_restore_whose_cost_the_runtime_decides() -> None:
+    first = Generation(4, "Meadowfold", 2456, 5, None, INTAKE, None, BACKUPS, UPDATES)
+    asked = Restore("5f0c9a3e1b7d4c2a8e6f0b1d3c5a7e9f", "20261118T194011Z")
+    restoring = Generation(5, "Meadowfold", 2456, 5, None, INTAKE, None, BACKUPS, UPDATES, restore=asked)
+    assert first.same_settings(restoring) and restoring.same_settings(first)
 
 
 def test_same_settings_ignores_the_number_the_confirmation_and_what_is_adopted_in_place() -> None:
