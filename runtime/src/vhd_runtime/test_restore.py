@@ -301,10 +301,10 @@ def link_db2(place: Place, name: str) -> None:
     ],
 )
 def test_a_tampered_imported_backup_is_refused_and_nothing_stays_staged(
-    place: Place, tamper: object, reason: str
+    place: Place, tamper: Callable[[Place, str], object], reason: str
 ) -> None:
     name = imported(place)
-    tamper(place, name)  # type: ignore[operator]
+    tamper(place, name)
     with pytest.raises(RestoreFailed, match=reason):
         restore.stage(place, name, CONTRACTS)
     assert not place.staged.exists()

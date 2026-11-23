@@ -567,6 +567,11 @@ def test_an_exit_is_not_taken_for_a_refusal(capsys: pytest.CaptureFixture[str]) 
     assert capsys.readouterr().out == ""
 
 
+def test_a_save_name_is_what_the_manifest_schema_takes_for_one() -> None:
+    schema = json.loads((CONTRACTS.parent / "schema" / "manifest.schema.json").read_text())
+    assert f"^{transfer._SAVE_NAME.pattern}$" == schema["$defs"]["save_name"]["pattern"]
+
+
 def test_the_result_says_when_the_game_completed_the_save_in_utc_to_the_second() -> None:
     written_ns = int(datetime(2026, 11, 18, 20, 40, 0, tzinfo=UTC).timestamp()) * 10**9 + 999_999_999
     result = transfer._done("import", WORLD, NOW_NAME, transfer._summary(4294967295, 0, written_ns))
@@ -686,6 +691,57 @@ def test_a_backup_whose_record_says_no_time_the_save_was_completed_is_refused(
     code, result = export(mounts, capsys)
     assert code == 1 and result["reason"].startswith(f"backup {name}'s record breaks its contract at written_ns")
     assert list(mounts.exported.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "make",
+    [
+        lambda layout: layout.write_text("the server manager's"),
+        lambda layout: layout.symlink_to(layout.parent.parent / "elsewhere", target_is_directory=True),
+    ],
+)
+def test_an_export_refuses_a_worlds_local_that_is_no_folder_and_leaves_it(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], make: Callable[[Path], object]
+) -> None:
+    backup_of(mounts, 41, NOW)
+    layout = mounts.exported / "worlds_local"
+    make(layout)
+    code, result = export(mounts, capsys)
+    assert (code, result["reason"]) == (1, "the install folder holds worlds_local, and it is no folder")
+    assert [entry.name for entry in mounts.exported.iterdir()] == ["worlds_local"] and os.path.lexists(layout)
+
+
+def full_at_the_save_folder(mounts: Mounts, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The install folder's disk filling up as the export makes the world's save folder."""
+    mkdir = Path.mkdir
+
+    def full(self: Path, mode: int = 0o777, parents: bool = False, exist_ok: bool = False) -> None:
+        if self == exported(mounts):
+            raise OSError(errno.ENOSPC, "No space left on device")
+        mkdir(self, mode, parents, exist_ok)
+
+    monkeypatch.setattr(Path, "mkdir", full)
+
+
+def test_an_export_that_cannot_make_the_save_folder_removes_the_worlds_local_it_made(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    backup_of(mounts, 41, NOW)
+    full_at_the_save_folder(mounts, monkeypatch)
+    code, result = export(mounts, capsys)
+    assert (code, result["reason"]) == (1, "cannot write into the install folder: No space left on device")
+    assert list(mounts.exported.iterdir()) == []
+
+
+def test_an_export_that_cannot_make_the_save_folder_leaves_a_worlds_local_it_did_not_make(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    backup_of(mounts, 41, NOW)
+    other = mounts.exported / "worlds_local" / "Ashwake"
+    other.mkdir(parents=True)
+    full_at_the_save_folder(mounts, monkeypatch)
+    code, _ = export(mounts, capsys)
+    assert code == 1 and [entry.name for entry in other.parent.iterdir()] == ["Ashwake"]
 
 
 def test_an_export_never_writes_over_a_save_already_in_the_export_folder(
