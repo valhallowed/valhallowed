@@ -45,6 +45,8 @@ from vhd_runtime.generation import Backups as Settings
 RECORD = "backup.json"
 # The record contract's bound on a save's number.
 SAVE_NUMBER_MAX = 4294967295
+# The last second a result can name a save's time in: the end of year 9999, Python's last date.
+WRITTEN_S_MAX = 253402300799
 PARTIAL = ".partial-"
 # An import under way, which vhd runs in a container of its own (vhd_runtime.transfer).
 IMPORT_STAGING = ".import-"
@@ -235,11 +237,13 @@ def take(place: Place, now: datetime, last: Saved | None = None) -> Backup | Non
 
 def save_breach(number: int, written_ns: int | None = None) -> str | None:
     """Why a record of this save would break its contract on the save's number or, when given, the
-    time the game completed it; None when it would not."""
+    time the game completed it, or a result could not name that time; None when neither would."""
     if number > SAVE_NUMBER_MAX:
         return f"the save folder holds _main.{number}.ok, numbered above any save's {SAVE_NUMBER_MAX}"
     if written_ns is not None and written_ns < 0:
         return f"the save's _main.{number}.ok was last modified before 1970, which no save is"
+    if written_ns is not None and written_ns // 1_000_000_000 > WRITTEN_S_MAX:
+        return f"the save's _main.{number}.ok was last modified after 9999, which no save is"
     return None
 
 

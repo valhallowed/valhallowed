@@ -318,6 +318,19 @@ def test_a_backup_says_when_it_was_taken_and_which_save_it_holds(tmp_path: Path)
     assert backups.last_saved(store, "20261118T000000Z", RECORD) is None
 
 
+@pytest.mark.parametrize(
+    ("number", "written_ns", "breach"),
+    [
+        (4294967295, 0, None),
+        (7, 253402300799_999_999_999, None),
+        (7, 253402300800_000_000_000, "the save's _main.7.ok was last modified after 9999, which no save is"),
+        (7, -1, "the save's _main.7.ok was last modified before 1970, which no save is"),
+    ],
+)
+def test_a_saves_time_must_be_one_a_result_can_name(number: int, written_ns: int, breach: str | None) -> None:
+    assert backups.save_breach(number, written_ns) == breach
+
+
 def test_the_bounds_on_a_saves_number_and_time_are_the_contracts() -> None:
     record = json.loads((CONTRACTS / "game-runtime.backup.schema.json").read_text())["properties"]
     result = json.loads((CONTRACTS / "game-runtime.import-export.schema.json").read_text())

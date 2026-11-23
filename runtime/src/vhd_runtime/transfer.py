@@ -273,6 +273,10 @@ def export_backup(mounts: Mounts, world: str, backup: str | None, now: Callable[
         record = restore.read_record(source, world, name, contract)
     except restore.RestoreFailed as error:
         raise Refused(str(error)) from error
+    # Before the copy, so a time the result cannot name leaves nothing in the install folder.
+    breach = backups.save_breach(record.number, record.written_ns)
+    if breach is not None:
+        raise Refused(breach)
     try:
         _room(mounts.exported, "the install folder", f"backup {name}", sum(file["size"] for file in record.files))
     except OSError as error:

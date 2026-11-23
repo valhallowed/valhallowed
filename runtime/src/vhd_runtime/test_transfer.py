@@ -894,6 +894,19 @@ def exported(mounts: Mounts) -> Path:
     return mounts.exported / "worlds_local" / WORLD
 
 
+def test_an_export_of_a_backup_whose_time_no_result_can_name_is_refused_before_it_copies(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str]
+) -> None:
+    name = backup_of(mounts, 41, NOW)
+    path = mounts.backups / name / backups.RECORD
+    record = json.loads(path.read_text())
+    record["written_ns"] = (backups.WRITTEN_S_MAX + 1) * 1_000_000_000
+    path.write_text(json.dumps(record))
+    code, result = export(mounts, capsys)
+    assert (code, result["reason"]) == (1, "the save's _main.41.ok was last modified after 9999, which no save is")
+    assert list(mounts.exported.iterdir()) == []
+
+
 def same_files(one: Path, other: Path) -> bool:
     files = sorted(entry.name for entry in one.iterdir())
     return files == sorted(entry.name for entry in other.iterdir()) and all(
