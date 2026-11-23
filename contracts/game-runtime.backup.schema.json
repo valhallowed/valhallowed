@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "A backup's record",
-  "description": "The backup.json in each backup's folder (Game runtimes, Backups): the save the backup holds and each of its files, so a restore or an export can check the files before it uses them. A game runtime writes it with each backup it takes, and vhd import writes it, through the game runtime's image, for a save it takes. It is written whole and synced before its folder takes a backup's name, so a folder named as a backup always has one. A reader takes only the keys it needs, so a key a later release adds does not break it; a record from before this contract has no source, and counts as the runtime's.",
+  "description": "The backup.json in each backup's folder (Game runtimes, Backups): the save the backup holds and each of its files, so a restore or an export can check the files before it uses them. A game runtime writes it with each backup it takes, and vhd import writes it, through the game runtime's image, for a save it takes. It is written whole and synced before its folder takes a backup's name, so a folder named as a backup always has one. Its writers and its readers, a restore and an export, validate it against this contract: a record that breaks it is no backup they use, and a restore of it fails closed. A record from before this contract has no source, and counts as the runtime's.",
   "type": "object",
   "additionalProperties": false,
   "required": ["world", "save", "written_ns", "objects", "taken", "files"],
