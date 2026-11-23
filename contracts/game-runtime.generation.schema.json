@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Game runtime generation",
-  "description": "B1: the effective configuration the control plane hands one game runtime, as generation.json in that runtime's own directory of the generations volume, beside the secrets.json of the same generation. The runtime validates both, refuses a contract version it does not know, and keeps running its last good generation. Any change to this document other than its generation number, disconnect_players, backups, updates and restore, or to its secrets, costs the world a game-server restart; a newer generation that differs in nothing else is adopted without one, its backups and updates with it. A restore whose id the runtime has neither done nor is judging also costs a restart; any other costs none. The runtime makes a restart only once it counts no players, unless disconnect_players says the server manager confirmed it.",
+  "description": "B1: the effective configuration the control plane hands one game runtime, as generation.json in that runtime's own directory of the generations volume, beside the secrets.json of the same generation. The runtime validates both, refuses a contract version it does not know, and keeps running its last good generation. Any change to this document other than its generation number, disconnect_players, backups, updates and restore, or to its secrets, costs the world a game-server restart; a newer generation that differs in nothing else is adopted without one, its backups and updates with it. A restore whose id the runtime has neither done nor is judging also costs a restart, and so does a generation that drops a restore the runtime is judging; any other costs none. The runtime makes a restart only once it counts no players, unless disconnect_players says the server manager confirmed it.",
   "type": "object",
   "additionalProperties": false,
   "required": ["contract", "generation", "world", "plugin", "backups", "updates"],
@@ -91,7 +91,7 @@
       }
     },
     "restore": {
-      "description": "A restore of one of the world's backups, done once for its id. Before the runtime installs or launches the game, it backs up the save the restore replaces, keeps that save aside, checks the backup against its record and swaps it in; world truth then judges the load, and a restored save that loads empty, or ends the game as it loads, is swapped back. A newer generation that drops or replaces a restore world truth has not judged restarts the world, gated like any restart, and the next start swaps it back; a world still loading it is judged first. The outcome is in the runtime's status.",
+      "description": "A restore of one of the world's backups, done once for its id. Before the runtime installs or launches the game, it backs up the save the restore replaces, keeps that save aside, checks the backup against its record and swaps it in; world truth then judges the load, and a restored save that loads empty, or ends the game as it loads, is swapped back. A newer generation that drops or replaces a restore world truth has not judged restarts the world, gated like any restart, and the next start swaps it back; a world still loading it is judged first, unless the server manager confirmed the restart. The outcome is in the runtime's status.",
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "backup"],
