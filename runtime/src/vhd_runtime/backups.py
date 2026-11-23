@@ -37,6 +37,8 @@ from vhd_runtime.generation import Backups as Settings
 
 RECORD = "backup.json"
 PARTIAL = ".partial-"
+# An import under way, which vhd runs in a container of its own (vhd_runtime.transfer).
+IMPORT_STAGING = ".import-"
 NAME_FORMAT = "%Y%m%dT%H%M%SZ"
 # When a backup was taken, as its record says it.
 TAKEN_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
