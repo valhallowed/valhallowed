@@ -396,6 +396,31 @@ def test_a_copy_that_fails_removes_only_what_this_import_made(
     assert kept(mounts) == [other.name]
 
 
+def test_a_failed_import_removes_its_staging_while_it_still_holds_it(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    put_save(mounts)
+    rmtree = shutil.rmtree
+    held: list[bool] = []
+
+    def fails(source: Path, target: Path, limit: int | None = None, **kwargs: Any) -> dict[str, object]:
+        raise OSError(errno.EIO, "Input/output error")
+
+    def removed(path: Path, *args: Any, **kwargs: Any) -> None:
+        if path.name.startswith(backups.IMPORT_STAGING):
+            try:
+                os.close(backups.lock_folder(path))
+                held.append(False)
+            except BlockingIOError:
+                held.append(True)
+        rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(backups, "copy_file", fails)
+    monkeypatch.setattr(shutil, "rmtree", removed)
+    code, _ = act(mounts, capsys)
+    assert code == 1 and held == [True] and kept(mounts) == []
+
+
 def test_a_file_that_grows_while_it_is_copied_is_refused(
     mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
