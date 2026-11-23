@@ -8,7 +8,8 @@
 # See accept.sh for the ACCEPT_ variables.
 set -euo pipefail
 cli=(docker compose -p "$ACCEPT_PROJECT" -f "$ACCEPT_INSTALL/compose.yaml")
-image=$(docker inspect --format '{{.Config.Image}}' "$ACCEPT_WORLD")
+image=$(docker inspect --format '{{.Config.Image}}' "$ACCEPT_WORLD") ||
+  { echo "accept: cannot read $ACCEPT_WORLD's image" >&2; exit 1; }
 # Reads the stopped container's own mounts, as the runtime's user, locked down as it is.
 helper=(docker run --rm --label "com.docker.compose.project=$ACCEPT_PROJECT" --network none
   --cap-drop ALL --security-opt no-new-privileges:true --volumes-from "$ACCEPT_WORLD" --entrypoint '' "$image")

@@ -8,7 +8,8 @@
 # world, on the stopped container's own mounts, as the runtime's user. See
 # accept.sh for the ACCEPT_ variables.
 set -euo pipefail
-image=$(docker inspect --format '{{.Config.Image}}' "$ACCEPT_WORLD")
+image=$(docker inspect --format '{{.Config.Image}}' "$ACCEPT_WORLD") ||
+  { echo "accept: cannot read $ACCEPT_WORLD's image" >&2; exit 1; }
 # -I and the working directory /, so nothing in the world's data volume is imported.
 docker run --rm -i --label "com.docker.compose.project=$ACCEPT_PROJECT" --network none \
   --cap-drop ALL --security-opt no-new-privileges:true --volumes-from "$ACCEPT_WORLD" -w / \
@@ -69,6 +70,6 @@ def check():
 
 try:
     check()
-except (OSError, ValueError, KeyError, TypeError) as error:
+except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
     fail(f"cannot check the newest backup against the save: {type(error).__name__}: {error}")
 PY
