@@ -539,3 +539,14 @@ def test_another_backup_replaces_the_restore_in_the_generation(install: Install)
     other = install.daemon.request_restore("Meadowfold", "20261118T204012Z")
     install.daemon.step()
     assert restore_handed(install) == {"id": other.id, "backup": "20261118T204012Z"}
+
+
+def test_a_restore_for_a_world_a_failed_vhd_apply_unhanded_is_kept_and_the_pass_goes_on(install: Install) -> None:
+    # A vhd apply that hands a new world, then fails, takes its documents back but leaves its restore.
+    reports(install, "Ashwake")
+    kept = install.daemon.request_restore("Ashwake", BACKUP)
+    state = install.store.load()
+    del state.handed[ASHWAKE]
+    install.store.save(state)
+    install.daemon.step()
+    assert install.store.load().restores[ASHWAKE] == kept
