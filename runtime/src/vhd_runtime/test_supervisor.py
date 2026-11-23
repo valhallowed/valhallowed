@@ -1569,6 +1569,26 @@ def test_a_failed_restore_on_a_world_with_no_save_holds_it_across_starts_and_mak
     assert not (world.paths.saves / "worlds_local" / "Meadowfold").exists()
 
 
+def reported_backups(world: World) -> list[object]:
+    """The backups each report named."""
+    return [cast(dict[str, object], r.get("backups", {})).get("names") for r in world.reports]
+
+
+def test_a_world_held_without_a_save_lists_a_backup_an_import_keeps_meanwhile(world: World) -> None:
+    world.generation(1, restore="20261118T100000Z")
+    sup = world.supervisor()
+    mounts = transfer.Mounts(imported=world.paths.data / "import", backups=world.paths.backups, contracts=CONTRACTS)
+    write_save(mounts.imported / "Meadowfold", 41, [{"chunk": 258, "size": 64, "version": 41, "objects": 141}])
+    imported: list[str] = []
+    world.time.at(30, lambda: imported.append(transfer.import_save(mounts, "Meadowfold", world.now)["backup"]))
+    world.stop_at(30 + supervisor.BACKUP_CHECK_S + 2 * 5, sup)
+
+    assert sup.run() == 0
+    assert world.launches == [] and held_without_save(world)
+    listed = reported_backups(world)
+    assert [] in listed and imported and listed[-1] == imported
+
+
 def test_a_new_restore_releases_a_world_held_without_a_save(world: World) -> None:
     world.generation(1, restore="20261118T100000Z")
     sup = world.supervisor()

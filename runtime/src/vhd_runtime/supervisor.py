@@ -245,11 +245,15 @@ class Supervisor:
             "state": State.HELD,
             "reason": why,
         }
-        # A start's turn of the backups, so status names them for the next restore.
+        # A start's turn of the backups, so status names them for the next restore, then a turn each
+        # BACKUP_CHECK_S, or later after a failure: with no save it takes nothing, but lists a backup
+        # an import kept meanwhile.
         self._tend(generation)
         next_report = self.clock.now()
         while not self._stop:
             self._back_up(generation, running=False)
+            if self._tending is None and self.clock.now() >= self._next_backup:
+                self._tend(generation)
             if self.clock.now() >= next_report:
                 self._report(reporter, holding.copy())
                 next_report = self.clock.now() + generation.status_interval_s
