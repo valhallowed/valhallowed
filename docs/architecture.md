@@ -146,13 +146,14 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   reaches it. It serves status (`GET /status`) and an operator action,
   a restore (`POST /restore`, `vhd restore`): validated against its contract,
   then against the install, which takes only a backup the world's runtime has
-  reported (`vhd backups` lists them). A refusal changes nothing. While
-  `vhd apply` holds the control plane's volume, an operator action is refused
-  rather than kept waiting past its request's time. Children report status to
-  a separate listener on the install network that accepts status and nothing
-  else, and only from the reporting child's own container: it trusts source
-  addresses, which holds because no child has the capability to forge one. The admin console will put the control
-  API on the host's loopback unless the manifest opens it, once its
+  reported (`vhd backups` lists them). A refusal changes nothing. While the
+  control plane's volume stays busy, with `vhd apply` or the control plane's
+  own pass, an operator action is refused rather than kept waiting past its
+  request's time. Children report status to a separate listener on the
+  install network that accepts status and nothing else, and only from the
+  reporting child's own container: it trusts source addresses, which holds
+  because no child has the capability to forge one. The admin console will put
+  the control API on the host's loopback unless the manifest opens it, once its
   authentication is settled (O14).
 - **Failure domain.** Needed to start or change an install, not to keep it
   running. If it stops at steady state, children keep running on the last good
