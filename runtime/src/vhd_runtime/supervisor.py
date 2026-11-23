@@ -710,7 +710,7 @@ class Supervisor:
         )
         restore.write_intent(place, intent)
         # A refusal leaves nothing staged, and its done record replaces this intent.
-        staged = self.executor.submit(restore.stage, place, asked.backup, self.paths.contracts)
+        staged = self.executor.submit(restore.stage, place, asked.backup, self._record)
         objects = self._await(staged, reporter, holding, every).result()
         intent = replace(intent, phase="swapping", objects=objects)
         restore.write_intent(place, intent)
