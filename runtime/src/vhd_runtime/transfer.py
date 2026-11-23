@@ -9,8 +9,8 @@ folder in the layout the game reads. Each action prints its result as its last l
 output, one JSON document as contracts/game-runtime.import-export.schema.json defines it, and logs
 to standard error.
 
-    /import                         a folder holding only the save folder, named for the world;
-                                    vhd mounts it read-only
+    /import                         the folder given to vhd import, holding only the save folder,
+                                    named for the world; vhd mounts it read-only
     /backups                        the world's own folder of the install's backups
     /backups/.import-<id>/          an import under way, which holds a lock on it until it is named
                                     as a backup, or one a kill cut short; a start of the world's
@@ -86,8 +86,8 @@ class Mounts:
 
 @dataclass(frozen=True)
 class _Found:
-    """The save the install folder holds: its folder, its number, each of its files with its size,
-    and when the game completed it."""
+    """The save the folder given to vhd import holds: its folder, its number, each of its files with
+    its size, and when the game completed it."""
 
     folder: Path
     number: int
@@ -294,20 +294,25 @@ def _export_target(exported: Path, world: str) -> tuple[Path, Path]:
 
 
 def _save_folder(imported: Path, world: str) -> Path:
-    """The one entry in the install folder for an import, once it is a folder named for the world, not a link."""
+    """The one entry in the folder given to vhd import, once it is a folder named for the world, not a
+    link."""
     entries = sorted(imported.iterdir())
     for entry in entries:
         if _is_pre_1_0(entry.name, world):
-            raise Refused(f"the install folder holds {entry.name}, a pre-1.0 save; an import takes a 1.0+ save only")
+            raise Refused(
+                f"the folder given to vhd import holds {entry.name}, a pre-1.0 save; an import takes a 1.0+ save only"
+            )
     if len(entries) != 1:
         held = ", ".join(entry.name for entry in entries[:3]) or "nothing"
-        raise Refused(f"the install folder holds {held}; it must hold exactly one entry, the save folder {world}")
+        raise Refused(
+            f"the folder given to vhd import holds {held}; it must hold exactly one entry, the save folder {world}"
+        )
     folder = entries[0]
     if folder.name != world:
-        raise Refused(f"the install folder holds {folder.name}, not the save folder {world}")
+        raise Refused(f"the folder given to vhd import holds {folder.name}, not the save folder {world}")
     mode = folder.lstat().st_mode
     if not stat.S_ISDIR(mode):
-        raise Refused(f"the install folder holds {world} as {_kind(mode)}, not a folder")
+        raise Refused(f"the folder given to vhd import holds {world} as {_kind(mode)}, not a folder")
     return folder
 
 

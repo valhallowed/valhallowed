@@ -124,25 +124,32 @@ def test_an_import_comes_newest_after_the_runtimes_own_backups(
     [
         (
             lambda root: None,
-            "the install folder holds nothing; it must hold exactly one entry, the save folder Meadowfold",
+            "the folder given to vhd import holds nothing; it must hold exactly one entry, the save folder Meadowfold",
         ),
         (
             lambda root: [(root / WORLD).mkdir(), (root / "Ashwake").mkdir()],
-            "the install folder holds Ashwake, Meadowfold; it must hold exactly one entry, the save folder Meadowfold",
+            "the folder given to vhd import holds Ashwake, Meadowfold; it must hold exactly one entry, "
+            "the save folder Meadowfold",
         ),
-        (lambda root: (root / "Ashwake").mkdir(), "the install folder holds Ashwake, not the save folder Meadowfold"),
-        (lambda root: (root / WORLD).write_bytes(b"x"), "the install folder holds Meadowfold as a file, not a folder"),
+        (
+            lambda root: (root / "Ashwake").mkdir(),
+            "the folder given to vhd import holds Ashwake, not the save folder Meadowfold",
+        ),
+        (
+            lambda root: (root / WORLD).write_bytes(b"x"),
+            "the folder given to vhd import holds Meadowfold as a file, not a folder",
+        ),
         (
             lambda root: [(root.parent / "real").mkdir(), (root / WORLD).symlink_to(root.parent / "real")],
-            "the install folder holds Meadowfold as a link, not a folder",
+            "the folder given to vhd import holds Meadowfold as a link, not a folder",
         ),
         (
             lambda root: [(root / f"{WORLD}.db").write_bytes(b"x"), (root / f"{WORLD}.fwl").write_bytes(b"x")],
-            "the install folder holds Meadowfold.db, a pre-1.0 save; an import takes a 1.0+ save only",
+            "the folder given to vhd import holds Meadowfold.db, a pre-1.0 save; an import takes a 1.0+ save only",
         ),
         (
             lambda root: [(root / WORLD).mkdir(), (root / "Thumbs.db").write_bytes(b"x")],
-            "the install folder holds Meadowfold, Thumbs.db; it must hold exactly one entry, "
+            "the folder given to vhd import holds Meadowfold, Thumbs.db; it must hold exactly one entry, "
             "the save folder Meadowfold",
         ),
     ],
