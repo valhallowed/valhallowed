@@ -194,19 +194,21 @@ def import_save(mounts: Mounts, world: str, now: Callable[[], datetime]) -> Resu
         staging.mkdir()
     except OSError as error:
         raise Refused(f"cannot write into the world's backups folder: {error.strerror or error}") from error
+    held = None
     try:
-        # Held until the backup is named, so no cleanup removes it, however long the copy takes.
+        # Held until the backup is named, or the staging removed, so no cleanup removes it meanwhile,
+        # however long the copy takes.
         held = backups.lock_folder(staging)
-        try:
-            name, objects = _keep(found, staging, mounts.backups, now, contract)
-        finally:
-            os.close(held)
+        name, objects = _keep(found, staging, mounts.backups, now, contract)
     except OSError as error:
         shutil.rmtree(staging, ignore_errors=True)
         raise Refused(f"cannot copy the save into the world's backups folder: {error.strerror or error}") from error
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
+    finally:
+        if held is not None:
+            os.close(held)
     _log.info("imported save %d of world %s as backup %s, %d objects", number, world, name, objects)
     return _done("import", world, name, _summary(number, objects, found.written_ns))
 
