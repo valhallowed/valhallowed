@@ -32,6 +32,10 @@ ROLES = (layout.INTAKE_ROLE, layout.WEB_MAP_ROLE)
 # What a runtime adopts in place from a newer generation (B1): a change to these alone restarts no
 # game, so it never waits for an empty world.
 LIVE = ("backups", "updates")
+# What the runtime alone decides the cost of: a restore restarts the game once, for an id it has not
+# done, and the runtime holds it for an empty world; a done one, or one dropped, restarts nothing. So
+# the control plane hands it at once, and its runtime keeps the backup it names from pruning.
+RUNTIME_GATED = ("restore",)
 
 Token = Callable[[], str]
 
@@ -68,7 +72,7 @@ class Child:
 
     def restarts(self, other: "Child") -> bool:
         """Whether a runtime running on these documents restarts its game for other's: any change
-        but to what it adopts in place."""
+        but to what it adopts in place, or to a restore, which it gates itself."""
         return _restarting(self) != _restarting(other)
 
 
@@ -94,6 +98,14 @@ class Service:
 
 
 @dataclass(frozen=True)
+class Restore:
+    """A restore the server manager asked for: an opaque id, never reused, and the backup."""
+
+    id: str
+    backup: str
+
+
+@dataclass(frozen=True)
 class Generation:
     number: int
     children: Mapping[str, Child]
@@ -104,8 +116,15 @@ class Generation:
     backups: str = ""
 
 
-def reconcile(settings: Settings, previous: Generation | None, token: Token = _token) -> Generation:
-    """The generation for settings: previous itself when no child's documents changed."""
+def reconcile(
+    settings: Settings,
+    previous: Generation | None,
+    token: Token = _token,
+    restores: Mapping[str, Restore] | None = None,
+) -> Generation:
+    """The generation for settings, each world's with the restore it holds, by child id: previous
+    itself when no child's documents changed."""
+    restores = restores or {}
     _check_ports(settings.worlds)
     children: dict[str, Child] = {}
     for world in settings.worlds:
@@ -114,7 +133,7 @@ def reconcile(settings: Settings, previous: Generation | None, token: Token = _t
             raise InvalidSettings(
                 f"worlds {children[cid].world!r} and {world.name!r} would share the service name {cid}; rename one"
             )
-        children[cid] = _child(world, settings.backups, settings.updates)
+        children[cid] = _child(world, settings.backups, settings.updates, restores.get(cid))
     services = _services(children, _passwords(previous, token), settings.web_map_port)
     backups = settings.backups.path
     if (
@@ -134,28 +153,27 @@ def web_map_export(child_id: str) -> PurePosixPath:
     return layout.WEB_MAP_EXPORTS / child_id
 
 
-def _child(world: World, backups: Backups, updates: Updates) -> Child:
+def _child(world: World, backups: Backups, updates: Updates, restore: Restore | None) -> Child:
     secrets: dict[str, object] = {"contract": 1}
     if world.password is not None:
         secrets["password"] = world.password
-    return Child(
-        world=world.name,
-        port=world.port,
-        generation={
-            "contract": 4,
-            "world": {"name": world.name, "port": world.port},
-            "plugin": {"status_interval_s": STATUS_INTERVAL_S, "intake_url": INTAKE_URL},
-            "backups": {"every_s": backups.every_s, "keep": backups.keep, "keep_daily": backups.keep_daily},
-            "updates": {"policy": updates.policy, "every_s": updates.every_s},
-            "status_url": STATUS_URL,
-        },
-        secrets=secrets,
-    )
+    generation: dict[str, object] = {
+        "contract": 4,
+        "world": {"name": world.name, "port": world.port},
+        "plugin": {"status_interval_s": STATUS_INTERVAL_S, "intake_url": INTAKE_URL},
+        "backups": {"every_s": backups.every_s, "keep": backups.keep, "keep_daily": backups.keep_daily},
+        "updates": {"policy": updates.policy, "every_s": updates.every_s},
+        "status_url": STATUS_URL,
+    }
+    if restore is not None:
+        generation["restore"] = {"id": restore.id, "backup": restore.backup}
+    return Child(world=world.name, port=world.port, generation=generation, secrets=secrets)
 
 
 def _restarting(child: Child) -> tuple[str, int, dict[str, object], Mapping[str, object]]:
-    """What of a child a runtime cannot adopt in place."""
-    generation = {key: value for key, value in child.generation.items() if key not in LIVE}
+    """What of a child restarts the game wherever it changes: neither what a runtime adopts in place
+    nor what it gates itself."""
+    generation = {key: value for key, value in child.generation.items() if key not in (*LIVE, *RUNTIME_GATED)}
     return child.world, child.port, generation, child.secrets
 
 

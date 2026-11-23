@@ -17,13 +17,14 @@ import fcntl
 import json
 import os
 import shutil
+import time
 from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-from vhd_control.reconcile import Child, Generation, Service
+from vhd_control.reconcile import Child, Generation, Restore, Service
 
 STATE_FILE = "state.json"
 GENERATION_FILE = "generation.json"
@@ -58,6 +59,13 @@ class State:
     # The host folder of the worlds' backups, as the manifest named it when vhd apply created their
     # containers. None until vhd apply has run since backups.
     backups_applied: str | None = None
+    # The restore the server manager asked for in each world, by child id, until its runtime reports
+    # how it ended. Empty in a state.json from a release before restores.
+    restores: dict[str, Restore] = field(default_factory=dict)
+
+
+class Busy(Exception):
+    """The volume's lock stayed held, by vhd apply, for as long as the caller could wait."""
 
 
 class Store:
@@ -69,12 +77,14 @@ class Store:
         self.owner = owner
 
     @contextmanager
-    def locked(self) -> Iterator[None]:
-        """Hold the volume's lock, so the control plane and vhd apply never write at once."""
+    def locked(self, wait_s: float | None = None) -> Iterator[None]:
+        """Hold the volume's lock, so the control plane and vhd apply never write at once. Given
+        wait_s, raise Busy rather than wait longer: an operator action answers within its request's
+        time, so it never goes ahead after its caller has given up."""
         with (self.root / ".lock").open("a") as lock:
             if self.owner is not None:
                 os.fchown(lock.fileno(), *self.owner)
-            fcntl.flock(lock, fcntl.LOCK_EX)
+            _flock(lock.fileno(), wait_s)
             try:
                 yield
             finally:
@@ -97,6 +107,7 @@ class Store:
             services_applied=_services_applied(document.get("services_applied")),
             mounts_applied={name: tuple(ids) for name, ids in document.get("mounts_applied", {}).items()},
             backups_applied=document.get("backups_applied"),
+            restores={cid: Restore(r["id"], r["backup"]) for cid, r in document.get("restores", {}).items()},
         )
 
     def save(self, state: State) -> None:
@@ -111,6 +122,7 @@ class Store:
             "services_applied": state.services_applied,
             "mounts_applied": state.mounts_applied,
             "backups_applied": state.backups_applied,
+            "restores": {cid: {"id": r.id, "backup": r.backup} for cid, r in state.restores.items()},
         }
         # It holds every world's secrets, so only its owner reads it.
         self._write(self.root / STATE_FILE, document, 0o600)
@@ -197,6 +209,21 @@ class Store:
             os.fsync(directory)
         finally:
             os.close(directory)
+
+
+def _flock(descriptor: int, wait_s: float | None) -> None:
+    if wait_s is None:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        return
+    deadline = time.monotonic() + wait_s
+    while True:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                raise Busy from None
+            time.sleep(0.05)
 
 
 def _child_document(child: Child) -> dict[str, object]:
