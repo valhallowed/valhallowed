@@ -265,7 +265,9 @@ def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) ->
         raise
     except OSError as error:
         shutil.rmtree(partial, ignore_errors=True)
-        raise BackupFailed(f"cannot write backup {name} into {backups}: {error.strerror or error}") from error
+        raise BackupFailed(
+            f"cannot write backup {name} into the world's backups folder: {error.strerror or error}"
+        ) from error
     if named is None:
         shutil.rmtree(partial, ignore_errors=True)
         raise BackupFailed(f"imports took each name the runtime's backup tried, {NAME_ATTEMPTS} times")
@@ -431,7 +433,10 @@ def _ahead(backups: Path, now: datetime) -> str | None:
     ahead = sorted(entry.name for entry in backups.iterdir() if is_name(entry.name) and taken(entry.name) > now + AHEAD)
     if not ahead:
         return None
-    return f"{backups} holds {', '.join(ahead[:3])}, named for after now, which the runtime leaves alone as no backup"
+    return (
+        f"the world's backups folder holds {', '.join(ahead[:3])}, named for after now, which the runtime leaves "
+        "alone as no backup"
+    )
 
 
 def last_saved(backups: Path, name: str) -> Saved | None:
@@ -473,7 +478,8 @@ def prune(
             (backups / name).rename(doomed)
             shutil.rmtree(doomed)
         except OSError as error:
-            failure = failure or f"cannot remove backup {name} from {backups}: {error.strerror or error}"
+            why = error.strerror or error
+            failure = failure or f"cannot remove backup {name} from the world's backups folder: {why}"
     return names(backups, now), failure
 
 

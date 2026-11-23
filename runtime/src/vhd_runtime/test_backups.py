@@ -180,7 +180,9 @@ def test_a_backup_it_cannot_write_fails_with_the_reason_and_is_no_backup(tmp_pat
     write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
     # A file where the copy's folder goes: the tests run as root, which no permission stops.
     (store / f".partial-{NOW_NAME}").write_text("in the way")
-    with pytest.raises(BackupFailed, match=f"^cannot write backup {NOW_NAME} into {store}: File exists$"):
+    with pytest.raises(
+        BackupFailed, match=f"^cannot write backup {NOW_NAME} into the world's backups folder: File exists$"
+    ):
         take(folder, store, "Meadowfold", NOW)
     assert backups.names(store, NOW) == []
 
@@ -431,7 +433,8 @@ def test_a_backup_named_well_after_now_is_left_alone_and_named_in_the_failure(tm
     assert tended.backup is not None and tended.backup.name == NOW_NAME
     assert tended.names == [NOW_NAME]
     assert tended.failure == (
-        f"{place.backups} holds 99991231T235959Z, named for after now, which the runtime leaves alone as no backup"
+        "the world's backups folder holds 99991231T235959Z, named for after now, which the runtime leaves alone as "
+        "no backup"
     )
     assert (place.backups / "99991231T235959Z").exists()
 
@@ -463,7 +466,9 @@ def test_a_backup_that_cannot_be_removed_stays_listed_and_says_why(tmp_path: Pat
 
     left, failure = backups.prune(store, keep=1, keep_daily=0, now=NOW)
     assert left == [NOW_NAME, old.strftime(backups.NAME_FORMAT)]
-    assert failure is not None and failure.startswith(f"cannot remove backup {old.strftime(backups.NAME_FORMAT)}")
+    assert failure == (
+        f"cannot remove backup {old.strftime(backups.NAME_FORMAT)} from the world's backups folder: Directory not empty"
+    )
 
 
 def test_a_removal_cut_short_leaves_no_backup_behind(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

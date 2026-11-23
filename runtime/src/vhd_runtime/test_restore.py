@@ -54,7 +54,8 @@ def test_a_backup_whose_record_predates_its_source_is_staged(place: Place) -> No
 
 
 def test_a_backup_that_is_gone_is_refused(place: Place) -> None:
-    with pytest.raises(RestoreFailed, match="no longer exists"):
+    gone = r"^backup 20261118T194011Z no longer exists in the world's backups folder$"
+    with pytest.raises(RestoreFailed, match=gone):
         restore.stage(place, "20261118T194011Z", CONTRACTS)
 
 

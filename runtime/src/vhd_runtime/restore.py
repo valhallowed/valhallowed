@@ -181,7 +181,7 @@ def stage(place: Place, name: str, contracts: Path) -> int:
     holds. Raises RestoreFailed, leaving nothing staged."""
     source = place.backups / name
     if not (source / backups.RECORD).is_file():
-        raise RestoreFailed(f"backup {name} no longer exists in {place.backups}")
+        raise RestoreFailed(f"backup {name} no longer exists in the world's backups folder")
     record = read_record(source, place.world, name, record_contract(contracts))
     clear_staged(place)
     try:
