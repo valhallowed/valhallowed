@@ -93,7 +93,7 @@ class BackupFailed(Exception):
 
 
 class Gone(Exception):
-    """A file of the save went before or while it was copied, as when the next save completed."""
+    """A file of the save went before its copy was checked, as when the next save completed."""
 
 
 class NoLocks(OSError):
@@ -538,9 +538,9 @@ def clear_partials(backups: Path) -> None:
 
 def clear_import_staging(backups: Path, now: datetime) -> None:
     """Remove the staging folders of imports a kill cut short: those unmodified for longer than
-    IMPORT_STAGING_MAX_AGE_S that no import holds a lock on, or, where the lock cannot be taken, as
-    on a file system that cannot lock a folder, any whose contents are each that old too. Any other may
-    be an import still under way. Raises OSError only when the folder cannot be listed."""
+    IMPORT_STAGING_MAX_AGE_S that no import holds a lock on, or, where the file system refuses any
+    lock, any whose contents are each that old too. Any other may be an import still under way.
+    Raises OSError only when the folder cannot be listed."""
     oldest = now.timestamp() - IMPORT_STAGING_MAX_AGE_S
     for entry in backups.iterdir():
         if not entry.name.startswith(IMPORT_STAGING):

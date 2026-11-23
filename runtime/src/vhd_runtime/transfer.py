@@ -15,8 +15,8 @@ to standard error.
     /backups/.import-<id>/          an import under way, which holds a lock on it until it is named
                                     as a backup, or one a kill cut short; a start of the world's
                                     runtime, and the next import, remove it once it is old and unheld,
-                                    or, where no lock can be taken, once nothing in it changed for
-                                    as long
+                                    or, where the file system refuses any lock, once nothing in it
+                                    changed for as long
     /export                         a folder with no worlds_local/<world> yet, which an export
                                     copies the backup into, as worlds_local/<world>/
 """

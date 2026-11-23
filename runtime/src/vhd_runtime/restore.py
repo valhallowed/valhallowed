@@ -176,9 +176,9 @@ def clear_staged(place: Place) -> None:
 
 def stage(place: Place, name: str, contract: Draft202012Validator) -> int:
     """Copy the backup into the data volume and check it: its record keeps its contract and names
-    this world, each file has the size and SHA-256 the record gives,
-    and the copy is a complete save in the format this runtime reads. Returns the objects the save
-    holds. Raises RestoreFailed, leaving nothing staged."""
+    this world, each file has the size and SHA-256 the record gives, and the copy is a complete save
+    in the format this runtime reads. Returns the objects the save holds. Raises RestoreFailed,
+    leaving nothing staged."""
     source = place.backups / name
     if not (source / backups.RECORD).is_file():
         raise RestoreFailed(f"backup {name} no longer exists in the world's backups folder")
