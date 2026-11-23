@@ -543,7 +543,8 @@ def staging(store: Path, age_s: float) -> Path:
     folder = store / f"{backups.IMPORT_STAGING}{age_s:032.0f}"
     folder.mkdir()
     (folder / backups.RECORD).write_text("{}")
-    os.utime(folder, (NOW.timestamp() - age_s, NOW.timestamp() - age_s))
+    for each in (folder / backups.RECORD, folder):
+        os.utime(each, (NOW.timestamp() - age_s, NOW.timestamp() - age_s))
     return folder
 
 
@@ -599,6 +600,23 @@ def test_a_start_where_no_folder_can_be_locked_still_removes_the_staging_a_kill_
     no_locks(number, monkeypatch)
     backups.clear_import_staging(store, NOW)
     assert not old.exists() and recent.exists()
+
+
+@pytest.mark.parametrize("number", [errno.ENOLCK, errno.EOPNOTSUPP, errno.EBADF])
+def test_a_start_that_cannot_lock_spares_an_old_staging_whose_copy_still_grows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, number: int
+) -> None:
+    store = tmp_path / "backups"
+    store.mkdir()
+    copying = staging(store, backups.IMPORT_STAGING_MAX_AGE_S + 1)
+    # An import copies a save's files straight into its staging folder.
+    growing = copying / "_main.41.db2"
+    growing.write_bytes(b"x")
+    os.utime(growing, (NOW.timestamp() - 5, NOW.timestamp() - 5))
+    os.utime(copying, (NOW.timestamp() - backups.IMPORT_STAGING_MAX_AGE_S - 1,) * 2)
+    no_locks(number, monkeypatch)
+    backups.clear_import_staging(store, NOW)
+    assert growing.exists()
 
 
 def test_names_and_pruning_leave_an_imports_staging_alone(tmp_path: Path) -> None:

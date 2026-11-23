@@ -517,20 +517,23 @@ def clear_partials(backups: Path) -> None:
 
 def clear_import_staging(backups: Path, now: datetime) -> None:
     """Remove the staging folders of imports a kill cut short: those unmodified for longer than
-    IMPORT_STAGING_MAX_AGE_S that no import holds a lock on, or, on a file system that cannot lock a
-    folder, any that old. Any other may be an import still under way. Raises OSError only when the
-    folder cannot be listed."""
+    IMPORT_STAGING_MAX_AGE_S that no import holds a lock on, or, where the lock cannot be taken, as
+    on a file system that cannot lock a folder, any whose files are each that old too. Any other may
+    be an import still under way. Raises OSError only when the folder cannot be listed."""
+    oldest = now.timestamp() - IMPORT_STAGING_MAX_AGE_S
     for entry in backups.iterdir():
         if not entry.name.startswith(IMPORT_STAGING):
             continue
         held: int | None = None
         try:
-            if now.timestamp() - entry.lstat().st_mtime <= IMPORT_STAGING_MAX_AGE_S:
+            if entry.lstat().st_mtime >= oldest:
                 continue
             held = lock_folder(entry)
         except NoLocks:
-            # No import is under way where no lock can be taken: each refuses before it copies.
-            pass
+            # A lock that fails may fail only for now, as a network mount's can, while an import
+            # copies: a file it writes is newer than the limit.
+            if _changed_since(entry, oldest):
+                continue
         except OSError:
             # Gone, no folder, or held by an import under way.
             continue
@@ -539,6 +542,23 @@ def clear_import_staging(backups: Path, now: datetime) -> None:
         finally:
             if held is not None:
                 os.close(held)
+
+
+def _changed_since(folder: Path, since: float) -> bool:
+    """Whether anything in the folder, never through a link, was modified at or after since, or
+    cannot be read to say."""
+    try:
+        for root, dirs, files in os.walk(folder, onerror=_raise):
+            for name in (*dirs, *files):
+                if os.lstat(os.path.join(root, name)).st_mtime >= since:
+                    return True
+    except OSError:
+        return True
+    return False
+
+
+def _raise(error: OSError) -> None:
+    raise error
 
 
 def lock_folder(folder: Path) -> int:

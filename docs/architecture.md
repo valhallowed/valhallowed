@@ -229,8 +229,9 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   such as another disk (G3). The world's backups folder must be on a file system
   that can lock a folder (`flock`), as an import holds a lock on its copy until
   it names it: where it cannot, as on some network mounts, an import refuses,
-  and a start, and the next import, remove an import's copy left more than an
-  hour ago without the lock, since no import can be under way there. A runtime
+  and a start, and the next import, remove an import's copy without the lock
+  once nothing in it has changed for more than an hour, since a lock that fails
+  may fail only for now while an import copies. A runtime
   reports the names of its world's backups, newest first, each the time it was
   taken in UTC, and why it could not take or keep one; the control plane learns
   them from there, so it mounts no world's backups, and `vhd status` shows how
