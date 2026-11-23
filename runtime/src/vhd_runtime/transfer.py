@@ -373,9 +373,11 @@ def _keep(
     # Chunks first and the .ok last, as the game writes a save.
     for name in sorted(sizes, key=lambda file: (file.startswith("_main."), file)):
         try:
-            copied = backups.copy_file(found.folder / name, staging / name, sizes[name])
+            copied = backups.copy_file(found.folder / name, staging / name, sizes[name], unchanged=True)
         except backups.Gone as error:
             raise Refused(f"the save's {name} went while it was copied") from error
+        except backups.Changed as error:
+            raise Refused(f"the save's {name} changed while it was copied") from error
         except OSError as error:
             if error.errno == errno.EFBIG:
                 raise Refused(f"the save's {name} grew while it was copied") from error

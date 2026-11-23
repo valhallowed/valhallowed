@@ -90,6 +90,10 @@ class Gone(Exception):
     """A file of the save went while it was copied: the next save completed."""
 
 
+class Changed(Exception):
+    """A file changed while it was copied."""
+
+
 @dataclass(frozen=True)
 class Save:
     """A complete save: its number, when the game completed it, its objects as its .chunks file
@@ -334,10 +338,12 @@ def _room(folder: Path, save: Save, backups: Path) -> None:
         )
 
 
-def copy_file(source: Path, target: Path, limit: int | None = None) -> dict[str, object]:
+def copy_file(source: Path, target: Path, limit: int | None = None, *, unchanged: bool = False) -> dict[str, object]:
     """Copy one file of the save to disk, and say its size and SHA-256 for the record. With a limit,
     as for a file a backup's record lists, it copies only a regular file, never through a link,
-    and no more than limit bytes, raising OSError otherwise."""
+    and no more than limit bytes, raising OSError otherwise. Unchanged, as for a file no game
+    writes, it raises Changed when the file's size, modification time or inode differ after the
+    copy from before it."""
     try:
         reader = open_regular(source) if limit is not None else source.open("rb")
     except FileNotFoundError as error:
@@ -346,15 +352,22 @@ def copy_file(source: Path, target: Path, limit: int | None = None) -> dict[str,
     size = 0
     # An open file reads whole though the game removes it meanwhile.
     with reader, target.open("xb") as writer:
+        before = _identity(os.fstat(reader.fileno()))
         while block := reader.read(COPY_BLOCK):
             size += len(block)
             if limit is not None and size > limit:
                 raise OSError(errno.EFBIG, f"{source.name} is larger than its record says")
             digest.update(block)
             writer.write(block)
+        if unchanged and _identity(os.fstat(reader.fileno())) != before:
+            raise Changed(source.name)
         writer.flush()
         os.fsync(writer.fileno())
     return {"name": target.name, "size": size, "sha256": digest.hexdigest()}
+
+
+def _identity(info: os.stat_result) -> tuple[int, int, int]:
+    return info.st_size, info.st_mtime_ns, info.st_ino
 
 
 def open_regular(source: Path) -> io.BufferedReader:
