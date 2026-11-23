@@ -225,6 +225,16 @@ def _load(path: Path, validator: Draft202012Validator, *, secret: bool = False) 
     return document
 
 
+def breach(validator: Draft202012Validator, document: object) -> str | None:
+    """Where a document first breaks its contract and which rule, without its values, or None when
+    it keeps it."""
+    errors = sorted(validator.iter_errors(document), key=lambda e: list(e.absolute_path))
+    if not errors:
+        return None
+    where = "/".join(str(p) for p in errors[0].absolute_path) or "(root)"
+    return f"at {where}: {_rule(errors[0])}"
+
+
 def _rule(error: ValidationError) -> str:
     """What a value breaks, without the value; the control plane's schemas._rule, which ships in
     another image. The messages kept name keys, never values."""

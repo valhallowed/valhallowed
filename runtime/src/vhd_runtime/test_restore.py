@@ -2,13 +2,15 @@ import json
 import os
 import shutil
 from collections import namedtuple
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from vhd_runtime import backups, restore, transfer
 from vhd_runtime.restore import Place, RestoreFailed
-from vhd_runtime.test_backups import NOW, chunk_name, write_save
+from vhd_runtime.test_backups import CONTRACTS, NOW, chunk_name, write_save
 from vhd_runtime.transfer import Mounts
 
 CHUNK = {"chunk": 258, "size": 64, "version": 3, "objects": 120}
@@ -31,16 +33,16 @@ def backup_of(place: Place, number: int = 3, chunk: dict[str, int] = CHUNK) -> s
     return taken.name
 
 
-def edit_record(place: Place, name: str, edit: object) -> None:
+def edit_record(place: Place, name: str, edit: Callable[[dict[str, Any]], object]) -> None:
     path = place.backups / name / backups.RECORD
     record = json.loads(path.read_text())
-    edit(record)  # type: ignore[operator]
+    edit(record)
     path.write_text(json.dumps(record))
 
 
 def test_a_staged_backup_is_its_complete_save_and_says_its_objects(place: Place) -> None:
     name = backup_of(place)
-    assert restore.stage(place, name) == 120
+    assert restore.stage(place, name, CONTRACTS) == 120
     save = backups.newest_complete(place.staged)
     assert save is not None and save.number == 3 and chunk_name(CHUNK) in save.files
 
@@ -48,43 +50,84 @@ def test_a_staged_backup_is_its_complete_save_and_says_its_objects(place: Place)
 def test_a_backup_whose_record_predates_its_source_is_staged(place: Place) -> None:
     name = backup_of(place)
     edit_record(place, name, lambda r: r.pop("source"))
-    assert restore.stage(place, name) == 120
+    assert restore.stage(place, name, CONTRACTS) == 120
 
 
 def test_a_backup_that_is_gone_is_refused(place: Place) -> None:
     with pytest.raises(RestoreFailed, match="no longer exists"):
-        restore.stage(place, "20261118T194011Z")
+        restore.stage(place, "20261118T194011Z", CONTRACTS)
 
 
 def test_a_backup_of_another_world_is_refused(place: Place) -> None:
     name = backup_of(place)
     edit_record(place, name, lambda r: r.update(world="Ashwake"))
     with pytest.raises(RestoreFailed, match="not a backup of Meadowfold"):
-        restore.stage(place, name)
+        restore.stage(place, name, CONTRACTS)
     assert not place.staged.exists()
 
 
-@pytest.mark.parametrize("file", ["../escape", "_main.3.ok/../x", "notes.txt", ""])
-def test_a_record_naming_a_file_outside_a_save_is_refused(place: Place, file: str) -> None:
+@pytest.mark.parametrize(
+    ("file", "reason"),
+    [
+        ("../escape", "breaks its contract at files/0/name"),
+        ("_main.3.ok/../x", "breaks its contract at files/0/name"),
+        ("notes.txt", "breaks its contract at files/0/name"),
+        ("", "breaks its contract at files/0/name"),
+        ("_main.3.ok\n", "lists a file that is no part of a save"),
+    ],
+)
+def test_a_record_naming_a_file_outside_a_save_is_refused(place: Place, file: str, reason: str) -> None:
     name = backup_of(place)
     edit_record(place, name, lambda r: r["files"][0].update(name=file))
-    with pytest.raises(RestoreFailed, match="no part of a save"):
-        restore.stage(place, name)
-    assert not (place.vhd / "escape").exists()
+    with pytest.raises(RestoreFailed, match=reason):
+        restore.stage(place, name, CONTRACTS)
+    assert not (place.vhd / "escape").exists() and not place.staged.exists()
 
 
 def test_a_file_named_twice_is_refused(place: Place) -> None:
     name = backup_of(place)
     edit_record(place, name, lambda r: r["files"].append(r["files"][0]))
-    with pytest.raises(RestoreFailed, match="no part of a save"):
-        restore.stage(place, name)
+    with pytest.raises(RestoreFailed, match=f"^backup {name}'s record lists 01_02__64_3.chunk twice$"):
+        restore.stage(place, name, CONTRACTS)
+
+
+@pytest.mark.parametrize(
+    ("edit", "where"),
+    [
+        (lambda r: r.update(unknown=1), r"\(root\): Additional properties are not allowed"),
+        (lambda r: r.pop("written_ns"), r"\(root\): 'written_ns' is a required property"),
+        (lambda r: r.update(save=4294967296), "save: breaks maximum 4294967295"),
+        (lambda r: r.update(written_ns=-1), "written_ns: breaks minimum 0"),
+        (lambda r: r.update(objects="120"), 'objects: breaks type "integer"'),
+        (lambda r: r.update(taken="2026-11-18 19:40:11"), "taken: breaks pattern"),
+        (lambda r: r.update(source="elsewhere"), "source: breaks enum"),
+        (lambda r: r.update(world="Meadow/fold"), "world: breaks pattern"),
+        (lambda r: r["files"][0].update(sha256="0" * 63), "files/0/sha256: breaks pattern"),
+        (lambda r: r["files"][0].update(size=-1), "files/0/size: breaks minimum 0"),
+    ],
+)
+def test_a_restore_of_a_backup_whose_record_breaks_its_contract_fails_closed(
+    place: Place, edit: Callable[[dict[str, Any]], object], where: str
+) -> None:
+    name = backup_of(place)
+    edit_record(place, name, edit)
+    with pytest.raises(RestoreFailed, match=f"^backup {name}'s record breaks its contract at {where}"):
+        restore.stage(place, name, CONTRACTS)
+    assert not place.staged.exists()
+
+
+def test_a_restore_without_the_records_contract_fails_closed(place: Place, tmp_path: Path) -> None:
+    name = backup_of(place)
+    with pytest.raises(RestoreFailed, match=r"^cannot read the contract of a backup's record"):
+        restore.stage(place, name, tmp_path / "no-contracts")
+    assert not place.staged.exists()
 
 
 def test_a_damaged_file_is_refused_and_nothing_stays_staged(place: Place) -> None:
     name = backup_of(place)
     (place.backups / name / "_main.3.db2").write_bytes(b"damaged")
     with pytest.raises(RestoreFailed, match="not the file its record lists"):
-        restore.stage(place, name)
+        restore.stage(place, name, CONTRACTS)
     assert not place.staged.exists()
 
 
@@ -92,28 +135,28 @@ def test_a_file_missing_from_the_backup_is_refused(place: Place) -> None:
     name = backup_of(place)
     (place.backups / name / chunk_name(CHUNK)).unlink()
     with pytest.raises(RestoreFailed, match="lacks"):
-        restore.stage(place, name)
+        restore.stage(place, name, CONTRACTS)
 
 
 def test_a_record_that_leaves_out_a_file_of_its_save_is_refused(place: Place) -> None:
     name = backup_of(place)
     edit_record(place, name, lambda r: r.update(files=[f for f in r["files"] if not f["name"].endswith(".chunk")]))
     with pytest.raises(RestoreFailed, match="not a complete save"):
-        restore.stage(place, name)
+        restore.stage(place, name, CONTRACTS)
 
 
 def test_a_record_that_names_another_save_is_refused(place: Place) -> None:
     name = backup_of(place)
     edit_record(place, name, lambda r: r.update(save=4))
     with pytest.raises(RestoreFailed, match="does not hold the save its record names"):
-        restore.stage(place, name)
+        restore.stage(place, name, CONTRACTS)
 
 
 def test_a_record_that_cannot_be_read_is_refused(place: Place) -> None:
     name = backup_of(place)
     (place.backups / name / backups.RECORD).write_text("{")
     with pytest.raises(RestoreFailed, match="cannot be read"):
-        restore.stage(place, name)
+        restore.stage(place, name, CONTRACTS)
 
 
 def test_a_backup_the_data_volume_has_no_room_for_is_refused(place: Place, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -121,13 +164,13 @@ def test_a_backup_the_data_volume_has_no_room_for_is_refused(place: Place, monke
     usage = namedtuple("usage", "total used free")
     monkeypatch.setattr(shutil, "disk_usage", lambda path: usage(0, 0, backups.RESERVE))
     with pytest.raises(RestoreFailed, match="must stay free"):
-        restore.stage(place, name)
+        restore.stage(place, name, CONTRACTS)
     assert not place.staged.exists()
 
 
 def test_a_swap_sets_the_save_aside_and_a_swap_back_returns_it(place: Place) -> None:
     write_save(place.save, 9, [{"chunk": 1, "size": 64, "version": 9, "objects": 5}])
-    restore.stage(place, backup_of(place))
+    restore.stage(place, backup_of(place), CONTRACTS)
     restore.swap(place, had_save=True)
     assert (place.save / "_main.3.ok").is_file() and (place.aside / "_main.9.ok").is_file()
     restore.unswap(place, had_save=True)
@@ -138,7 +181,7 @@ def test_a_swap_sets_the_save_aside_and_a_swap_back_returns_it(place: Place) -> 
 
 def test_a_swap_cut_short_between_its_renames_is_finished(place: Place) -> None:
     write_save(place.save, 9, [{"chunk": 1, "size": 64, "version": 9, "objects": 5}])
-    restore.stage(place, backup_of(place))
+    restore.stage(place, backup_of(place), CONTRACTS)
     place.save.rename(place.aside)
     restore.swap(place, had_save=True)
     assert (place.save / "_main.3.ok").is_file() and (place.aside / "_main.9.ok").is_file()
@@ -148,7 +191,7 @@ def test_a_swap_cut_short_between_its_renames_is_finished(place: Place) -> None:
 
 def test_a_swap_back_cut_short_is_finished(place: Place) -> None:
     write_save(place.save, 9, [{"chunk": 1, "size": 64, "version": 9, "objects": 5}])
-    restore.stage(place, backup_of(place))
+    restore.stage(place, backup_of(place), CONTRACTS)
     restore.swap(place, had_save=True)
     shutil.rmtree(place.save)
     restore.unswap(place, had_save=True)
@@ -156,7 +199,7 @@ def test_a_swap_back_cut_short_is_finished(place: Place) -> None:
 
 
 def test_a_world_that_never_started_gets_the_backup_and_loses_it_on_a_swap_back(place: Place) -> None:
-    restore.stage(place, backup_of(place))
+    restore.stage(place, backup_of(place), CONTRACTS)
     restore.swap(place, had_save=False)
     assert (place.save / "_main.3.ok").is_file() and not place.aside.exists()
     restore.unswap(place, had_save=False)
@@ -186,7 +229,7 @@ def test_a_backup_file_that_is_a_link_is_refused_without_reading_through_it(plac
     (place.backups / name / "_main.3.db2").unlink()
     (place.backups / name / "_main.3.db2").symlink_to(secret)
     with pytest.raises(RestoreFailed, match="is a link"):
-        restore.stage(place, name)
+        restore.stage(place, name, CONTRACTS)
     assert not place.staged.exists()
 
 
@@ -195,7 +238,7 @@ def test_a_backup_file_that_is_a_pipe_is_refused_without_waiting(place: Place) -
     (place.backups / name / "_main.3.db2").unlink()
     os.mkfifo(place.backups / name / "_main.3.db2")
     with pytest.raises(RestoreFailed, match="not a regular file"):
-        restore.stage(place, name)
+        restore.stage(place, name, CONTRACTS)
 
 
 def test_a_backup_file_larger_than_its_record_says_is_refused(place: Place) -> None:
@@ -203,7 +246,7 @@ def test_a_backup_file_larger_than_its_record_says_is_refused(place: Place) -> N
     with (place.backups / name / "_main.3.db2").open("ab") as appender:
         appender.write(b"x" * (2 << 20))
     with pytest.raises(RestoreFailed, match="larger than its record says"):
-        restore.stage(place, name)
+        restore.stage(place, name, CONTRACTS)
     assert not place.staged.exists()
 
 
@@ -211,7 +254,7 @@ def test_a_record_longer_than_any_save_needs_cannot_be_read(place: Place) -> Non
     name = backup_of(place)
     (place.backups / name / backups.RECORD).write_text(" " * (restore.RECORD_MAX_BYTES + 1) + "{}")
     with pytest.raises(RestoreFailed, match="cannot be read"):
-        restore.stage(place, name)
+        restore.stage(place, name, CONTRACTS)
 
 
 def test_an_intent_with_an_id_status_would_refuse_reads_as_none(place: Place) -> None:
@@ -221,7 +264,7 @@ def test_an_intent_with_an_id_status_would_refuse_reads_as_none(place: Place) ->
 
 def imported(place: Place) -> str:
     """A backup of a synthesized save, taken as vhd import takes one from the install folder."""
-    mounts = Mounts(imported=place.saves.parent / "import", backups=place.backups)
+    mounts = Mounts(imported=place.saves.parent / "import", backups=place.backups, contracts=CONTRACTS)
     write_save(mounts.imported / place.world, 3, [CHUNK])
     result = transfer.import_save(mounts, place.world, lambda: NOW)
     shutil.rmtree(mounts.imported)
@@ -231,7 +274,7 @@ def imported(place: Place) -> str:
 def test_an_imported_backup_is_checked_and_staged_like_any_other(place: Place) -> None:
     name = imported(place)
     assert json.loads((place.backups / name / backups.RECORD).read_text())["source"] == "import"
-    assert restore.stage(place, name) == 120
+    assert restore.stage(place, name, CONTRACTS) == 120
     save = backups.newest_complete(place.staged)
     assert save is not None and save.number == 3 and chunk_name(CHUNK) in save.files
 
@@ -263,5 +306,5 @@ def test_a_tampered_imported_backup_is_refused_and_nothing_stays_staged(
     name = imported(place)
     tamper(place, name)  # type: ignore[operator]
     with pytest.raises(RestoreFailed, match=reason):
-        restore.stage(place, name)
+        restore.stage(place, name, CONTRACTS)
     assert not place.staged.exists()

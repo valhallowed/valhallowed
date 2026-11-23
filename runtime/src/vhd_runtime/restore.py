@@ -24,7 +24,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal, cast, get_args
 
-from vhd_runtime import backups
+from jsonschema import Draft202012Validator
+
+from vhd_runtime import backups, generation
 
 Phase = Literal["staging", "swapping", "swapped", "judged", "unswapping"]
 # How a restore ends.
@@ -36,10 +38,11 @@ _DONE_KEYS = {"id", "outcome", "reason"}
 
 # The files a 1.0+ save is made of (Game facts): the save's own four, and its chunks.
 SAVE_FILE = re.compile(r"_main\.[0-9]+\.(chunks|db2|fwl2|ok)|[0-9a-f]{2}_[0-9a-f]{2}__[0-9]+_[0-9]+\.chunk")
-_SHA256 = re.compile(r"[0-9a-f]{64}")
 _ID = re.compile(r"[0-9a-f]{32}")
 # A record lists a save's few thousand files at most; anything longer is no record of ours.
 RECORD_MAX_BYTES = 4 << 20
+# The contract a backup's record keeps, in the image's contracts folder.
+RECORD_CONTRACT = "game-runtime.backup.schema.json"
 
 
 class RestoreFailed(Exception):
@@ -171,15 +174,15 @@ def clear_staged(place: Place) -> None:
     shutil.rmtree(place.staged, ignore_errors=True)
 
 
-def stage(place: Place, name: str) -> int:
-    """Copy the backup into the data volume and check it: its record names this world and only a
-    save's files, each file has the size and SHA-256 the record gives, and the copy is a complete
-    save in the format this runtime reads. Returns the objects the save holds. Raises RestoreFailed,
-    leaving nothing staged."""
+def stage(place: Place, name: str, contracts: Path) -> int:
+    """Copy the backup into the data volume and check it: its record keeps its contract, in the
+    contracts folder, and names this world, each file has the size and SHA-256 the record gives,
+    and the copy is a complete save in the format this runtime reads. Returns the objects the save
+    holds. Raises RestoreFailed, leaving nothing staged."""
     source = place.backups / name
     if not (source / backups.RECORD).is_file():
         raise RestoreFailed(f"backup {name} no longer exists in {place.backups}")
-    record = read_record(source, place.world, name)
+    record = read_record(source, place.world, name, record_contract(contracts))
     clear_staged(place)
     try:
         place.staged.mkdir(parents=True)
@@ -253,38 +256,36 @@ def drop_aside(place: Place) -> None:
     shutil.rmtree(place.aside, ignore_errors=True)
 
 
-def read_record(source: Path, world: str, name: str) -> Record:
-    """The save a backup's record names, once it names this world and lists only a save's files,
-    each once. Raises RestoreFailed."""
+def record_contract(contracts: Path) -> Draft202012Validator:
+    """The contract a backup's record keeps, from the contracts folder. Raises RestoreFailed when it
+    cannot be read."""
+    try:
+        return generation.validator(contracts / RECORD_CONTRACT)
+    except (OSError, ValueError) as error:
+        raise RestoreFailed(f"cannot read the contract of a backup's record: {error}") from error
+
+
+def read_record(source: Path, world: str, name: str, contract: Draft202012Validator) -> Record:
+    """The save a backup's record names, once the record keeps its contract, names this world and
+    lists each file once. Raises RestoreFailed."""
     record = _read(source / backups.RECORD)
-    files = record.get("files") if record is not None else None
-    number = record.get("save") if record is not None else None
-    written_ns = record.get("written_ns") if record is not None else None
-    if (
-        record is None
-        or not isinstance(files, list)
-        or type(number) is not int
-        or type(written_ns) is not int
-        or written_ns < 0
-    ):
+    if record is None:
         raise RestoreFailed(f"backup {name}'s record cannot be read")
-    if record.get("world") != world:
+    breach = generation.breach(contract, record)
+    if breach is not None:
+        raise RestoreFailed(f"backup {name}'s record breaks its contract {breach}")
+    if record["world"] != world:
         raise RestoreFailed(f"backup {name} is not a backup of {world}")
+    files = cast(list[dict[str, Any]], record["files"])
     seen: set[str] = set()
     for file in files:
-        if (
-            not isinstance(file, dict)
-            or not isinstance(file.get("name"), str)
-            or not SAVE_FILE.fullmatch(file["name"])
-            or file["name"] in seen
-            or type(file.get("size")) is not int
-            or file["size"] < 0
-            or not isinstance(file.get("sha256"), str)
-            or not _SHA256.fullmatch(file["sha256"])
-        ):
+        # The contract's pattern also lets a name end in a newline, as Python's $ matches before one.
+        if not SAVE_FILE.fullmatch(file["name"]):
             raise RestoreFailed(f"backup {name}'s record lists a file that is no part of a save")
+        if file["name"] in seen:
+            raise RestoreFailed(f"backup {name}'s record lists {file['name']} twice")
         seen.add(file["name"])
-    return Record(number, written_ns, files)
+    return Record(cast(int, record["save"]), cast(int, record["written_ns"]), files)
 
 
 def _is_id(value: object) -> bool:

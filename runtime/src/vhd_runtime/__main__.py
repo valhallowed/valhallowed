@@ -32,9 +32,9 @@ def main(argv: list[str] | None = None) -> int:
         return datetime.now(UTC)
 
     if action == "import":
-        return transfer.run("import", world, lambda: transfer.import_save(mounts, world, now))
+        return transfer.run("import", world, mounts.contracts, lambda: transfer.import_save(mounts, world, now))
     backup = rest[0] if rest else None
-    return transfer.run("export", world, lambda: transfer.export_backup(mounts, world, backup, now))
+    return transfer.run("export", world, mounts.contracts, lambda: transfer.export_backup(mounts, world, backup, now))
 
 
 def supervise() -> int:

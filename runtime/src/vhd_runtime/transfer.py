@@ -32,7 +32,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, NotRequired, TypedDict
 
-from vhd_runtime import backups, restore
+from jsonschema import Draft202012Validator
+
+from vhd_runtime import backups, generation, restore
+from vhd_runtime.supervisor import Paths
 
 # vhd mounts these into the one-off container; the supervisor never sees them, apart from the
 # backups folder, which is the same mount as the supervisor's Paths.backups.
@@ -44,6 +47,9 @@ IMPORT_MAX_BYTES = 4 << 30
 # How many times an import names its backup again when the runtime's own turn took the name first.
 NAME_ATTEMPTS = 3
 CONTRACT = 1
+RESULT_CONTRACT = "game-runtime.import-export.schema.json"
+# The record contract's bound on a save's number.
+SAVE_NUMBER_MAX = 4294967295
 # The result contract's bound on a reason.
 REASON_MAX = 500
 # A world's save name, as the manifest schema's save_name defines it.
@@ -62,11 +68,12 @@ class Refused(Exception):
 
 @dataclass(frozen=True)
 class Mounts:
-    """Where the action finds what vhd mounts for it."""
+    """Where the action finds what vhd mounts for it, and the image's contracts."""
 
     imported: Path = IMPORT_FOLDER
     backups: Path = BACKUPS_FOLDER
     exported: Path = EXPORT_FOLDER
+    contracts: Path = Paths.contracts
 
 
 @dataclass(frozen=True)
@@ -104,10 +111,18 @@ def is_save_name(world: str) -> bool:
     return _SAVE_NAME.fullmatch(world) is not None
 
 
-def run(action: Action, world: str, act: Callable[[], Result]) -> int:
-    """Run one action and print its result as the last line on standard output: 0 when done, 1
-    when refused. Any error is a refusal with its reason, never a traceback."""
+def run(action: Action, world: str, contracts: Path, act: Callable[[], Result]) -> int:
+    """Run one action and print its result, once it keeps its contract in the contracts folder, as
+    the last line on standard output: 0 when done, 1 when refused. Any error is a refusal with its
+    reason, never a traceback."""
     result: Result
+    try:
+        contract = generation.validator(contracts / RESULT_CONTRACT)
+    except (OSError, ValueError) as error:
+        _log.exception("%s of %s cannot read its result's contract", action, world)
+        result = _refused(action, world, f"{action} cannot read its result's contract: {error}")
+        print(json.dumps(result), flush=True)
+        return 1
     try:
         result = act()
     except Refused as error:
@@ -116,13 +131,18 @@ def run(action: Action, world: str, act: Callable[[], Result]) -> int:
     except Exception as error:
         _log.exception("%s of %s stopped on an unexpected error", action, world)
         result = _refused(action, world, f"{action} stopped on an unexpected error: {type(error).__name__}: {error}")
+    breach = generation.breach(contract, result)
+    if breach is not None:
+        _log.error("%s of %s has a result that breaks its contract %s: %s", action, world, breach, result)
+        result = _refused(action, world, f"{action}'s result breaks its contract {breach}")
     print(json.dumps(result), flush=True)
     return 0 if result["outcome"] == "done" else 1
 
 
 def import_save(mounts: Mounts, world: str, now: Callable[[], datetime]) -> Result:
     """Keep the save in the import folder as a backup of the world, once it is exactly one complete
-    1.0+ save and fits. Raises Refused, keeping nothing."""
+    1.0+ save and fits, and its record keeps its contract. Raises Refused, keeping nothing."""
+    contract = _record_contract(mounts)
     try:
         folder = _save_folder(mounts.imported, world)
         sizes = _save_files(folder)
@@ -130,6 +150,8 @@ def import_save(mounts: Mounts, world: str, now: Callable[[], datetime]) -> Resu
         found = _Found(folder, number, sizes, (folder / f"_main.{number}.ok").lstat().st_mtime_ns)
     except OSError as error:
         raise Refused(f"cannot read the save: {error.strerror or error}") from error
+    if found.written_ns < 0:
+        raise Refused(f"the save's _main.{number}.ok was last modified before 1970, which no save is")
     total = sum(sizes.values())
     if total > IMPORT_MAX_BYTES:
         raise Refused(
@@ -143,7 +165,7 @@ def import_save(mounts: Mounts, world: str, now: Callable[[], datetime]) -> Resu
     except OSError as error:
         raise Refused(f"cannot write into the backup folder: {error.strerror or error}") from error
     try:
-        name, objects = _keep(found, staging, mounts.backups, world, now)
+        name, objects = _keep(found, staging, mounts.backups, now, contract)
     except OSError as error:
         shutil.rmtree(staging, ignore_errors=True)
         raise Refused(f"cannot copy the save into the backup folder: {error.strerror or error}") from error
@@ -168,8 +190,9 @@ def export_backup(mounts: Mounts, world: str, backup: str | None, now: Callable[
     if name not in held:
         raise Refused(f"backup {name} does not exist in the backup folder")
     source = mounts.backups / name
+    contract = _record_contract(mounts)
     try:
-        record = restore.read_record(source, world, name)
+        record = restore.read_record(source, world, name, contract)
     except restore.RestoreFailed as error:
         raise Refused(str(error)) from error
     try:
@@ -192,6 +215,13 @@ def export_backup(mounts: Mounts, world: str, backup: str | None, now: Callable[
         raise
     _log.info("exported backup %s of world %s, save %d, %d objects", name, world, record.number, objects)
     return _done("export", world, name, _summary(record.number, objects, record.written_ns))
+
+
+def _record_contract(mounts: Mounts) -> Draft202012Validator:
+    try:
+        return restore.record_contract(mounts.contracts)
+    except restore.RestoreFailed as error:
+        raise Refused(str(error)) from error
 
 
 def _room(folder: Path, where: str, what: str, needed: int) -> None:
@@ -268,6 +298,8 @@ def _one_save(folder: Path, present: set[str]) -> int:
     numbers = sorted(int(match[1]) for name in present if (match := backups.OK_FILE.match(name)))
     if not numbers:
         raise Refused("the save folder holds no complete save: no _main.<n>.ok")
+    if numbers[-1] > SAVE_NUMBER_MAX:
+        raise Refused(f"the save folder holds _main.{numbers[-1]}.ok, numbered above any save's {SAVE_NUMBER_MAX}")
     if len(numbers) > 1:
         raise Refused(
             f"the save folder holds {len(numbers)} complete saves ({', '.join(map(str, numbers[:5]))}); the game picks "
@@ -292,9 +324,12 @@ def _one_save(folder: Path, present: set[str]) -> int:
     return number
 
 
-def _keep(found: _Found, staging: Path, store: Path, world: str, now: Callable[[], datetime]) -> tuple[str, int]:
-    """Copy the save into staging, check the copy, record it, and name it as a backup: the backup's
-    name and the save's objects."""
+def _keep(
+    found: _Found, staging: Path, store: Path, now: Callable[[], datetime], contract: Draft202012Validator
+) -> tuple[str, int]:
+    """Copy the save into staging, check the copy, record it as a backup of the world its folder is
+    named for once the record keeps its contract, and name it as a backup: the backup's name and the
+    save's objects."""
     sizes, number = found.sizes, found.number
     files: list[dict[str, object]] = []
     # Chunks first and the .ok last, as the game writes a save.
@@ -317,7 +352,7 @@ def _keep(found: _Found, staging: Path, store: Path, world: str, now: Callable[[
     if save is None or save.number != number or set(save.files) != set(sizes):
         raise Refused(f"the copy does not hold save {number}")
     record: dict[str, object] = {
-        "world": world,
+        "world": found.folder.name,
         "save": number,
         "written_ns": found.written_ns,
         "objects": save.objects,
@@ -329,6 +364,9 @@ def _keep(found: _Found, staging: Path, store: Path, world: str, now: Callable[[
         taken_at = backups.name_time(store, now())
         name = taken_at.strftime(backups.NAME_FORMAT)
         record["taken"] = taken_at.strftime(backups.TAKEN_FORMAT)
+        breach = generation.breach(contract, record)
+        if breach is not None:
+            raise Refused(f"the save's record breaks its contract {breach}")
         _write_record(staging, record)
         try:
             staging.rename(store / name)

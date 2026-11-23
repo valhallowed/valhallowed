@@ -1141,7 +1141,7 @@ def test_a_world_that_never_started_loads_the_restored_save_at_its_first_start(w
 
 
 def test_a_world_that_never_started_loads_an_imported_save_at_its_first_start(world: World) -> None:
-    mounts = transfer.Mounts(imported=world.paths.data / "import", backups=world.paths.backups)
+    mounts = transfer.Mounts(imported=world.paths.data / "import", backups=world.paths.backups, contracts=CONTRACTS)
     write_save(mounts.imported / "Meadowfold", 41, [{"chunk": 258, "size": 64, "version": 41, "objects": 141}])
     name = transfer.import_save(mounts, "Meadowfold", world.now)["backup"]
     world.generation(restore=name)
@@ -1229,7 +1229,7 @@ def test_a_swap_a_crash_cut_short_is_finished_and_judged_at_the_next_start(world
     world.remember("Meadowfold", 105)
     name = world.backup_of(3)
     place = place_of(world)
-    restore.stage(place, name)
+    restore.stage(place, name, CONTRACTS)
     place.save.rename(place.aside)
     restore.write_intent(place, restore.Intent(RESTORE_ID, name, "swapping", before=105, had_save=True, objects=103))
     world.generation(restore=name)
@@ -1247,7 +1247,7 @@ def test_a_swap_back_a_crash_cut_short_is_finished_at_the_next_start(world: Worl
     world.game_saves(5)
     name = world.backup_of(3)
     place = place_of(world)
-    restore.stage(place, name)
+    restore.stage(place, name, CONTRACTS)
     restore.swap(place, had_save=True)
     restore.write_intent(
         place, restore.Intent(RESTORE_ID, name, "unswapping", before=105, had_save=True, objects=103, reason="empty")
@@ -1267,7 +1267,7 @@ def test_a_newer_restore_puts_back_the_save_of_one_still_unjudged_first(world: W
     world.game_saves(5)
     first, second = world.backup_of(3, hours_ago=3), world.backup_of(4)
     place = place_of(world)
-    restore.stage(place, first)
+    restore.stage(place, first, CONTRACTS)
     restore.swap(place, had_save=True)
     restore.write_intent(place, restore.Intent("a" * 32, first, "swapped", before=105, had_save=True, objects=103))
     world.generation(restore=second)
@@ -1429,7 +1429,7 @@ def test_a_restore_the_generation_drops_before_world_truth_judges_it_is_swapped_
     world.game_saves(5)
     name = world.backup_of(3)
     place = place_of(world)
-    restore.stage(place, name)
+    restore.stage(place, name, CONTRACTS)
     restore.swap(place, had_save=True)
     restore.write_intent(place, restore.Intent(RESTORE_ID, name, "swapped", before=105, had_save=True, objects=103))
     world.generation()

@@ -1,3 +1,4 @@
+import dataclasses
 import errno
 import hashlib
 import json
@@ -25,7 +26,7 @@ CHUNKS = [
 
 def make_mounts(root: Path) -> Mounts:
     """The folders vhd mounts for an action: the import folder, the world's backups, an empty export folder."""
-    mounts = Mounts(imported=root / "import", backups=root / "backups", exported=root / "export")
+    mounts = Mounts(imported=root / "import", backups=root / "backups", exported=root / "export", contracts=CONTRACTS)
     for folder in (mounts.imported, mounts.backups, mounts.exported):
         folder.mkdir()
     return mounts
@@ -45,13 +46,13 @@ def put_save(mounts: Mounts, number: int = 41, chunks: list[dict[str, int]] = CH
 
 def act(mounts: Mounts, capsys: pytest.CaptureFixture[str], now: datetime = NOW) -> tuple[int, dict[str, Any]]:
     """Import, as python -m vhd_runtime import does: the exit code and the result, its last line."""
-    code = transfer.run("import", WORLD, lambda: transfer.import_save(mounts, WORLD, lambda: now))
+    code = transfer.run("import", WORLD, CONTRACTS, lambda: transfer.import_save(mounts, WORLD, lambda: now))
     return code, result_of(capsys)
 
 
 def export(mounts: Mounts, capsys: pytest.CaptureFixture[str], backup: str | None = None) -> tuple[int, dict[str, Any]]:
     """Export, as python -m vhd_runtime export does: the exit code and the result, its last line."""
-    code = transfer.run("export", WORLD, lambda: transfer.export_backup(mounts, WORLD, backup, lambda: NOW))
+    code = transfer.run("export", WORLD, CONTRACTS, lambda: transfer.export_backup(mounts, WORLD, backup, lambda: NOW))
     return code, result_of(capsys)
 
 
@@ -210,6 +211,61 @@ def test_a_save_that_is_not_complete_is_refused(
     assert kept(mounts) == []
 
 
+def test_a_save_numbered_above_any_saves_number_is_refused(mounts: Mounts, capsys: pytest.CaptureFixture[str]) -> None:
+    put_save(mounts, 99999999999)
+    code, result = act(mounts, capsys)
+    assert (code, result["reason"]) == (
+        1,
+        "the save folder holds _main.99999999999.ok, numbered above any save's 4294967295",
+    )
+    assert kept(mounts) == []
+
+
+def test_a_save_completed_before_1970_is_refused(mounts: Mounts, capsys: pytest.CaptureFixture[str]) -> None:
+    folder = put_save(mounts)
+    os.utime(folder / "_main.41.ok", ns=(-(10**9), -(10**9)))
+    code, result = act(mounts, capsys)
+    assert (code, result["reason"]) == (1, "the save's _main.41.ok was last modified before 1970, which no save is")
+    assert kept(mounts) == []
+
+
+def test_a_record_that_would_break_its_contract_is_never_named_as_a_backup(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    put_save(mounts)
+    newest_complete = backups.newest_complete
+
+    def counts_below_zero(folder: Path) -> backups.Save | None:
+        save = newest_complete(folder)
+        return None if save is None else dataclasses.replace(save, objects=-1)
+
+    monkeypatch.setattr(backups, "newest_complete", counts_below_zero)
+    code, result = act(mounts, capsys)
+    assert (code, result["reason"]) == (1, "the save's record breaks its contract at objects: breaks minimum 0")
+    assert kept(mounts) == []
+
+
+def test_a_result_that_would_break_its_contract_is_printed_as_refused(capsys: pytest.CaptureFixture[str]) -> None:
+    def done_without_its_save() -> transfer.Result:
+        return {"contract": 1, "action": "import", "world": WORLD, "outcome": "done", "backup": NOW_NAME}
+
+    code = transfer.run("import", WORLD, CONTRACTS, done_without_its_save)
+    result = result_of(capsys)
+    assert (code, result["outcome"]) == (1, "refused")
+    assert result["reason"].startswith("import's result breaks its contract at (root): ")
+
+
+def test_an_action_without_its_results_contract_is_refused_before_it_starts(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def never() -> transfer.Result:
+        raise AssertionError("acted without the result's contract")
+
+    code = transfer.run("export", WORLD, tmp_path, never)
+    result = result_of(capsys)
+    assert code == 1 and result["reason"].startswith("export cannot read its result's contract")
+
+
 def test_a_file_of_another_save_is_refused(mounts: Mounts, capsys: pytest.CaptureFixture[str]) -> None:
     folder = put_save(mounts)
     # A chunk an older save wrote, which the newer one's .chunks file does not name.
@@ -345,7 +401,7 @@ def test_an_unexpected_error_is_refused_with_a_one_line_reason_as_the_last_line(
     def breaks() -> transfer.Result:
         raise RuntimeError("first line\nsecond\x1b[31m line " + "x" * 600)
 
-    code = transfer.run("import", WORLD, breaks)
+    code = transfer.run("import", WORLD, CONTRACTS, breaks)
     captured = capsys.readouterr()
     result = json.loads(captured.out.splitlines()[-1])
     RESULT.validate(result)
@@ -474,7 +530,7 @@ def test_a_backup_whose_record_says_no_time_the_save_was_completed_is_refused(
     path = mounts.backups / name / backups.RECORD
     path.write_text(json.dumps({**json.loads(path.read_text()), "written_ns": written_ns}))
     code, result = export(mounts, capsys)
-    assert (code, result["reason"]) == (1, f"backup {name}'s record cannot be read")
+    assert code == 1 and result["reason"].startswith(f"backup {name}'s record breaks its contract at written_ns")
     assert list(mounts.exported.iterdir()) == []
 
 
