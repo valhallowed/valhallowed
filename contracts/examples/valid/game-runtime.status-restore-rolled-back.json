@@ -1,0 +1,1 @@
+{"contract": 1, "generation": 8, "world": "Meadowfold", "state": "running", "game_build": "26266951", "objects": 81234, "players": 0, "restore": {"id": "5f0c9a3e1b7d4c2a8e6f0b1d3c5a7e9f", "outcome": "rolled-back", "reason": "the restored save loaded with no objects where its backup held 80112; the save it replaced is back"}}

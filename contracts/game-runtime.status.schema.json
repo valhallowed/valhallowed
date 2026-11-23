@@ -20,7 +20,7 @@
       "$ref": "../schema/manifest.schema.json#/$defs/save_name"
     },
     "state": {
-      "description": "installing: downloading SteamCMD or the server, or waiting to retry a download that failed. loading: launched, the world not yet reported. running: the world loaded. unverified: launched, but the plugin has not reported a world that had nothing to lose: no save, or last seen empty. held: stopped before its first autosave because the world loaded empty, or the plugin never reported it, although it held objects when last seen or, with nothing remembered, a save existed; the container stays up.",
+      "description": "installing: downloading SteamCMD or the server, or waiting to retry a download that failed. loading: launched, the world not yet reported. running: the world loaded. unverified: launched, but the plugin has not reported a world that had nothing to lose: no save, or last seen empty. held: restoring a backup before the game starts; or stopped before its first autosave because the world loaded empty, or the plugin never reported it, although it held objects when last seen or, with nothing remembered, a save existed; the container stays up.",
       "enum": ["installing", "loading", "running", "unverified", "held"]
     },
     "reason": {
@@ -59,6 +59,30 @@
         },
         "failure": {
           "description": "Why the runtime could not take or keep its backups, in one line of printable text: vhd status shows it to the server manager. Absent once a turn of its backups succeeds.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        }
+      }
+    },
+    "restore": {
+      "description": "The newest restore the runtime has acted on, as its generation named it. Absent until it acts on one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "outcome"],
+      "properties": {
+        "id": {
+          "description": "The restore's id, as the generation gave it.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "outcome": {
+          "description": "restoring: replacing the save, or world truth has not judged the restored save yet. done: the restored save passed world truth. failed: the restore was refused, and the world's save was left as it was. rolled-back: the restored save failed world truth, and the save it replaced is back.",
+          "enum": ["restoring", "done", "failed", "rolled-back"]
+        },
+        "reason": {
+          "description": "Why the restore failed or was rolled back, or what it waits on, in one line of printable text: vhd status shows it to the server manager.",
           "type": "string",
           "minLength": 1,
           "maxLength": 500,

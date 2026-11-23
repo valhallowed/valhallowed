@@ -1,0 +1,1 @@
+{"contract": 4, "generation": 8, "world": {"name": "Meadowfold", "port": 2456}, "plugin": {"status_interval_s": 5, "intake_url": "http://intake:9458/events"}, "backups": {"every_s": 3600, "keep": 24, "keep_daily": 14}, "updates": {"policy": "when-empty", "every_s": 900}, "restore": {"backup": "20261118T194011Z"}}
