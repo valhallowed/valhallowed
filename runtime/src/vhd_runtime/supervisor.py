@@ -39,6 +39,11 @@ HELD_UNREPORTED = (
     "the plugin has not reported the loaded world, which held objects before; stopped before its first autosave"
 )
 UNVERIFIED_REASON = "the plugin has not reported the loaded world"
+# What the server manager can do for a world held with no save.
+HELD_UNSAVED_ASK = (
+    "ask for another restore or an import, or remove the world's data volume to start a new world, which also "
+    "removes its installed server, so its next start downloads it again"
+)
 # A failed install is retried after a wait that starts here and doubles up to the cap, each wait
 # jittered, so the worlds of one install do not all go back to Steam at once.
 INSTALL_RETRY_FIRST_S = 30
@@ -228,9 +233,10 @@ class Supervisor:
         if done is None or done.outcome == "done":
             return None
         ended = "failed" if done.outcome == "failed" else "was rolled back"
+        # The instruction ahead of the why, so the bound on a reason cuts only the why.
         return _reason(
-            f"the world has no save and restore {done.id} {ended}, so no new world is made; ask for another restore "
-            f"or an import, or remove the world's data volume to start a new world. Why: {done.reason or 'unknown'}"
+            f"the world has no save and restore {done.id} {ended}, so no new world is made; {HELD_UNSAVED_ASK}. "
+            f"Why: {done.reason or 'unknown'}"
         )
 
     def _hold_unsaved(self, generation: Generation, reporter: status.Reporter, why: str) -> int:

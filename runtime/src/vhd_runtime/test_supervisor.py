@@ -1645,6 +1645,24 @@ def test_a_rolled_back_restore_on_a_world_with_no_save_holds_it_at_the_next_star
     assert cast(dict[str, object], world.reports[-1]["backups"])["names"]
 
 
+def test_the_reason_a_world_is_held_without_a_save_says_what_to_do_whole_and_cuts_only_the_why(
+    world: World,
+) -> None:
+    restore.finish(place_of(world), restore.Done(RESTORE_ID, "failed", "w" * supervisor.REASON_MAX))
+    world.generation()
+    sup = world.supervisor()
+    world.stop_at(30, sup)
+
+    assert sup.run() == 0
+    reasons = held_without_save(world)
+    assert reasons and len(reasons[-1]) == supervisor.REASON_MAX
+    assert reasons[-1].startswith(
+        f"the world has no save and restore {RESTORE_ID} failed, so no new world is made; ask for another restore or "
+        "an import, or remove the world's data volume to start a new world, which also removes its installed server, "
+        "so its next start downloads it again. Why: www"
+    )
+
+
 def test_a_world_with_a_pre_1_0_save_is_not_held_after_a_failed_restore(world: World) -> None:
     (world.paths.saves / "worlds_local").mkdir(parents=True)
     (world.paths.saves / "worlds_local" / "Meadowfold.db").write_bytes(b"pre-1.0")
