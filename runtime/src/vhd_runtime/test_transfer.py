@@ -477,6 +477,44 @@ def test_an_export_never_writes_over_a_save_already_in_the_export_folder(
     assert [entry.name for entry in exported(mounts).iterdir()] == ["_main.9.ok"]
 
 
+def test_an_export_the_install_folders_disk_has_no_room_for_is_refused_before_anything_is_written(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    name = backup_of(mounts, 41, NOW)
+    needed = sum(file["size"] for file in json.loads((mounts.backups / name / backups.RECORD).read_text())["files"])
+    usage = namedtuple("usage", "total used free")
+    asked: list[Path] = []
+
+    def short_by_one(path: Path) -> object:
+        asked.append(Path(path))
+        return usage(0, 0, backups.RESERVE + needed - 1)
+
+    def never(*args: object) -> dict[str, object]:
+        raise AssertionError("copied a backup the export folder has no room for")
+
+    monkeypatch.setattr(shutil, "disk_usage", short_by_one)
+    monkeypatch.setattr(backups, "copy_file", never)
+    code, result = export(mounts, capsys)
+    assert code == 1
+    assert result["reason"] == (
+        f"the export folder has 1024 MiB free; backup {name} needs 0 MiB, and 1024 MiB must stay free"
+    )
+    assert asked == [mounts.exported]
+    assert list(mounts.exported.iterdir()) == []
+
+
+def test_an_export_that_leaves_exactly_the_reserve_free_goes_ahead(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    name = backup_of(mounts, 41, NOW)
+    needed = sum(file["size"] for file in json.loads((mounts.backups / name / backups.RECORD).read_text())["files"])
+    usage = namedtuple("usage", "total used free")
+    monkeypatch.setattr(shutil, "disk_usage", lambda path: usage(0, 0, backups.RESERVE + needed))
+    code, result = export(mounts, capsys)
+    assert code == 0 and result["backup"] == name
+    assert (exported(mounts) / "_main.41.ok").is_file()
+
+
 def test_a_damaged_backup_is_refused_and_leaves_the_export_folder_as_it_was(
     mounts: Mounts, capsys: pytest.CaptureFixture[str]
 ) -> None:

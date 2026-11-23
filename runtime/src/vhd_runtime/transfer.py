@@ -137,12 +137,7 @@ def import_save(mounts: Mounts, world: str, now: Callable[[], datetime]) -> Resu
         )
     staging = mounts.backups / f"{backups.IMPORT_STAGING}{secrets.token_hex(16)}"
     try:
-        free = shutil.disk_usage(mounts.backups).free
-        if free - total < backups.RESERVE:
-            raise Refused(
-                f"the backup folder has {free // backups.MIB} MiB free; the save needs {total // backups.MIB} MiB, "
-                f"and {backups.RESERVE // backups.MIB} MiB must stay free"
-            )
+        _room(mounts.backups, "the backup folder", "the save", total)
         staging.mkdir()
     except OSError as error:
         raise Refused(f"cannot write into the backup folder: {error.strerror or error}") from error
@@ -160,8 +155,8 @@ def import_save(mounts: Mounts, world: str, now: Callable[[], datetime]) -> Resu
 
 def export_backup(mounts: Mounts, world: str, backup: str | None, now: Callable[[], datetime]) -> Result:
     """Copy one of the world's backups, the newest unless one is named, into the export folder in
-    the layout the game reads, once its record names the world and each file is the one the record
-    lists. Raises Refused, removing what it wrote."""
+    the layout the game reads, once its record names the world, the export folder's disk has room
+    for it, and each file is the one the record lists. Raises Refused, removing what it wrote."""
     try:
         held = backups.names(mounts.backups, now())
     except OSError as error:
@@ -180,26 +175,15 @@ def export_backup(mounts: Mounts, world: str, backup: str | None, now: Callable[
     written_ns = record.get("written_ns")
     if type(written_ns) is not int or written_ns < 0:
         raise Refused(f"backup {name}'s record cannot be read")
-    layout = mounts.exported / "worlds_local"
-    target = layout / world
     try:
-        made_layout = not os.path.lexists(layout)
-        if not made_layout and not stat.S_ISDIR(layout.lstat().st_mode):
-            raise Refused("the export folder holds worlds_local, and it is no folder")
-        if os.path.lexists(target):
-            raise Refused(f"the export folder already holds worlds_local/{world}")
-        layout.mkdir(exist_ok=True)
-        target.mkdir()
+        _room(mounts.exported, "the export folder", f"backup {name}", sum(file["size"] for file in files))
     except OSError as error:
-        if made_layout:
-            shutil.rmtree(layout, ignore_errors=True)
-        raise Refused(f"cannot write into the export folder: {error.strerror or error}") from error
-    # What this export wrote, which a failure removes.
-    written = layout if made_layout else target
+        raise Refused(f"cannot read the export folder: {error.strerror or error}") from error
+    target, written = _export_target(mounts.exported, world)
     try:
         objects = restore.copy_checked(source, target, name, number, files)
         backups.sync(target)
-        backups.sync(layout)
+        backups.sync(target.parent)
     except restore.RestoreFailed as error:
         shutil.rmtree(written, ignore_errors=True)
         raise Refused(str(error)) from error
@@ -211,6 +195,38 @@ def export_backup(mounts: Mounts, world: str, backup: str | None, now: Callable[
         raise
     _log.info("exported backup %s of world %s, save %d, %d objects", name, world, number, objects)
     return _done("export", world, name, _summary(number, objects, written_ns))
+
+
+def _room(folder: Path, where: str, what: str, needed: int) -> None:
+    """Refuse a copy that would leave less than backups.RESERVE free on the folder's disk, which it
+    may share with the worlds and the database, before anything is written. Raises OSError when the
+    disk cannot be read."""
+    free = shutil.disk_usage(folder).free
+    if free - needed < backups.RESERVE:
+        raise Refused(
+            f"{where} has {free // backups.MIB} MiB free; {what} needs {needed // backups.MIB} MiB, "
+            f"and {backups.RESERVE // backups.MIB} MiB must stay free"
+        )
+
+
+def _export_target(exported: Path, world: str) -> tuple[Path, Path]:
+    """Make the world's save folder in the export folder, in the layout the game reads: the folder,
+    and what this export made, which a failure removes. Refuses a save folder already there."""
+    layout = exported / "worlds_local"
+    target = layout / world
+    made_layout = not os.path.lexists(layout)
+    try:
+        if not made_layout and not stat.S_ISDIR(layout.lstat().st_mode):
+            raise Refused("the export folder holds worlds_local, and it is no folder")
+        if os.path.lexists(target):
+            raise Refused(f"the export folder already holds worlds_local/{world}")
+        layout.mkdir(exist_ok=True)
+        target.mkdir()
+    except OSError as error:
+        if made_layout:
+            shutil.rmtree(layout, ignore_errors=True)
+        raise Refused(f"cannot write into the export folder: {error.strerror or error}") from error
+    return target, layout if made_layout else target
 
 
 def _save_folder(imported: Path, world: str) -> Path:
