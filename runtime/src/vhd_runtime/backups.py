@@ -535,7 +535,7 @@ def clear_partials(backups: Path) -> None:
 def clear_import_staging(backups: Path, now: datetime) -> None:
     """Remove the staging folders of imports a kill cut short: those unmodified for longer than
     IMPORT_STAGING_MAX_AGE_S that no import holds a lock on, or, where the lock cannot be taken, as
-    on a file system that cannot lock a folder, any whose files are each that old too. Any other may
+    on a file system that cannot lock a folder, any whose contents are each that old too. Any other may
     be an import still under way. Raises OSError only when the folder cannot be listed."""
     oldest = now.timestamp() - IMPORT_STAGING_MAX_AGE_S
     for entry in backups.iterdir():
