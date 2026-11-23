@@ -3,6 +3,8 @@
 What a runtime may have depends on what the change costs it (Change cost):
 - documents equal but for their number, backups and updates: always, since the runtime adopts
   them in place;
+- a restore, at once: the runtime keeps the backup it names from pruning, and holds it itself for
+  an empty world, unless vhd apply --disconnect-players confirms it;
 - anything else restarts its game, so it waits while players may be online (an empty world);
 - a new world, a new port or a new backups folder changes its container, so it waits for vhd apply.
 A data-layer service takes every generation at once: it faces no players, and adopts its
@@ -15,6 +17,7 @@ any restart, so it is also how a waiting change is applied now.
 """
 
 import logging
+import secrets
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,14 +25,26 @@ from typing import Any
 
 from vhd_control import manifest
 from vhd_control.manifest import InvalidSettings, Settings
-from vhd_control.reconcile import Child, Generation, reconcile
+from vhd_control.reconcile import Child, Generation, Restore, reconcile
 from vhd_control.schemas import Schemas
 from vhd_control.status import ServiceView, StatusBook, WorldView
-from vhd_control.store import State, Store
+from vhd_control.store import Busy, State, Store
 
 POLL_S = 2.0
 WAITS_FOR_APPLY = "vhd apply"
 WAITS_FOR_EMPTY = "an empty world"
+# How long an operator action waits for the volume's lock, which vhd apply may hold for a minute:
+# well within the control API's request time, so a request answers before its caller gives up.
+ACTION_LOCK_WAIT_S = 2.0
+
+
+class ActionRefused(Exception):
+    """An operator action the control plane will not take: an HTTP status and why. Nothing changed."""
+
+    def __init__(self, status: int, why: str) -> None:
+        super().__init__(why)
+        self.status = status
+
 
 _log = logging.getLogger(__name__)
 
@@ -65,6 +80,38 @@ class Daemon:
                 self._failing = None
             stop.wait(POLL_S)
 
+    def request_restore(self, world: str, backup: str) -> Restore:
+        """An operator action, validated here (G6): restore one of the world's backups, one its
+        runtime has reported, by handing it in the world's generation at the next pass. The same
+        request again, while that restore is under way, gets the same id. Raises ActionRefused,
+        having changed nothing."""
+        try:
+            with self.store.locked(ACTION_LOCK_WAIT_S):
+                state = self.store.load()
+                if state.generation is None:
+                    raise ActionRefused(503, "the install has no generation yet; run vhd apply")
+                cid = next((c for c, child in state.generation.children.items() if child.world == world), None)
+                if cid is None:
+                    raise ActionRefused(404, f"the install runs no world {world}")
+                report = self.book.view(world).report or {}
+                names = report.get("backups", {}).get("names")
+                if names is None:
+                    why = f"{world}'s runtime has not reported its backups since the control plane started; try again"
+                    raise ActionRefused(409, why)
+                if backup not in names:
+                    why = f"{world}'s runtime has not reported backup {backup}; vhd backups {world} lists its backups"
+                    raise ActionRefused(409, why)
+                held = state.restores.get(cid)
+                if held is not None and held.backup == backup and not _finished(held, report):
+                    return held
+                restore = Restore(secrets.token_hex(16), backup)
+                state.restores[cid] = restore
+                self.store.save(state)
+        except Busy:
+            raise ActionRefused(503, "vhd apply is running; try again once it is done") from None
+        _log.info("restore %s of %s's backup %s asked for", restore.id, world, backup)
+        return restore
+
     def worlds(self) -> frozenset[str]:
         """The worlds that may report status: the newest generation's, and any the manifest
         dropped whose containers vhd apply has not removed yet."""
@@ -80,13 +127,18 @@ class Daemon:
             self._worlds = _worlds(state)
             if self._settings is None:
                 return
+            changed = self._drop_finished(state)
             try:
-                generation = reconcile(self._settings, state.generation)
+                generation = reconcile(self._settings, state.generation, restores=state.restores)
             except InvalidSettings as error:
                 self._refused = self._log_refusal(str(error), self._refused)
                 return
             self._refused = None
-            changed = generation is not state.generation
+            # A world the manifest no longer has keeps no restore.
+            for cid in [cid for cid in state.restores if cid not in generation.children]:
+                del state.restores[cid]
+                changed = True
+            changed = changed or generation is not state.generation
             pending: dict[str, tuple[int, str]] = {}
             for cid, child in generation.children.items():
                 waits = self._waits_for(state, cid, child, generation.backups)
@@ -132,16 +184,9 @@ class Daemon:
         state = self.store.load()
         if state.generation is None:
             return None
-        worlds: dict[str, object] = {}
-        for cid, child in state.generation.children.items():
-            entry = self._entry(self.book.view(child.world))
-            handed = state.handed.get(cid)
-            if handed is not None:
-                entry["published"] = handed.number
-            pending = self._pending.get(cid)
-            if pending is not None:
-                entry["pending"] = {"generation": pending[0], "waits_for": pending[1]}
-            worlds[child.world] = entry
+        worlds: dict[str, object] = {
+            child.world: self._world_entry(state, cid, child) for cid, child in state.generation.children.items()
+        }
         for cid, handed in state.handed.items():
             if cid in state.generation.children:
                 continue
@@ -173,6 +218,25 @@ class Daemon:
             document["override"] = state.override
         return document
 
+    def _world_entry(self, state: State, cid: str, child: Child) -> dict[str, Any]:
+        entry = self._entry(self.book.view(child.world))
+        handed = state.handed.get(cid)
+        if handed is not None:
+            entry["published"] = handed.number
+        pending = self._pending.get(cid)
+        if pending is not None:
+            entry["pending"] = {"generation": pending[0], "waits_for": pending[1]}
+        held = state.restores.get(cid)
+        if held is not None:
+            entry["restore"] = {"id": held.id, "backup": held.backup}
+            report = entry.get("report", {})
+            acted = report.get("restore", {}).get("id")
+            # Handed, the restore waits in the runtime, which still runs an older generation.
+            waits = handed is not None and acted != held.id and report.get("generation", 0) < handed.number
+            if pending is None and handed is not None and waits:
+                entry["pending"] = {"generation": handed.number, "waits_for": WAITS_FOR_EMPTY}
+        return entry
+
     @staticmethod
     def _entry(view: WorldView | ServiceView) -> dict[str, Any]:
         """A child's state, with its last report and that report's age when there is one."""
@@ -186,6 +250,18 @@ class Daemon:
     def refused(self) -> str | None:
         """Why the newest manifest or secrets were refused, or None while they run."""
         return self._unreadable or self._refused
+
+    def _drop_finished(self, state: State) -> bool:
+        """Drop each restore its runtime reports finished: the generation then no longer carries it,
+        which restarts nothing (Child.restarts). Returns whether any went."""
+        finished = [
+            cid
+            for cid, held in state.restores.items()
+            if cid in state.handed and _finished(held, self.book.view(state.handed[cid].child.world).report or {})
+        ]
+        for cid in finished:
+            _log.info("restore %s finished; the generation drops it", state.restores.pop(cid).id)
+        return bool(finished)
 
     def _waits_for(self, state: State, child_id: str, child: Child, backups: str) -> str | None:
         handed = state.handed.get(child_id)
@@ -220,6 +296,12 @@ class Daemon:
         if reason != before:
             _log.error("refused: %s; the last good generation keeps running", reason)
         return reason
+
+
+def _finished(held: Restore, report: dict[str, Any]) -> bool:
+    """Whether the runtime's report says how this restore ended."""
+    acted = report.get("restore", {})
+    return bool(acted.get("id") == held.id and acted.get("outcome") != "restoring")
 
 
 def _worlds(state: State) -> frozenset[str]:
