@@ -41,7 +41,7 @@ def status(path: Path, schemas: Schemas) -> dict[str, Any]:
         connection.request("GET", "/status")
         response = connection.getresponse()
         body = response.read()
-    except OSError as error:
+    except (OSError, http.client.HTTPException) as error:
         raise Unreachable(f"the control plane does not answer on {path}: {error}") from error
     finally:
         connection.close()
@@ -58,20 +58,25 @@ def status(path: Path, schemas: Schemas) -> dict[str, Any]:
 
 
 def restore(path: Path, schemas: Schemas, world: str, backup: str) -> dict[str, Any]:
-    """POST /restore: the restore the control plane holds for the world, its reply held to its
+    """POST /restore: the restore the control plane keeps for the world, its reply held to its
     contract. Raises Refused when the control plane refused it with its reason, and Unreachable
-    when the answer never came, when the control plane may have taken it all the same, or is no
-    JSON answer that meets its contract."""
+    when it could not be sent, when the answer never came, when the control plane may have taken
+    it all the same, or when the answer is no JSON that meets its contract."""
     body = json.dumps({"contract": 1, "world": world, "backup": backup})
     connection = _UnixConnection(path)
+    try:
+        connection.connect()
+    except OSError as error:
+        connection.close()
+        raise Unreachable(f"the control plane does not answer on {path} ({error}); nothing was sent") from error
     try:
         connection.request("POST", "/restore", body, {"Content-Type": "application/json"})
         response = connection.getresponse()
         answer = response.read()
-    except OSError as error:
+    except (OSError, http.client.HTTPException) as error:
         raise Unreachable(
             f"the control plane did not answer on {path} ({error}); it may have taken the restore all the same: "
-            "vhd status shows any it holds"
+            "vhd status shows any it keeps"
         ) from error
     finally:
         connection.close()

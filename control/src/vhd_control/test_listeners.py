@@ -370,3 +370,18 @@ def test_a_restore_for_a_backup_the_runtime_has_not_reported_is_a_409(control: C
     status, reply = control.restore(backup="20261101T000000Z")
     assert status == http.client.CONFLICT
     assert reply["error"]
+
+
+def test_a_fault_taking_a_restore_is_answered_and_logged(
+    control: Control, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def fail(world: str, backup: str) -> None:
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(control.install.daemon, "request_restore", fail)
+    with caplog.at_level(logging.ERROR, logger="vhd_control.listeners"):
+        status, reply = control.restore()
+    assert status == http.client.INTERNAL_SERVER_ERROR
+    assert "changed nothing" in reply["error"]
+    assert any(record.exc_info for record in caplog.records)
+    assert control.install.store.load().restores == {}

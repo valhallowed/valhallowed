@@ -98,7 +98,7 @@ def test_a_reply_that_breaks_its_contract_is_unreachable(socket_path: Path, repl
 
 
 def test_no_control_plane_on_the_socket_is_unreachable(socket_path: Path) -> None:
-    with pytest.raises(client.Unreachable, match="did not answer"):
+    with pytest.raises(client.Unreachable, match="nothing was sent"):
         client.restore(socket_path, SCHEMAS, "Meadowfold", BACKUP)
 
 
@@ -108,6 +108,22 @@ def test_a_connection_closed_unanswered_says_the_restore_may_have_been_taken(soc
             self.request.recv(4096)
 
     server = _Server(str(socket_path), Hangup)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        with pytest.raises(client.Unreachable, match="may have taken the restore"):
+            client.restore(socket_path, SCHEMAS, "Meadowfold", BACKUP)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_an_answer_that_is_no_http_says_the_restore_may_have_been_taken(socket_path: Path) -> None:
+    class Garbage(socketserver.BaseRequestHandler):
+        def handle(self) -> None:
+            self.request.recv(4096)
+            self.request.sendall(b"nonsense\r\n\r\n")
+
+    server = _Server(str(socket_path), Garbage)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         with pytest.raises(client.Unreachable, match="may have taken the restore"):

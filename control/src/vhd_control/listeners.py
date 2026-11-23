@@ -249,6 +249,14 @@ def status_server(
 class _UnixServer(socketserver.ThreadingUnixStreamServer):
     daemon_threads = True
 
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        error = sys.exc_info()[1]
+        # A caller that hangs up or runs out of time is routine; anything else is a fault here.
+        if isinstance(error, OSError):
+            _log.debug("control request ended: %s", error)
+        else:
+            _log.warning("control request failed", exc_info=True)
+
 
 def control_server(daemon: Daemon, path: Path) -> _UnixServer:
     class Handler(_Handler):
@@ -277,11 +285,18 @@ def control_server(daemon: Daemon, path: Path) -> _UnixServer:
                 return
             request = cast(dict[str, str], document)
             try:
-                held = daemon.request_restore(request["world"], request["backup"])
+                kept = daemon.request_restore(request["world"], request["backup"])
             except ActionRefused as refused:
                 self.reply(HTTPStatus(refused.status), {"error": str(refused)})
                 return
-            reply = {"contract": 1, "id": held.id, "world": request["world"], "backup": held.backup}
+            except Exception:
+                # A fault, not a refusal: answer it all the same, so vhd never reads the silence as a
+                # restore that may have been taken. The state is written last and whole, so it is unchanged.
+                _log.exception("a restore of %s's backup %s failed", request["world"], request["backup"])
+                why = "the control plane failed to take the restore, and changed nothing; its log says why"
+                self.reply(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": why})
+                return
+            reply = {"contract": 1, "id": kept.id, "world": request["world"], "backup": kept.backup}
             self.reply(HTTPStatus.ACCEPTED, reply)
 
     path.unlink(missing_ok=True)
