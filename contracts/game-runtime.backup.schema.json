@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "A backup's record",
+  "description": "The backup.json in each backup's folder (Game runtimes, Backups): the save the backup holds and each of its files, so a restore or an export can check the files before it uses them. A game runtime writes it with each backup it takes, and vhd import writes it, through the game runtime's image, for a save it takes. It is written whole and synced before its folder takes a backup's name, so a folder named as a backup always has one. A reader takes only the keys it needs, so a key a later release adds does not break it; a record from before this contract has no source, and counts as the runtime's.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["world", "save", "written_ns", "objects", "taken", "files"],
+  "properties": {
+    "world": {
+      "description": "The world's save name. A restore refuses a backup of another world.",
+      "$ref": "../schema/manifest.schema.json#/$defs/save_name"
+    },
+    "save": {
+      "description": "The save's number, from its _main.<n>.ok (Game facts). Numbers wrap and repeat.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "written_ns": {
+      "description": "When the game completed the save: its .ok's modification time, in nanoseconds of Unix time. With the number, it names the save a backup holds, so a runtime never backs the same save up twice.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "objects": {
+      "description": "The objects the save holds, as its .chunks file counts them. World truth judges a restored save against it.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "taken": {
+      "description": "When the backup was taken, in UTC: the time its folder is named for.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "source": {
+      "description": "Where the backup came from. runtime: the world's game runtime took it from the world's save. import: vhd import took it from a save the server manager put in the install folder. Absent in a record from before this contract, which counts as runtime.",
+      "enum": ["runtime", "import"]
+    },
+    "files": {
+      "description": "Every file of the save, each once: the save's own four and its chunks, named as in the world's save folder. A restore copies exactly these and checks each one's size and SHA-256.",
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "size", "sha256"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^(_main\\.[0-9]+\\.(chunks|db2|fwl2|ok)|[0-9a-f]{2}_[0-9a-f]{2}__[0-9]+_[0-9]+\\.chunk)$"
+          },
+          "size": { "type": "integer", "minimum": 0 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "An import's or an export's result",
+  "description": "I0: the one JSON document the game runtime's image prints, as its last line on standard output, when vhd runs it to import or export a world's save in a one-off container (Game runtimes, Restore, import and export share one path). vhd validates it against this contract; output that breaks it, or no output, counts as refused. done: an import's save is a backup of the world, or an export's save is in the install folder. refused: nothing was kept, and reason says why.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "action", "world", "outcome"],
+  "properties": {
+    "contract": {
+      "description": "The version of this contract.",
+      "const": 1
+    },
+    "action": {
+      "description": "import: a save in the install folder became a backup of the world. export: a backup of the world was copied into the install folder in the layout the game reads.",
+      "enum": ["import", "export"]
+    },
+    "world": {
+      "description": "The world's save name.",
+      "$ref": "../schema/manifest.schema.json#/$defs/save_name"
+    },
+    "outcome": {
+      "enum": ["done", "refused"]
+    },
+    "reason": {
+      "description": "Why it was refused, in one line of printable text, which vhd shows to the server manager.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "backup": {
+      "description": "The backup it made (import) or copied (export).",
+      "$ref": "game-runtime.generation.schema.json#/properties/restore/properties/backup"
+    },
+    "save": {
+      "description": "The save that backup holds, so the server manager sees which save was taken.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "objects", "written"],
+      "properties": {
+        "number": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "objects": { "type": "integer", "minimum": 0 },
+        "written": {
+          "description": "When the game completed the save, in UTC.",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        }
+      }
+    }
+  },
+  "if": { "properties": { "outcome": { "const": "done" } } },
+  "then": { "required": ["backup", "save"], "not": { "required": ["reason"] } },
+  "else": { "required": ["reason"], "not": { "anyOf": [{ "required": ["backup"] }, { "required": ["save"] }] } }
+}
