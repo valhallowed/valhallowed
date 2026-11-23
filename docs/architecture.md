@@ -275,16 +275,17 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   `contracts/game-runtime.import-export.schema.json`) is the one line `vhd`
   reads. A world that has never started loads an imported save at its first
   start, so no empty world is made first, and a world with no save whose restore
-  did not end done is held rather than started empty, across restarts, until
-  another restore is asked for or its data volume is removed, which also removes
-  its installed server, so its next start downloads it again. An export copies a
-  backup, the newest by default, into the install folder in the layout the game
-  reads, after checking it against its record. A restore or an import waits as a
-  pending change while its world has players online, like a game-server restart,
-  unless the server manager confirms it; a restore waits in its runtime (Restart
-  gating is shared), and `vhd apply` counts one its runtime has not acted on as
-  a restart, so an apply while it waits for an empty world asks for
-  `--disconnect-players`, which confirms it.
+  did not end done, or whose newest restore's record cannot be read, is held
+  rather than started empty, across restarts, until another restore is asked for
+  or its data volume is removed, which also removes its installed server, so its
+  next start downloads it again. An export copies a backup, the newest by
+  default, into the install folder in the layout the game reads, after checking
+  it against its record. A restore or an import waits as a pending change while
+  its world has players online, like a game-server restart, unless the server
+  manager confirms it; a restore waits in its runtime (Restart gating is
+  shared), and `vhd apply` counts one its runtime has not acted on as a restart,
+  so an apply while it waits for an empty world asks for `--disconnect-players`,
+  which confirms it.
 - **Updates.** Under the default update policy, a runtime compares its
   installed game build with Steam's newest public build every 15 minutes, and
   restarts its world to update once no players are online, by its own final
