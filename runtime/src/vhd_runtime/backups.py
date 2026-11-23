@@ -21,10 +21,12 @@ loop, through tend.
 
 import errno
 import hashlib
+import io
 import json
 import os
 import re
 import shutil
+import stat
 import struct
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -65,7 +67,7 @@ class BackupFailed(Exception):
     """No backup was taken. The message says why, in one line."""
 
 
-class _Gone(Exception):
+class Gone(Exception):
     """A file of the save went while it was copied: the next save completed."""
 
 
@@ -92,11 +94,13 @@ class Backup:
 
 @dataclass(frozen=True)
 class Place:
-    """A world's backups: where its saves are, where its backups go, and its save name."""
+    """A world's backups: where its saves are, where its backups go, its save name, and the backup
+    a restore asks for, which no turn prunes."""
 
     saves: Path
     backups: Path
     world: str
+    spare: str | None = None
 
 
 @dataclass(frozen=True)
@@ -119,10 +123,10 @@ def world_folder(saves: Path, world: str) -> Path:
 
 def tend(place: Place, settings: Settings, now: datetime, last: Saved | None, *, starting: bool = False) -> Tended:
     """One turn, off the supervisor's loop: back up the world's newest complete save unless the
-    newest backup holds it, then keep what the settings say. Starting, it first clears copies a
-    stop cut short, and takes the save the newest backup holds from its record, so a save the
-    game stopped with that a stop never backed up is backed up now. Raises OSError only when the
-    folder cannot be listed."""
+    newest backup holds it, then keep what the settings say, and the backup a restore asks for.
+    Starting, it first clears copies a stop cut short, and takes the save the newest backup holds
+    from its record, so a save the game stopped with that a stop never backed up is backed up now.
+    Raises OSError only when the folder cannot be listed."""
     if starting:
         clear_partials(place.backups)
         held = names(place.backups, now)
@@ -133,7 +137,7 @@ def tend(place: Place, settings: Settings, now: datetime, last: Saved | None, *,
     except (BackupFailed, OSError) as error:
         backup, failure, take_failed = None, str(error), True
     newest = backup.saved if backup is not None else last
-    kept, pruned = prune(place.backups, settings.keep, settings.keep_daily, now)
+    kept, pruned = prune(place.backups, settings.keep, settings.keep_daily, now, place.spare)
     return Tended(backup, kept, newest, failure or pruned or _ahead(place.backups, now), take_failed)
 
 
@@ -185,7 +189,7 @@ def take(folder: Path, backups: Path, world: str, now: datetime, last: Saved | N
             return None
         try:
             return _copy(folder, save, backups, world, now)
-        except _Gone:
+        except Gone:
             continue
     raise BackupFailed(failure)
 
@@ -217,7 +221,7 @@ def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) ->
         _room(folder, save, backups)
         shutil.rmtree(partial, ignore_errors=True)
         partial.mkdir()
-        files = [_copy_file(folder / file, partial / file) for file in save.files]
+        files = [copy_file(folder / file, partial / file) for file in save.files]
         record = {
             "world": world,
             "save": save.number,
@@ -230,9 +234,9 @@ def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) ->
             writer.write(json.dumps(record, indent=2) + "\n")
             writer.flush()
             os.fsync(writer.fileno())
-        _sync(partial)
+        sync(partial)
         partial.rename(backups / name)
-    except _Gone:
+    except Gone:
         shutil.rmtree(partial, ignore_errors=True)
         raise
     except OSError as error:
@@ -240,7 +244,7 @@ def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) ->
         raise BackupFailed(f"cannot write backup {name} into {backups}: {error.strerror or error}") from error
     # The backup is whole and in place; a sync that fails now loses at most its name in a power cut.
     try:
-        _sync(backups)
+        sync(backups)
     except OSError:
         pass
     return Backup(name=name, saved=save.saved)
@@ -260,7 +264,7 @@ def _room(folder: Path, save: Save, backups: Path) -> None:
     try:
         needed = sum((folder / file).stat().st_size for file in save.files)
     except FileNotFoundError as error:
-        raise _Gone(error.filename) from error
+        raise Gone(error.filename) from error
     free = shutil.disk_usage(backups).free
     if free - needed < RESERVE:
         raise BackupFailed(
@@ -269,26 +273,44 @@ def _room(folder: Path, save: Save, backups: Path) -> None:
         )
 
 
-def _copy_file(source: Path, target: Path) -> dict[str, object]:
-    """Copy one file of the save to disk, and say its size and SHA-256 for the record."""
+def copy_file(source: Path, target: Path, limit: int | None = None) -> dict[str, object]:
+    """Copy one file of the save to disk, and say its size and SHA-256 for the record. With a limit,
+    as for a file a backup's record lists, it copies only a regular file, never through a link,
+    and no more than limit bytes, raising OSError otherwise."""
     try:
-        reader = source.open("rb")
+        reader = open_regular(source) if limit is not None else source.open("rb")
     except FileNotFoundError as error:
-        raise _Gone(source.name) from error
+        raise Gone(source.name) from error
     digest = hashlib.sha256()
     size = 0
     # An open file reads whole though the game removes it meanwhile.
     with reader, target.open("xb") as writer:
         while block := reader.read(COPY_BLOCK):
+            size += len(block)
+            if limit is not None and size > limit:
+                raise OSError(errno.EFBIG, f"{source.name} is larger than its record says")
             digest.update(block)
             writer.write(block)
-            size += len(block)
         writer.flush()
         os.fsync(writer.fileno())
     return {"name": target.name, "size": size, "sha256": digest.hexdigest()}
 
 
-def _sync(directory: Path) -> None:
+def open_regular(source: Path) -> io.BufferedReader:
+    """A regular file, opened without following a link, and without waiting on a pipe."""
+    try:
+        descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            raise OSError(errno.EINVAL, f"{source.name} is a link") from error
+        raise
+    if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+        os.close(descriptor)
+        raise OSError(errno.EINVAL, f"{source.name} is not a regular file")
+    return os.fdopen(descriptor, "rb")
+
+
+def sync(directory: Path) -> None:
     """Sync a directory's entries, so a rename into it survives a power cut. A file system that
     cannot sync a directory, as some network mounts cannot, costs that and nothing else."""
     descriptor = os.open(directory, os.O_RDONLY)
@@ -306,7 +328,7 @@ def taken(name: str) -> datetime:
     return datetime.strptime(name, NAME_FORMAT).replace(tzinfo=UTC)
 
 
-def _is_name(name: str) -> bool:
+def is_name(name: str) -> bool:
     if not _NAME.match(name):
         return False
     try:
@@ -324,7 +346,7 @@ def names(backups: Path, now: datetime) -> list[str]:
         (
             entry.name
             for entry in backups.iterdir()
-            if _is_name(entry.name) and taken(entry.name) <= now + AHEAD and (entry / RECORD).is_file()
+            if is_name(entry.name) and taken(entry.name) <= now + AHEAD and (entry / RECORD).is_file()
         ),
         reverse=True,
     )
@@ -332,9 +354,7 @@ def names(backups: Path, now: datetime) -> list[str]:
 
 def _ahead(backups: Path, now: datetime) -> str | None:
     """Why a folder named for a time well after now is left alone, if one is."""
-    ahead = sorted(
-        entry.name for entry in backups.iterdir() if _is_name(entry.name) and taken(entry.name) > now + AHEAD
-    )
+    ahead = sorted(entry.name for entry in backups.iterdir() if is_name(entry.name) and taken(entry.name) > now + AHEAD)
     if not ahead:
         return None
     return f"{backups} holds {', '.join(ahead[:3])}, named for after now, which the runtime leaves alone as no backup"
@@ -354,13 +374,18 @@ def last_saved(backups: Path, name: str) -> Saved | None:
     return save, written_ns
 
 
-def prune(backups: Path, keep: int, keep_daily: int, now: datetime) -> tuple[list[str], str | None]:
+def prune(
+    backups: Path, keep: int, keep_daily: int, now: datetime, spare: str | None = None
+) -> tuple[list[str], str | None]:
     """Remove the backups the settings no longer keep, oldest first: the newest keep stay, and the
     newest of each of the newest keep_daily days, in UTC, that hold one; the newest backup is
-    always among them. Each is renamed out of the backups first, so one cut short is never left as
-    a backup. Returns the backups left, newest first, and why one could not be removed."""
+    always among them, and so is spare, the backup a restore asks for. Each is renamed out of the
+    backups first, so one cut short is never left as a backup. Returns the backups left, newest
+    first, and why one could not be removed."""
     held = names(backups, now)
     kept = set(held[:keep])
+    if spare in held:
+        kept.add(spare)
     days: dict[str, str] = {}
     for name in held:
         days.setdefault(name[:8], name)

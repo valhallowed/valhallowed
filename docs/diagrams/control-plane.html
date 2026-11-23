@@ -338,8 +338,8 @@
       { f: 'cp', t: 'cp', l: 'keep it as a backup of Meadowfold', d: 'From here an import restores like any backup.' },
       { f: 'gr', t: 'cp', l: 'status: 0 players', dash: true, d: 'Replacing a world waits for it to be empty, like a game-server restart, unless the server manager confirms.' },
       { f: 'cp', t: 'gr', l: 'restore: the imported save', d: 'Carried in the world’s generation.' },
-      { f: 'gr', t: 'gr', l: 'hold, back up, validate, replace', d: 'The runtime stops the game with a save and keeps its container up. It backs that save up, checks the imported save again as the receiving side, and puts it in place.' },
-      { f: 'gr', t: 'cp', l: 'status: world loaded', dash: true, d: 'World truth judges the load. If it fails, the runtime puts back the save it backed up, and status says why.' },
+      { f: 'gr', t: 'gr', l: 'hold, back up, validate, replace', d: 'The runtime stops the game with a save, which the stop backs up. At its next start, before the game launches, it keeps that save aside, checks the imported save again as the receiving side, and swaps it in.' },
+      { f: 'gr', t: 'cp', l: 'status: world loaded', dash: true, d: 'World truth judges the load against the backup’s object count. If it loads empty, the runtime puts back the save it set aside, and status says why.' },
       { f: 'cp', t: 'ui', l: 'imported', dash: true, d: 'The world list shows the world and its object count.' }
     ] },
     update: { label: 'Game update', cap: 'A world updates once it is empty and backs its save up on the way. If it does not load, it is stopped before it can save over the real one.', steps: [

@@ -132,7 +132,7 @@ def test_a_copy_that_loses_a_file_to_the_next_save_takes_that_save_instead(
     store.mkdir()
     old = {"chunk": 1, "size": 64, "version": 1, "objects": 5}
     write_save(folder, 7, [old], seconds_ago=60)
-    copy_file = backups._copy_file
+    copy_file = backups.copy_file
     saved = False
 
     def next_save_completes(source: Path, target: Path) -> dict[str, object]:
@@ -144,7 +144,7 @@ def test_a_copy_that_loses_a_file_to_the_next_save_takes_that_save_instead(
             (folder / chunk_name(old)).unlink()
         return copy_file(source, target)
 
-    monkeypatch.setattr(backups, "_copy_file", next_save_completes)
+    monkeypatch.setattr(backups, "copy_file", next_save_completes)
     backup = take(folder, store, "Meadowfold", NOW)
     assert backup is not None and (backup.name, backup.saved[0]) == (NOW_NAME, 8)
     assert [p.name for p in store.iterdir()] == [NOW_NAME]
@@ -158,9 +158,9 @@ def test_a_world_saving_through_every_copy_fails_and_keeps_no_partial_copy(
     write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
 
     def gone(source: Path, target: Path) -> dict[str, object]:
-        raise backups._Gone(source.name)
+        raise backups.Gone(source.name)
 
-    monkeypatch.setattr(backups, "_copy_file", gone)
+    monkeypatch.setattr(backups, "copy_file", gone)
     with pytest.raises(BackupFailed, match="the world saved again during each copy"):
         take(folder, store, "Meadowfold", NOW)
     assert list(store.iterdir()) == []
@@ -217,6 +217,14 @@ def test_prune_never_removes_the_newest(tmp_path: Path) -> None:
     store.mkdir()
     held(store, NOW - timedelta(hours=1), NOW)
     assert backups.prune(store, keep=1, keep_daily=0, now=NOW) == ([NOW_NAME], None)
+
+
+def test_prune_spares_the_backup_a_restore_asks_for(tmp_path: Path) -> None:
+    store = tmp_path / "backups"
+    store.mkdir()
+    held(store, NOW - timedelta(hours=2), NOW - timedelta(hours=1), NOW)
+    left, _ = backups.prune(store, keep=1, keep_daily=0, now=NOW, spare="20261118T184012Z")
+    assert left == [NOW_NAME, "20261118T184012Z"]
 
 
 def test_a_folder_without_its_record_is_no_backup(tmp_path: Path) -> None:
@@ -288,7 +296,7 @@ def test_a_file_the_next_save_removes_before_the_room_is_reckoned_starts_the_cop
     save = backups.newest_complete(folder)
     assert save is not None
     (folder / "00_01__64_1.chunk").unlink()
-    with pytest.raises(backups._Gone):
+    with pytest.raises(backups.Gone):
         backups._room(folder, save, tmp_path)
 
 

@@ -7,7 +7,7 @@ import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict
 from urllib.request import Request, urlopen
 
 REPORT_TIMEOUT_S = 5
@@ -32,6 +32,18 @@ class Backups(TypedDict):
     failure: NotRequired[str]
 
 
+# How a restore stands, as the status contract names it.
+RestoreOutcome = Literal["restoring", "done", "failed", "rolled-back"]
+
+
+class Restore(TypedDict):
+    """The newest restore the runtime acted on: its id, its outcome, and why."""
+
+    id: str
+    outcome: RestoreOutcome
+    reason: NotRequired[str]
+
+
 class RuntimeStatus(TypedDict):
     """One status report, as contracts/game-runtime.status.schema.json defines it."""
 
@@ -44,6 +56,7 @@ class RuntimeStatus(TypedDict):
     objects: NotRequired[int]
     players: NotRequired[int]
     backups: NotRequired[Backups]
+    restore: NotRequired[Restore]
 
 
 Post = Callable[[str, bytes, float], None]
@@ -90,7 +103,9 @@ class Reporter:
         if self._url is None:
             return
         try:
-            self._post(self._url, json.dumps(status).encode(), REPORT_TIMEOUT_S)
+            # UTF-8, not escapes: a reason's character takes at most 4 bytes, not 12, which keeps the
+            # largest report within the status listener's bound.
+            self._post(self._url, json.dumps(status, ensure_ascii=False).encode(), REPORT_TIMEOUT_S)
         except (OSError, http.client.HTTPException) as error:
             if not self._failing:
                 _log.warning("cannot report status to %s: %s", self._url, error)

@@ -46,6 +46,11 @@ class _Updates(TypedDict):
     every_s: int
 
 
+class _Restore(TypedDict):
+    id: str
+    backup: str
+
+
 class _GenerationDocument(TypedDict):
     contract: int
     generation: int
@@ -55,6 +60,7 @@ class _GenerationDocument(TypedDict):
     updates: _Updates
     status_url: NotRequired[str]
     disconnect_players: NotRequired[bool]
+    restore: NotRequired[_Restore]
 
 
 class _SecretsDocument(TypedDict):
@@ -81,6 +87,14 @@ class Updates:
 
 
 @dataclass(frozen=True)
+class Restore:
+    """A restore of one of the world's backups, done once for its id."""
+
+    id: str
+    backup: str
+
+
+@dataclass(frozen=True)
 class Generation:
     number: int
     world: str
@@ -96,16 +110,20 @@ class Generation:
     # The server manager confirmed restarting this world with players online, for this
     # generation alone. It is no setting: it never makes two generations differ.
     disconnect_players: bool = False
+    # A restore the runtime does once for its id, at a start; whether it costs a restart depends on
+    # whether that id is done, which only the runtime knows, so it never makes two generations differ.
+    restore: Restore | None = None
 
     def same_settings(self, other: "Generation") -> bool:
         """Whether other differs from this generation in nothing but its number, its confirmation,
-        and the backups and updates the runtime adopts in place."""
+        its restore, and the backups and updates the runtime adopts in place."""
         adopted = replace(
             other,
             number=self.number,
             disconnect_players=self.disconnect_players,
             backups=self.backups,
             updates=self.updates,
+            restore=self.restore,
         )
         return adopted == self
 
@@ -153,6 +171,7 @@ class Reader:
             backups=Backups(**generation["backups"]),
             updates=Updates(**generation["updates"]),
             disconnect_players=generation.get("disconnect_players", False),
+            restore=Restore(**generation["restore"]) if "restore" in generation else None,
         )
         self._read = stamp, read
         return read
