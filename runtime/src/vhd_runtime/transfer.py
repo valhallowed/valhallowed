@@ -14,7 +14,9 @@ to standard error.
     /backups                        the world's own folder of the install's backups
     /backups/.import-<id>/          an import under way, which holds a lock on it until it is named
                                     as a backup, or one a kill cut short; a start of the world's
-                                    runtime, and the next import, remove it once it is old and unheld
+                                    runtime, and the next import, remove it once it is old and unheld,
+                                    or, where no lock can be taken, once nothing in it changed for
+                                    as long
     /export                         a folder with no worlds_local/<world> yet, which an export
                                     copies the backup into, as worlds_local/<world>/
 """
@@ -134,7 +136,7 @@ def run(action: Action, world: str, contracts: Path, act: Callable[[], Result]) 
             signal.signal(signum, _stop)
         try:
             contract = generation.validator(contracts / RESULT_CONTRACT)
-        except (OSError, ValueError) as error:
+        except Exception as error:
             _log.exception("%s of %s cannot read its result's contract", action, world)
             result = _refused(action, world, f"{action} cannot read its result's contract: {error}")
             print(json.dumps(result), flush=True)
@@ -151,7 +153,9 @@ def run(action: Action, world: str, contracts: Path, act: Callable[[], Result]) 
             signal.signal(signum, signal.SIG_IGN)
         signal.pthread_sigmask(signal.SIG_SETMASK, mask)
         for signum, handler in previous.items():
-            signal.signal(signum, handler)
+            # None: a handler not set from Python, which Python cannot set back.
+            if handler is not None:
+                signal.signal(signum, handler)
     return 0 if result["outcome"] == "done" else 1
 
 

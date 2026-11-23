@@ -811,8 +811,8 @@ def test_a_stop_before_an_export_makes_the_save_folder_stops_it_at_the_copy_and_
     assert list(mounts.exported.iterdir()) == []
 
 
-def test_a_stop_while_the_results_contract_loads_waits_for_the_result(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+def test_a_stop_while_the_results_contract_loads_is_held_and_stops_the_import_at_its_copy(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     class Unheld(Exception):
         pass
@@ -820,20 +820,34 @@ def test_a_stop_while_the_results_contract_loads_waits_for_the_result(
     def unheld(signum: int, frame: object) -> None:
         raise Unheld
 
+    put_save(mounts)
     load = generation.validator
 
     def stopped_while_loading(path: Path) -> Any:
-        signal.raise_signal(signal.SIGINT)
+        if path.name == transfer.RESULT_CONTRACT:
+            signal.raise_signal(signal.SIGINT)
         return load(path)
 
     previous = signal.signal(signal.SIGINT, unheld)
     try:
         monkeypatch.setattr(generation, "validator", stopped_while_loading)
-        code = transfer.run("import", WORLD, CONTRACTS, lambda: transfer._refused("import", WORLD, "no save"))
+        code, result = act(mounts, capsys)
         assert signal.getsignal(signal.SIGINT) is unheld
     finally:
         signal.signal(signal.SIGINT, previous)
-    assert (code, result_of(capsys)["reason"]) == (1, "no save")
+    assert (code, result["reason"]) == (1, "import stopped by SIGINT before it finished")
+    assert kept(mounts) == []
+
+
+def test_a_results_contract_that_is_no_schema_is_refused_with_a_result_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    contracts = tmp_path / "contracts"
+    contracts.mkdir()
+    (contracts / transfer.RESULT_CONTRACT).write_text("[]")
+    code = transfer.run("import", WORLD, contracts, lambda: transfer._refused("import", WORLD, "never"))
+    result = result_of(capsys)
+    assert code == 1 and result["reason"].startswith("import cannot read its result's contract: ")
 
 
 def test_an_interrupt_still_ends_with_a_result_line(capsys: pytest.CaptureFixture[str]) -> None:
