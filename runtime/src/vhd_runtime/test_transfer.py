@@ -138,6 +138,10 @@ def test_an_import_comes_newest_after_the_runtimes_own_backups(
             lambda root: [(root / f"{WORLD}.db").write_bytes(b"x"), (root / f"{WORLD}.fwl").write_bytes(b"x")],
             "the import folder holds Meadowfold.db, a pre-1.0 save; an import takes a 1.0+ save only",
         ),
+        (
+            lambda root: [(root / WORLD).mkdir(), (root / "Thumbs.db").write_bytes(b"x")],
+            "the import folder holds Meadowfold, Thumbs.db; it must hold exactly one entry, the save folder Meadowfold",
+        ),
     ],
 )
 def test_an_import_folder_that_is_not_exactly_the_worlds_save_folder_is_refused(
@@ -170,6 +174,9 @@ def test_a_save_file_that_is_a_link_is_refused_without_reading_through_it(
         (lambda folder: os.mkfifo(folder / "_main.40.db2"), "the save holds _main.40.db2 as a special file, and an"),
         (lambda folder: (folder / "notes.txt").write_text("x"), "the save holds notes.txt, which is no file of a save"),
         (lambda folder: (folder / "Meadowfold.db").write_text("x"), "the save holds Meadowfold.db, a pre-1.0 save's"),
+        (lambda folder: (folder / "Meadowfold.fwl").write_text("x"), "the save holds Meadowfold.fwl, a pre-1.0 save's"),
+        (lambda folder: (folder / "Thumbs.db").write_text("x"), "the save holds Thumbs.db, which is no file of a save"),
+        (lambda folder: (folder / "Ashwake.fwl").write_text("x"), "the save holds Ashwake.fwl, which is no file of a"),
     ],
 )
 def test_a_save_folder_holding_anything_but_a_saves_files_is_refused(

@@ -57,7 +57,7 @@ REASON_MAX = 500
 _SAVE_NAME = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9 _-]{0,62}[A-Za-z0-9])?")
 # What vhd, or Docker on its behalf, sends to stop an action under way.
 STOP_SIGNALS = (signal.SIGTERM, signal.SIGINT)
-# A pre-1.0 save's files, the format an import refuses (Game facts).
+# A pre-1.0 save's files, <world>.db and <world>.fwl, the format an import refuses (Game facts).
 _PRE_1_0 = (".db", ".fwl")
 
 Action = Literal["import", "export"]
@@ -295,7 +295,7 @@ def _save_folder(imported: Path, world: str) -> Path:
     """The one entry in the import folder, once it is a folder named for the world, not a link."""
     entries = sorted(imported.iterdir())
     for entry in entries:
-        if entry.name.endswith(_PRE_1_0):
+        if _is_pre_1_0(entry.name, world):
             raise Refused(f"the import folder holds {entry.name}, a pre-1.0 save; an import takes a 1.0+ save only")
     if len(entries) != 1:
         held = ", ".join(entry.name for entry in entries[:3]) or "nothing"
@@ -309,6 +309,10 @@ def _save_folder(imported: Path, world: str) -> Path:
     return folder
 
 
+def _is_pre_1_0(name: str, world: str) -> bool:
+    return name in (f"{world}{suffix}" for suffix in _PRE_1_0)
+
+
 def _save_files(folder: Path) -> dict[str, int]:
     """Each file in the save folder and its size, once each is a regular file a save is made of.
     Never follows a link."""
@@ -319,7 +323,7 @@ def _save_files(folder: Path) -> dict[str, int]:
             raise Refused(
                 f"the save holds {entry.name} as {_kind(mode.st_mode)}, and an import takes regular files only"
             )
-        if entry.name.endswith(_PRE_1_0):
+        if _is_pre_1_0(entry.name, folder.name):
             raise Refused(f"the save holds {entry.name}, a pre-1.0 save's file; an import takes a 1.0+ save only")
         if not restore.SAVE_FILE.fullmatch(entry.name):
             raise Refused(f"the save holds {entry.name}, which is no file of a save")
