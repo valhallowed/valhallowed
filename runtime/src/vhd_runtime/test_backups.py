@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from vhd_runtime import backups
+from vhd_runtime import backups, generation, transfer
 from vhd_runtime.backups import BackupFailed, Place, take
 from vhd_runtime.generation import Backups as Settings
 from vhd_runtime.generation import validator
@@ -329,6 +329,25 @@ def test_a_backup_says_when_it_was_taken_and_which_save_it_holds(tmp_path: Path)
 )
 def test_a_saves_time_must_be_one_a_result_can_name(number: int, written_ns: int, breach: str | None) -> None:
     assert backups.save_breach(number, written_ns) == breach
+
+
+def test_the_last_time_a_result_can_name_keeps_the_results_contract() -> None:
+    summary = transfer._summary(7, 0, (backups.WRITTEN_S_MAX + 1) * 1_000_000_000 - 1)
+    assert summary["written"] == "9999-12-31T23:59:59Z"
+    result = transfer._done("import", "Meadowfold", NOW_NAME, summary)
+    assert generation.breach(generation.validator(CONTRACTS / transfer.RESULT_CONTRACT), result) is None
+
+
+def test_a_backup_turn_refuses_a_save_whose_time_no_result_can_name_before_any_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = tmp_path / "backups"
+    store.mkdir()
+    late = backups.Save(number=7, written_ns=(backups.WRITTEN_S_MAX + 1) * 1_000_000_000, objects=5, files=())
+    monkeypatch.setattr(backups, "newest_complete", lambda folder: late)
+    monkeypatch.setattr(backups, "copy_file", lambda *args, **kwargs: pytest.fail("copied"))
+    with pytest.raises(BackupFailed, match=r"^the save's _main\.7\.ok was last modified after 9999, which no save is$"):
+        take(Place(tmp_path / "world", store, "Meadowfold", RECORD), NOW)
 
 
 def test_the_bounds_on_a_saves_number_and_time_are_the_contracts() -> None:

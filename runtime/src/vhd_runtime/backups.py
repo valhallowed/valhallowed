@@ -214,7 +214,8 @@ def take(place: Place, now: datetime, last: Saved | None = None) -> Backup | Non
     the next save, or finds the save not whole, starts again from the newest complete save.
     Raises BackupFailed once it has tried ATTEMPTS times, when the folder lacks the room, or when
     the backup's record would break its contract (before any copy when the save's number or .ok
-    time already would), and OSError when the save folder cannot be read."""
+    time already would, or no result could name that time), and OSError when the save folder
+    cannot be read."""
     failure = "the world saved again during each copy"
     for _ in range(ATTEMPTS):
         try:
@@ -224,7 +225,8 @@ def take(place: Place, now: datetime, last: Saved | None = None) -> Backup | Non
             continue
         if save is None or save.saved == last:
             return None
-        # Refused before the copy: its record would break the contract, on every turn.
+        # Refused before the copy, which would fail the same way on every turn: its record would
+        # break the contract, or no result could name its time.
         breach = save_breach(save.number, save.written_ns)
         if breach is not None:
             raise BackupFailed(breach)
