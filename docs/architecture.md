@@ -143,15 +143,15 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   import and export, backups and logs. The CLI runs from the control plane's
   image, so a host needs only Docker. The control API answers on a Unix socket
   in a volume only the control plane and `vhd` mount, so no child and no network
-  reaches it. It serves status (`GET /status`) and its first operator action,
+  reaches it. It serves status (`GET /status`) and an operator action,
   a restore (`POST /restore`, `vhd restore`): validated against its contract,
   then against the install, which takes only a backup the world's runtime has
   reported (`vhd backups` lists them). A refusal changes nothing. While
   `vhd apply` holds the control plane's volume, an operator action is refused
-  rather than kept waiting past its request's time. Children report status to a separate listener on the install
-  network that accepts status and nothing else, and only from the reporting
-  child's own container: it trusts source addresses, which holds because no
-  child has the capability to forge one. The admin console will put the control
+  rather than kept waiting past its request's time. Children report status to
+  a separate listener on the install network that accepts status and nothing
+  else, and only from the reporting child's own container: it trusts source
+  addresses, which holds because no child has the capability to forge one. The admin console will put the control
   API on the host's loopback unless the manifest opens it, once its
   authentication is settled (O14).
 - **Failure domain.** Needed to start or change an install, not to keep it
@@ -186,8 +186,9 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   server manager's confirmation (B1). Only that confirmation, or a stop, ends a
   world that is still loading, and then by a kill, which saves nothing. A
   restore is the exception on the control plane's side: it restarts the game
-  once, for a restore id the runtime has not done, and costs nothing once done
-  or dropped, so the control plane hands it at once and the runtime alone holds
+  once, for a restore id the runtime has not done, costs nothing once done, and
+  one dropped before world truth judges it swaps back at a restart gated like
+  any other, so the control plane hands it at once and the runtime alone holds
   it for an empty world, keeping its backup from pruning meanwhile. Status shows
   it pending until the runtime acts on it. A restore rides its world's
   generation, so one asked for while another change to that world is pending

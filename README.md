@@ -48,8 +48,8 @@ such as a new world, port or backups folder, waits for the next `vhd apply`.
 
 ## Backups and restore
 
-Each world's runtime backs its save up into the install folder's `backups`
-folder. `vhd backups <save name>` lists a world's backups, newest first.
+Each world's runtime backs its save up into the install's backups folder, in a
+folder of its own. `vhd backups <save name>` lists a world's backups, newest first.
 `vhd restore <save name> <backup>` restores one: the world restarts onto it once
 no players are online, or now with `vhd apply --disconnect-players`. The save it
 replaces is kept until the restored one loads, and put back if it loads empty.

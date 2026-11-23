@@ -178,9 +178,9 @@ manifest.
 
 **Pending change** — A validated change waiting until it can apply: a
 game-server restart, a restore or an import while players are online, or a
-change to the containers that waits for `vhd apply`. A restore waits in its
-world's runtime, which the control plane hands it to at once; the rest wait in
-the control plane.
+change to the containers that waits for `vhd apply`. A restore is handed to its
+world's runtime at once, unless another change to that world waits, and the
+runtime holds it for an empty world; the rest wait in the control plane.
 
 **Player** — A person playing in a world. Players use the game and the web map;
 they never touch the control plane.
