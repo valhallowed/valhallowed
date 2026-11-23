@@ -192,7 +192,8 @@ def _stamp(*paths: Path) -> tuple[int, ...]:
 
 # Keywords whose values are instances, never schemas, so a "$ref" key inside one is data.
 _DATA_KEYWORDS = frozenset({"const", "enum", "default", "examples"})
-# Keywords whose values map names to schemas: a property named "default" is a schema.
+# Keywords whose values map names to schemas: a property named "default" is a schema. With the
+# older dependencies keyword, which earlier drafts read as one; checking it too only fails closed.
 _SCHEMA_MAPS = frozenset(
     {"properties", "patternProperties", "$defs", "definitions", "dependentSchemas", "dependencies"}
 )
@@ -217,6 +218,8 @@ def validator(schema_path: Path) -> Draft202012Validator:
             resolver.lookup(reference)
         except Unresolvable as error:
             raise ValueError(f"{schema_path.name} refers to {reference}, which cannot be found") from error
+    # A contract that is no valid schema fails here, not at the first validation.
+    Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema, registry=registry)
 
 

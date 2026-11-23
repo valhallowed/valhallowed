@@ -117,7 +117,7 @@ def test_a_restore_of_a_backup_whose_record_breaks_its_contract_fails_closed(
     assert not place.staged.exists()
 
 
-@pytest.mark.parametrize("text", [None, "[]"])
+@pytest.mark.parametrize("text", [None, "[]", '{"type": 5}'])
 def test_a_records_contract_that_cannot_be_read_fails_closed(tmp_path: Path, text: str | None) -> None:
     contracts = tmp_path / "contracts"
     contracts.mkdir()
