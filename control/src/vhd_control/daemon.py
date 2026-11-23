@@ -14,6 +14,11 @@ map), or one mounting other worlds' volumes than the generation's (the web map, 
 added or removed).
 vhd apply hands every child its documents itself, once the server manager has confirmed
 any restart, so it is also how a waiting change is applied now.
+A restore the server manager asks for (POST /restore) stays in the state until the world's runtime
+reports how it ended; dropping it then restarts nothing. It rides the world's generation, so while
+another change to that world waits for an empty world or for vhd apply, the restore waits with it,
+unhanded: the runtime does not yet keep its backup from pruning, and a restore whose backup was
+pruned meanwhile fails closed.
 """
 
 import logging
