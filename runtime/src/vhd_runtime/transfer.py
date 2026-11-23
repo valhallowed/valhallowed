@@ -277,10 +277,10 @@ def export_backup(mounts: Mounts, world: str, backup: str | None, now: Callable[
         record = restore.read_record(source, world, name, contract)
     except restore.RestoreFailed as error:
         raise Refused(str(error)) from error
-    # Before the copy, so a time the result cannot name leaves nothing in the install folder.
-    breach = backups.save_breach(record.number, record.written_ns)
-    if breach is not None:
-        raise Refused(breach)
+    # Before the copy, so a time the result cannot name leaves nothing in the install folder. The
+    # record's contract already bounds the rest.
+    if record.written_ns // 1_000_000_000 > backups.WRITTEN_S_MAX:
+        raise Refused(f"backup {name}'s record says its save was completed after 9999, which no result can name")
     try:
         _room(mounts.exported, "the install folder", f"backup {name}", sum(file["size"] for file in record.files))
     except OSError as error:

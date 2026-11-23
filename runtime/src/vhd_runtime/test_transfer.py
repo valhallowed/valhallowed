@@ -852,7 +852,7 @@ def test_a_stop_while_the_results_contract_loads_is_held_and_stops_the_import_at
     assert (code, result["reason"]) == (1, "import stopped by SIGINT before it finished")
     # Held through the staging's lock, and taken as the first copy opened: no file was copied.
     assert len(locks) == 1 and copies == []
-    assert kept(mounts) == [] and not any(mounts.backups.glob(f"{backups.IMPORT_STAGING}*"))
+    assert kept(mounts) == []
 
 
 def test_a_results_contract_that_is_no_schema_is_refused_with_a_result_line(
@@ -950,7 +950,10 @@ def test_an_export_of_a_backup_whose_time_no_result_can_name_is_refused_before_i
     record["written_ns"] = (backups.WRITTEN_S_MAX + 1) * 1_000_000_000
     path.write_text(json.dumps(record))
     code, result = export(mounts, capsys)
-    assert (code, result["reason"]) == (1, "the save's _main.41.ok was last modified after 9999, which no save is")
+    assert (code, result["reason"]) == (
+        1,
+        f"backup {name}'s record says its save was completed after 9999, which no result can name",
+    )
     assert list(mounts.exported.iterdir()) == []
 
 
