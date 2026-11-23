@@ -143,11 +143,17 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   import and export, backups and logs. The CLI runs from the control plane's
   image, so a host needs only Docker. The control API answers on a Unix socket
   in a volume only the control plane and `vhd` mount, so no child and no network
-  reaches it. Children report status to a separate listener on the install
-  network that accepts status and nothing else, and only from the reporting
-  child's own container: it trusts source addresses, which holds because no
-  child has the capability to forge one. The admin console will put the control
-  API on the host's loopback unless the manifest opens it, once its
+  reaches it. It serves status (`GET /status`) and an operator action,
+  a restore (`POST /restore`, `vhd restore`): validated against its contract,
+  then against the install, which takes only a backup the world's runtime has
+  reported (`vhd backups` lists them). A refusal changes nothing. While the
+  control plane's volume stays busy, with `vhd apply` or the control plane's
+  own pass, an operator action is refused rather than kept waiting past its
+  request's time. Children report status to a separate listener on the
+  install network that accepts status and nothing else, and only from the
+  reporting child's own container: it trusts source addresses, which holds
+  because no child has the capability to forge one. The admin console will put
+  the control API on the host's loopback unless the manifest opens it, once its
   authentication is settled (O14).
 - **Failure domain.** Needed to start or change an install, not to keep it
   running. If it stops at steady state, children keep running on the last good
@@ -179,7 +185,17 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   restart the game, since only it sees the count at that moment: it restarts
   only for a current count of no players, or for a generation that carries the
   server manager's confirmation (B1). Only that confirmation, or a stop, ends a
-  world that is still loading, and then by a kill, which saves nothing.
+  world that is still loading, and then by a kill, which saves nothing. A
+  restore is the exception on the control plane's side: it restarts the game
+  once, for a restore id the runtime has not done, costs nothing once done, and
+  one dropped before world truth judges it swaps back at a restart gated like
+  any other, so the control plane hands it at once and the runtime alone makes
+  it wait for an empty world, keeping its backup from pruning meanwhile.
+  Status shows it pending until the runtime acts on it. A restore rides its
+  world's generation, so one asked for while another change to that world is
+  pending waits with that change, unhanded; if pruning removes its backup
+  meanwhile, the runtime refuses it and status says why. A restore asked for
+  another backup replaces the one under way, as a newer generation does.
 - **Children read only the effective configuration.** Generated files, such as
   the plugin's BepInEx config, are never edited by hand.
 - **World truth gates saving.** A world that fails world truth is stopped
@@ -245,7 +261,10 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   no empty world is made first. An export copies a backup, the newest by
   default, into the install folder in the layout the game reads. A restore or
   an import waits as a pending change while its world has players online, like
-  a game-server restart, unless the server manager confirms it.
+  a game-server restart, unless the server manager confirms it; a restore
+  waits in its runtime (Restart gating is shared), and `vhd apply` counts one
+  its runtime has not acted on as a restart, so an apply while it waits for an
+  empty world asks for `--disconnect-players`, which confirms it.
 - **Updates.** Under the default update policy, a runtime compares its
   installed game build with Steam's newest public build every 15 minutes, and
   restarts its world to update once no players are online, by its own final

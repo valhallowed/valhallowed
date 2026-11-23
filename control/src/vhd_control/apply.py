@@ -110,7 +110,9 @@ class Apply:
         with self.store.locked():
             state = self.store.load()
             before = _Before(state.generation, dict(state.handed), dict(state.applied or {}), dict(state.services))
-            generation = reconcile(settings, state.generation)
+            # The restores the control plane keeps, or this apply would hand documents without them,
+            # which a runtime judging one takes for a drop.
+            generation = reconcile(settings, state.generation, restores=state.restores)
             rendered = render(generation, host)
             recreated = _recreated(rendered, previous)
             restarts = _restarts(generation, state, recreated, running, worlds)
@@ -461,18 +463,24 @@ def _restarts(
 ) -> dict[str, _Restart]:
     """The running worlds this apply restarts, by child id: those whose container changes, whose
     documents change in a way the runtime cannot adopt in place, whose runtime still waits on
-    documents it was handed, or which the manifest no longer has."""
+    documents it was handed, whose generation carries a restore its runtime has not acted on, or
+    which the manifest no longer has. A restore counts whether handed or not, so --disconnect-players
+    confirms it, and a world whose container Compose also recreates is stopped first
+    (_stop_recreated); a restore alone stops nothing here, since its runtime restarts the game."""
     restarts: dict[str, _Restart] = {}
     for cid, child in generation.children.items():
         if cid not in running:
             continue
         handed = state.handed.get(cid)
         container = cid in recreated
-        runs = worlds.get(child.world, {}).get("report", {}).get("generation")
+        report = worlds.get(child.world, {}).get("report", {})
+        runs = report.get("generation")
         # Still waiting on what it was handed, though the manifest changed since in what the runtime
         # adopts in place.
         waiting = handed is not None and runs is not None and runs < handed.number and not handed.child.restarts(child)
-        documents = handed is None or handed.child.restarts(child) or waiting
+        asked = child.generation.get("restore")
+        restoring = isinstance(asked, dict) and asked.get("id") != report.get("restore", {}).get("id")
+        documents = handed is None or handed.child.restarts(child) or waiting or restoring
         if container or documents:
             restarts[cid] = _Restart(child.world, container, documents)
     for cid, handed in state.handed.items():

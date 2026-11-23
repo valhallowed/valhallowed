@@ -2,10 +2,12 @@ import io
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from vhd_control import cli, layout
+from vhd_control import cli, client, layout
+from vhd_control.schemas import Schemas
 from vhd_control.test_daemon import REPO, SCHEMAS
 
 
@@ -105,3 +107,143 @@ def test_status_shows_an_override_and_only_printable_reasons() -> None:
         "generation 3 restarted Ashwake (players unknown), Meadowfold (2 player(s)), as the server manager confirmed",
         "Ashwake: held (loaded empty?[2J)",
     ]
+
+
+NOW = datetime(2026, 11, 18, 20, 4, 12, tzinfo=UTC)
+BACKUP = "20261118T194012Z"
+
+
+def world_status(**report: object) -> dict[str, Any]:
+    """A status document of one world, whose runtime reported these fields besides the basics."""
+    basics = {"contract": 1, "generation": 1, "world": "Meadowfold", "state": "running"}
+    return {
+        "contract": 2,
+        "generation": 1,
+        "worlds": {"Meadowfold": {"state": "running", "report": {**basics, **report}}},
+    }
+
+
+def backups_of(status: dict[str, Any], world: str = "Meadowfold") -> list[str]:
+    out = io.StringIO()
+    cli.show_backups(status, world, out, now=NOW)
+    return out.getvalue().splitlines()
+
+
+def test_backups_lists_the_names_newest_first_with_their_ages() -> None:
+    names = ["20261118T194012Z", "20261118T184011Z", "20261117T194012Z", "not-a-time"]
+    assert backups_of(world_status(backups={"names": names})) == [
+        "20261118T194012Z, 24m old",
+        "20261118T184011Z, 84m old",
+        "20261117T194012Z, 24h old",
+        "not-a-time",
+    ]
+
+
+def test_backups_says_when_there_is_none_yet() -> None:
+    assert backups_of(world_status(backups={"names": []})) == ["Meadowfold: no backup yet"]
+
+
+def test_backups_says_when_the_runtime_has_not_reported_them() -> None:
+    assert backups_of(world_status()) == ["Meadowfold: its runtime has not reported its backups yet"]
+    status = world_status()
+    del status["worlds"]["Meadowfold"]["report"]
+    assert backups_of(status) == ["Meadowfold: its runtime has not reported its backups yet"]
+
+
+def test_backups_shows_the_failure_as_printable_text() -> None:
+    status = world_status(backups={"names": [BACKUP], "failure": "disk full\x1b[2J"})
+    assert backups_of(status) == [f"{BACKUP}, 24m old", "Meadowfold: backups: disk full?[2J"]
+
+
+def test_backups_names_a_world_the_install_does_not_run() -> None:
+    with pytest.raises(cli.NoSuchWorld, match="runs no world Hollowmere"):
+        backups_of(world_status(), "Hollowmere")
+
+
+def test_backups_for_an_unknown_world_fails_the_command(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(layout, "SCHEMAS", REPO)
+    monkeypatch.setattr(client, "status", lambda path, schemas: world_status())
+    assert cli.main(["backups", "Hollowmere"], io.StringIO()) == 1
+    assert "runs no world Hollowmere" in capsys.readouterr().err
+
+
+def test_restore_says_it_is_asked_for(monkeypatch: pytest.MonkeyPatch) -> None:
+    asked: list[tuple[str, str]] = []
+
+    def restore(path: Path, schemas: Schemas, world: str, backup: str) -> dict[str, Any]:
+        asked.append((world, backup))
+        return {"contract": 1, "id": "a" * 32, "world": world, "backup": backup}
+
+    monkeypatch.setattr(layout, "SCHEMAS", REPO)
+    monkeypatch.setattr(client, "restore", restore)
+    out = io.StringIO()
+    assert cli.main(["restore", "Meadowfold", BACKUP], out) == 0
+    assert asked == [("Meadowfold", BACKUP)]
+    assert f"restore {'a' * 32} of Meadowfold's backup {BACKUP} is asked for" in out.getvalue()
+
+
+def test_a_refused_restore_fails_the_command_with_the_reason(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def refuse(path: Path, schemas: Schemas, world: str, backup: str) -> dict[str, Any]:
+        raise client.Refused("Meadowfold's runtime has not reported backup " + backup)
+
+    monkeypatch.setattr(layout, "SCHEMAS", REPO)
+    monkeypatch.setattr(client, "restore", refuse)
+    out = io.StringIO()
+    assert cli.main(["restore", "Meadowfold", BACKUP], out) == 1
+    assert out.getvalue() == ""
+    assert f"vhd restore: Meadowfold's runtime has not reported backup {BACKUP}" in capsys.readouterr().err
+
+
+def status_line(world: dict[str, Any]) -> str:
+    out = io.StringIO()
+    cli.show_status({"contract": 2, "generation": 2, "worlds": {"Meadowfold": world}, "services": {}}, out, now=NOW)
+    return out.getvalue().splitlines()[1]
+
+
+KEPT = {"id": "a" * 32, "backup": BACKUP}
+
+
+def report_with(**more: object) -> dict[str, Any]:
+    return world_status(**more)["worlds"]["Meadowfold"]["report"]  # type: ignore[no-any-return]
+
+
+def test_status_shows_a_restore_asked() -> None:
+    world = {"state": "running", "report": report_with(), "restore": KEPT}
+    assert status_line(world) == f"Meadowfold: running; restore of backup {BACKUP} asked"
+
+
+@pytest.mark.parametrize("kept", [KEPT, None])
+def test_status_shows_the_outcome_of_the_restore_kept_or_of_the_newest_when_none_is(
+    kept: dict[str, str] | None,
+) -> None:
+    acted = {"id": "a" * 32, "outcome": "failed", "reason": "no space\x1b[2J"}
+    world: dict[str, Any] = {"state": "running", "report": report_with(restore=acted)}
+    if kept is not None:
+        world["restore"] = kept
+    asked = f"; restore of backup {BACKUP} asked" if kept else ""
+    assert status_line(world) == f"Meadowfold: running{asked}; restore failed (no space?[2J)"
+
+
+def test_status_hides_the_outcome_of_another_restore_than_the_one_kept() -> None:
+    acted = {"id": "b" * 32, "outcome": "done"}
+    world = {"state": "running", "report": report_with(restore=acted), "restore": KEPT}
+    assert status_line(world) == f"Meadowfold: running; restore of backup {BACKUP} asked"
+
+
+def test_backups_of_a_world_removed_from_the_manifest_say_vhd_restore_cannot_restore_them() -> None:
+    status = world_status(backups={"names": [BACKUP]})
+    status["worlds"]["Meadowfold"]["removed"] = True
+    assert backups_of(status) == [
+        "Meadowfold: removed from the manifest, so vhd restore cannot restore these",
+        f"{BACKUP}, 24m old",
+    ]
+
+
+def test_status_shows_a_restore_its_runtime_is_on_as_under_way() -> None:
+    acted = {"id": "a" * 32, "outcome": "restoring"}
+    world = {"state": "running", "report": report_with(restore=acted), "restore": KEPT}
+    assert status_line(world) == f"Meadowfold: running; restore of backup {BACKUP} asked; restore under way"

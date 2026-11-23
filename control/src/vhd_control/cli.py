@@ -26,6 +26,11 @@ def main(argv: list[str] | None = None, out: TextIO = sys.stdout) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("validate", help="check manifest.toml and secrets.toml, and show what they reconcile to")
     commands.add_parser("status", help="show each world and service as the control plane reports it")
+    backups = commands.add_parser("backups", help="list a world's backups, newest first")
+    backups.add_argument("world", help="the world's save name")
+    restore = commands.add_parser("restore", help="restore one of a world's backups, once no players are online")
+    restore.add_argument("world", help="the world's save name")
+    restore.add_argument("backup", help="the backup's name, as vhd backups lists it")
     apply = commands.add_parser("apply", help="bring the install's containers in line with its manifest")
     apply.add_argument(
         "--disconnect-players", action="store_true", help="apply even where it restarts a world players may be in"
@@ -39,6 +44,16 @@ def main(argv: list[str] | None = None, out: TextIO = sys.stdout) -> int:
             validate(schemas, out)
         elif args.command == "status":
             show_status(client.status(layout.CONTROL_SOCKET, schemas), out)
+        elif args.command == "backups":
+            show_backups(client.status(layout.CONTROL_SOCKET, schemas), args.world, out)
+        elif args.command == "restore":
+            kept = client.restore(layout.CONTROL_SOCKET, schemas, args.world, args.backup)
+            print(
+                f"vhd restore: restore {kept['id']} of {kept['world']}'s backup {kept['backup']} is asked for. "
+                "The world's runtime restores it once no players are online, or now with vhd apply "
+                "--disconnect-players; vhd status shows while it waits, and how it ends.",
+                file=out,
+            )
         elif args.command == "apply":
             Apply(
                 install=layout.INSTALL,
@@ -52,10 +67,34 @@ def main(argv: list[str] | None = None, out: TextIO = sys.stdout) -> int:
             ).run(args.disconnect_players)
         else:
             daemon(schemas)
-    except (InvalidSettings, Refused, DockerError, client.Unreachable) as error:
+    except (InvalidSettings, Refused, DockerError, client.Unreachable, client.Refused, NoSuchWorld) as error:
         print(f"vhd {args.command}: {error}", file=sys.stderr)
         return 1
     return 0
+
+
+class NoSuchWorld(Exception):
+    """vhd names a world the control plane's status does not have."""
+
+
+def show_backups(status: dict[str, Any], world: str, out: TextIO, now: datetime | None = None) -> None:
+    """A world's backups, newest first, each with its age, as its runtime last reported them."""
+    now = now or datetime.now(UTC)
+    if world not in status["worlds"]:
+        raise NoSuchWorld(f"the install runs no world {world}")
+    if status["worlds"][world].get("removed"):
+        print(f"{world}: removed from the manifest, so vhd restore cannot restore these", file=out)
+    backups = status["worlds"][world].get("report", {}).get("backups")
+    if backups is None:
+        print(f"{world}: its runtime has not reported its backups yet", file=out)
+        return
+    for name in backups["names"]:
+        age = _age_of(name, now)
+        print(_printable(name) if age is None else f"{_printable(name)}, {age} old", file=out)
+    if not backups["names"]:
+        print(f"{world}: no backup yet", file=out)
+    if "failure" in backups:
+        print(f"{world}: backups: {_printable(backups['failure'])}", file=out)
 
 
 def validate(schemas: Schemas, out: TextIO) -> None:
@@ -98,6 +137,7 @@ def show_status(status: dict[str, Any], out: TextIO, now: datetime | None = None
             line += f" ({_printable(report['reason'])})"
         if "backups" in report:
             line += _backups(report["backups"], now)
+        line += _restore(world.get("restore"), report.get("restore"))
         if world.get("removed"):
             line += "; removed from the manifest, waits for vhd apply"
         elif "pending" in world:
@@ -122,16 +162,36 @@ def _backups(backups: dict[str, Any], now: datetime) -> str:
     text = ", no backup yet"
     if names:
         text = f", {len(names)} backup(s)"
-        # A runtime's report is a child's words: a name that is no time shows no age.
-        try:
-            taken = datetime.strptime(names[0], "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
-        except ValueError:
-            pass
-        else:
-            text += f", the newest {_age((now - taken).total_seconds())} old"
+        age = _age_of(names[0], now)
+        if age is not None:
+            text += f", the newest {age} old"
     if "failure" in backups:
         text += f" (backups: {_printable(backups['failure'])})"
     return text
+
+
+def _restore(kept: dict[str, str] | None, acted: dict[str, str] | None) -> str:
+    """A world's restore for its status line: the one the control plane keeps, and how the runtime
+    says the newest one it acted on stands, when that is the one kept, or when none is."""
+    text = ""
+    if kept is not None:
+        text = f"; restore of backup {kept['backup']} asked"
+    if acted is not None and (kept is None or acted["id"] == kept["id"]):
+        outcome = "under way" if acted["outcome"] == "restoring" else acted["outcome"]
+        text += f"; restore {outcome}"
+        if "reason" in acted:
+            text += f" ({_printable(acted['reason'])})"
+    return text
+
+
+def _age_of(name: str, now: datetime) -> str | None:
+    """The age of a backup named for when it was taken, or None for a name that is no time: a
+    runtime's report is a child's words."""
+    try:
+        taken = datetime.strptime(name, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+    except ValueError:
+        return None
+    return _age((now - taken).total_seconds())
 
 
 def _age(seconds: float) -> str:

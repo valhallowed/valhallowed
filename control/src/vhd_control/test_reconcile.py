@@ -5,7 +5,7 @@ import pytest
 
 from vhd_control.manifest import Backups, InvalidSettings, Settings, Updates, World, load
 from vhd_control.naming import child_id
-from vhd_control.reconcile import LIVE, STATUS_INTERVAL_S, STATUS_URL, Generation, Service, reconcile
+from vhd_control.reconcile import LIVE, STATUS_INTERVAL_S, STATUS_URL, Generation, Restore, Service, reconcile
 from vhd_control.test_daemon import REPO, SCHEMAS
 
 # The manifest schema's defaults.
@@ -218,3 +218,43 @@ def test_the_live_settings_and_their_bounds_agree_across_manifest_and_contract()
         bounds = manifest[table]["properties"]["every"]["x-seconds"]
         every = contract[table]["properties"]["every_s"]
         assert (every["minimum"], every["maximum"]) == (bounds["minimum"], bounds["maximum"])
+
+
+BACKUP = "20261118T194011Z"
+
+
+def test_a_restore_reaches_only_its_own_worlds_generation() -> None:
+    both = settings(World("Ashwake", 2459, None), World("Meadowfold", 2456, None))
+    restore = Restore("a" * 32, BACKUP)
+    generation = reconcile(both, None, restores={child_id("Meadowfold"): restore})
+    assert generation.children[child_id("Meadowfold")].generation["restore"] == {"id": "a" * 32, "backup": BACKUP}
+    assert "restore" not in generation.children[child_id("Ashwake")].generation
+
+
+def test_a_restore_added_or_removed_makes_a_new_generation() -> None:
+    world = settings(World("Meadowfold", 2456, None))
+    restores = {child_id("Meadowfold"): Restore("a" * 32, BACKUP)}
+    first = reconcile(world, None)
+    asked = reconcile(world, first, restores=restores)
+    assert asked.number == first.number + 1
+    assert reconcile(world, asked, restores=restores) is asked
+    dropped = reconcile(world, asked)
+    assert dropped.number == asked.number + 1
+    assert "restore" not in dropped.children[child_id("Meadowfold")].generation
+
+
+def test_a_restore_alone_restarts_no_game_and_any_other_change_still_does() -> None:
+    world = World("Meadowfold", 2456, None)
+    cid = child_id("Meadowfold")
+    plain = reconcile(settings(world), None).children[cid]
+    asked = reconcile(settings(world), None, restores={cid: Restore("a" * 32, BACKUP)}).children[cid]
+    another = reconcile(settings(world), None, restores={cid: Restore("b" * 32, BACKUP)}).children[cid]
+    with_password = reconcile(
+        settings(World("Meadowfold", 2456, "hearth-and-horn")), None, restores={cid: Restore("a" * 32, BACKUP)}
+    ).children[cid]
+
+    assert asked != plain
+    assert not plain.restarts(asked)
+    assert not asked.restarts(plain)
+    assert not asked.restarts(another)
+    assert asked.restarts(with_password)

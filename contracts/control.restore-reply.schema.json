@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Control API restore reply",
+  "description": "I0: what the control API's POST /restore answers with 202: the restore it keeps for the world, which its generation carries (B1) until the world's runtime reports how it ended.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "id", "world", "backup"],
+  "properties": {
+    "contract": {
+      "description": "The version of this contract.",
+      "const": 1
+    },
+    "id": {
+      "description": "The restore's id, opaque and never reused, as the generation and the runtime's status name it.",
+      "$ref": "game-runtime.generation.schema.json#/properties/restore/properties/id"
+    },
+    "world": {
+      "description": "The world's save name.",
+      "$ref": "../schema/manifest.schema.json#/$defs/save_name"
+    },
+    "backup": {
+      "description": "The backup it restores.",
+      "$ref": "game-runtime.generation.schema.json#/properties/restore/properties/backup"
+    }
+  }
+}

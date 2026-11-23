@@ -59,7 +59,7 @@
           "minimum": 1
         },
         "pending": {
-          "description": "A newer generation this world waits for.",
+          "description": "A generation newer than the one this world's runtime runs, which waits: in the control plane, or, for a restore handed to the runtime, in the runtime.",
           "type": "object",
           "additionalProperties": false,
           "required": ["generation", "waits_for"],
@@ -69,9 +69,19 @@
               "minimum": 1
             },
             "waits_for": {
-              "description": "Why the newer generation waits. vhd apply: it changes the world's container, which only vhd apply recreates. an empty world: it restarts the game, so it waits while players may be online; vhd apply --disconnect-players applies it now.",
+              "description": "Why the newer generation waits. vhd apply: it changes the world's container, which only vhd apply recreates. an empty world: it restarts the game, so it waits while players may be online, in the control plane, or, for a restore, in the runtime it was handed to; vhd apply --disconnect-players applies it now.",
               "enum": ["vhd apply", "an empty world"]
             }
+          }
+        },
+        "restore": {
+          "description": "The restore the server manager asked for (POST /restore), which the world's generation carries until its runtime reports how it ended. Its keys repeat the generation's restore (contracts/game-runtime.generation.schema.json).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "backup"],
+          "properties": {
+            "id": { "$ref": "game-runtime.generation.schema.json#/properties/restore/properties/id" },
+            "backup": { "$ref": "game-runtime.generation.schema.json#/properties/restore/properties/backup" }
           }
         },
         "removed": {
