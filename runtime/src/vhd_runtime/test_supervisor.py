@@ -12,7 +12,7 @@ from urllib.error import URLError
 
 import pytest
 
-from vhd_runtime import backups, restore, status, steam, supervisor
+from vhd_runtime import backups, restore, status, steam, supervisor, transfer
 from vhd_runtime.generation import Reader, validator
 from vhd_runtime.supervisor import Clock, Paths, Supervisor
 from vhd_runtime.test_backups import write_save
@@ -1137,6 +1137,21 @@ def test_a_world_that_never_started_loads_the_restored_save_at_its_first_start(w
 
     assert sup.run() == 0
     assert world.save_number() == 3
+    assert world.restores() == ["restoring", "done"]
+
+
+def test_a_world_that_never_started_loads_an_imported_save_at_its_first_start(world: World) -> None:
+    mounts = transfer.Mounts(imported=world.paths.data / "import", backups=world.paths.backups)
+    write_save(mounts.imported / "Meadowfold", 41, [{"chunk": 258, "size": 64, "version": 41, "objects": 141}])
+    name = transfer.import_save(mounts, "Meadowfold", world.now)["backup"]
+    world.generation(restore=name)
+    sup = world.supervisor()
+    world.plugin_running(141)
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert world.save_number() == 41 and len(world.launches) == 1
+    assert world.states() == ["held", "installing", "loading", "running"]
     assert world.restores() == ["restoring", "done"]
 
 

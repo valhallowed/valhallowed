@@ -6,9 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from vhd_runtime import backups, restore
+from vhd_runtime import backups, restore, transfer
 from vhd_runtime.restore import Place, RestoreFailed
 from vhd_runtime.test_backups import NOW, chunk_name, write_save
+from vhd_runtime.transfer import Mounts
 
 CHUNK = {"chunk": 258, "size": 64, "version": 3, "objects": 120}
 
@@ -216,3 +217,51 @@ def test_a_record_longer_than_any_save_needs_cannot_be_read(place: Place) -> Non
 def test_an_intent_with_an_id_status_would_refuse_reads_as_none(place: Place) -> None:
     restore.write_intent(place, restore.Intent(id="A" * 32, backup="20261118T194011Z", phase="swapped"))
     assert restore.read_intent(place) is None
+
+
+def imported(place: Place) -> str:
+    """A backup of a synthesized save, taken as vhd import takes one from the install folder."""
+    mounts = Mounts(imported=place.saves.parent / "import", backups=place.backups)
+    write_save(mounts.imported / place.world, 3, [CHUNK])
+    result = transfer.import_save(mounts, place.world, lambda: NOW)
+    shutil.rmtree(mounts.imported)
+    return result["backup"]
+
+
+def test_an_imported_backup_is_checked_and_staged_like_any_other(place: Place) -> None:
+    name = imported(place)
+    assert json.loads((place.backups / name / backups.RECORD).read_text())["source"] == "import"
+    assert restore.stage(place, name) == 120
+    save = backups.newest_complete(place.staged)
+    assert save is not None and save.number == 3 and chunk_name(CHUNK) in save.files
+
+
+def link_db2(place: Place, name: str) -> None:
+    secret = place.saves.parent / "secret"
+    secret.write_bytes(b"db2 of save 3")
+    (place.backups / name / "_main.3.db2").unlink()
+    (place.backups / name / "_main.3.db2").symlink_to(secret)
+
+
+@pytest.mark.parametrize(
+    ("tamper", "reason"),
+    [
+        (lambda place, name: (place.backups / name / "_main.3.db2").write_bytes(b"db2 of save 4"), "not the file"),
+        (lambda place, name: (place.backups / name / chunk_name(CHUNK)).unlink(), "lacks"),
+        (link_db2, "is a link"),
+        (lambda place, name: edit_record(place, name, lambda r: r.update(world="Ashwake")), "not a backup of"),
+        (lambda place, name: edit_record(place, name, lambda r: r.update(save=4)), "does not hold the save"),
+        (
+            lambda place, name: edit_record(place, name, lambda r: r.update(files=r["files"][1:])),
+            "not a complete save",
+        ),
+    ],
+)
+def test_a_tampered_imported_backup_is_refused_and_nothing_stays_staged(
+    place: Place, tamper: object, reason: str
+) -> None:
+    name = imported(place)
+    tamper(place, name)  # type: ignore[operator]
+    with pytest.raises(RestoreFailed, match=reason):
+        restore.stage(place, name)
+    assert not place.staged.exists()
