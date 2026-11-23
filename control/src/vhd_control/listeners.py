@@ -290,10 +290,11 @@ def control_server(daemon: Daemon, path: Path) -> _UnixServer:
                 self.reply(HTTPStatus(refused.status), {"error": str(refused)})
                 return
             except Exception:
-                # A fault, not a refusal: answer it all the same, so vhd never reads the silence as a
-                # restore that may have been taken. The state is written last and whole, so it is unchanged.
+                # A fault, not a refusal: answer it all the same. It may come after the state was
+                # replaced (syncing its directory), so the answer cannot say nothing changed; asking
+                # again is safe, since the same backup gets the same restore.
                 _log.exception("a restore of %s's backup %s failed", request["world"], request["backup"])
-                why = "the control plane failed to take the restore, and changed nothing; its log says why"
+                why = "the control plane failed while taking the restore; vhd status shows whether it keeps one"
                 self.reply(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": why})
                 return
             reply = {"contract": 1, "id": kept.id, "world": request["world"], "backup": kept.backup}

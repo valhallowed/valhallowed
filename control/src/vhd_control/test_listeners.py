@@ -382,6 +382,6 @@ def test_a_fault_taking_a_restore_is_answered_and_logged(
     with caplog.at_level(logging.ERROR, logger="vhd_control.listeners"):
         status, reply = control.restore()
     assert status == http.client.INTERNAL_SERVER_ERROR
-    assert "changed nothing" in reply["error"]
+    assert "vhd status shows whether it keeps one" in reply["error"]
     assert any(record.exc_info for record in caplog.records)
     assert control.install.store.load().restores == {}
