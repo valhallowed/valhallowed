@@ -312,6 +312,23 @@ def world(tmp_path: Path) -> World:
     return World(tmp_path)
 
 
+def test_a_runtime_without_its_backup_records_contract_stops_before_it_installs_or_restores(
+    world: World, tmp_path: Path
+) -> None:
+    contracts = tmp_path / "contracts"
+    shutil.copytree(CONTRACTS, contracts)
+    (contracts / restore.RECORD_CONTRACT).unlink()
+    paths = Paths(
+        generation=world.paths.generation,
+        data=world.paths.data,
+        contracts=contracts,
+        world_status=world.paths.world_status,
+        backups=world.paths.backups,
+    )
+    with pytest.raises(restore.RestoreFailed, match="cannot read the contract of a backup's record"):
+        Supervisor(paths=paths, reader=Reader(paths.generation, CONTRACTS))
+
+
 def test_a_loaded_world_runs_and_saves_on_stop(world: World) -> None:
     world.generation()
     world.save()

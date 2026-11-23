@@ -178,8 +178,12 @@ class Supervisor:
     _done_id: str | None = field(default=None, init=False)
     # The backup a restore asks for, which no turn of the backups prunes until the restore has it.
     _spare: str | None = field(default=None, init=False)
-    # The contract a backup's record keeps, read from the image once the first turn needs it.
-    _record: Draft202012Validator | None = field(default=None, init=False)
+    # The contract a backup's record keeps, read from the image at the start, as the reader reads
+    # the generation's.
+    _record: Draft202012Validator = field(init=False)
+
+    def __post_init__(self) -> None:
+        self._record = restore.record_contract(self.paths.contracts)
 
     def request_stop(self, signum: int, frame: FrameType | None) -> None:
         """Signal handler: stop at the next poll, saving the world first."""
@@ -499,8 +503,6 @@ class Supervisor:
 
     def _tend(self, generation: Generation) -> Future[backups.Tended]:
         """Start a turn of the world's backups off the loop, which keeps reporting and watching."""
-        if self._record is None:
-            self._record = restore.record_contract(self.paths.contracts)
         place = backups.Place(
             backups.world_folder(self.paths.saves, generation.world),
             self.paths.backups,
