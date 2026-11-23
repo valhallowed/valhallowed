@@ -423,7 +423,7 @@ def _keep(
             with _stoppable():
                 copied = backups.copy_file(found.folder / name, staging / name, size, unchanged=scanned[name])
         except backups.Gone as error:
-            raise Refused(f"the save's {name} went while it was copied") from error
+            raise Refused(f"the save's {name} went after the import found it") from error
         except backups.Changed as error:
             raise Refused(f"the save's {name} changed after the import found it") from error
         except OSError as error:

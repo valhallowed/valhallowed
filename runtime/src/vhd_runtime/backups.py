@@ -91,7 +91,7 @@ class BackupFailed(Exception):
 
 
 class Gone(Exception):
-    """A file of the save went while it was copied: the next save completed."""
+    """A file of the save went before or while it was copied, as when the next save completed."""
 
 
 class NoLocks(OSError):

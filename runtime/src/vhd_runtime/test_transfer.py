@@ -577,6 +577,23 @@ def test_a_file_that_changes_after_the_scan_and_before_its_copy_is_refused(
     assert (folder / "_main.41.db2").exists()
 
 
+def test_a_file_removed_after_the_scan_and_before_its_copy_is_refused(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    put_save(mounts)
+    open_regular = backups.open_regular
+
+    def removed_first(source: Path) -> io.BufferedReader:
+        if source.name == "_main.41.db2":
+            source.unlink()
+        return open_regular(source)
+
+    monkeypatch.setattr(backups, "open_regular", removed_first)
+    code, result = act(mounts, capsys)
+    assert (code, result["reason"]) == (1, "the save's _main.41.db2 went after the import found it")
+    assert kept(mounts) == []
+
+
 def test_a_name_the_runtimes_own_backup_takes_meanwhile_is_named_again(
     mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
