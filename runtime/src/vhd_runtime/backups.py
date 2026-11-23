@@ -8,8 +8,9 @@ again from the newest complete save. A backup is copied into a partial folder, s
 into place once whole, so a folder named as a backup always holds one.
 
     <backups>/<taken>/              one backup, named for when it was taken, in UTC: 20261118T204012Z
-    <backups>/<taken>/backup.json   its record: the world, the save's number, when the game
-                                    completed it, its objects, when the backup was taken, and each
+    <backups>/<taken>/backup.json   its record (contracts/game-runtime.backup.schema.json): the
+                                    world, the save's number, when the game completed it, its
+                                    objects, when the backup was taken, where it came from, and each
                                     file's name, size and SHA-256, for a restore to check
     <backups>/<taken>/<file>        the save's files, named as in the world's save folder
     <backups>/.partial-<taken>/     a copy under way, or a backup being removed, or either cut short;
@@ -37,6 +38,8 @@ from vhd_runtime.generation import Backups as Settings
 RECORD = "backup.json"
 PARTIAL = ".partial-"
 NAME_FORMAT = "%Y%m%dT%H%M%SZ"
+# When a backup was taken, as its record says it.
+TAKEN_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 _NAME = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 # How many times a copy that lost a file to the next save starts again.
 ATTEMPTS = 3
@@ -227,7 +230,8 @@ def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) ->
             "save": save.number,
             "written_ns": save.written_ns,
             "objects": save.objects,
-            "taken": taken_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "taken": taken_at.strftime(TAKEN_FORMAT),
+            "source": "runtime",
             "files": files,
         }
         with (partial / RECORD).open("x") as writer:

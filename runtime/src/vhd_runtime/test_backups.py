@@ -16,8 +16,11 @@ import pytest
 from vhd_runtime import backups
 from vhd_runtime.backups import BackupFailed, Place, take
 from vhd_runtime.generation import Backups as Settings
+from vhd_runtime.generation import validator
 
 SAVES = Path(__file__).resolve().parent / "saves"
+CONTRACTS = Path(__file__).resolve().parents[3] / "contracts"
+RECORD = validator(CONTRACTS / "game-runtime.backup.schema.json")
 NOW = datetime(2026, 11, 18, 20, 40, 12, tzinfo=UTC)
 NOW_NAME = "20261118T204012Z"
 
@@ -99,6 +102,8 @@ def test_each_synthesized_save_is_backed_up_as_its_case_says(tmp_path: Path, nam
     assert (backup.name, backup.saved[0]) == (NOW_NAME, expected["save"])
     assert sorted(p.name for p in (store / NOW_NAME).iterdir()) == sorted([*expected["files"], "backup.json"])
     record = json.loads((store / NOW_NAME / "backup.json").read_text())
+    RECORD.validate(record)
+    assert record["source"] == "runtime"
     assert record["world"] == "Meadowfold"
     assert record["save"] == expected["save"]
     assert record["objects"] == expected["objects"]
@@ -243,6 +248,20 @@ def test_copies_a_stop_cut_short_are_cleared(tmp_path: Path) -> None:
     held(store, NOW)
     backups.clear_partials(store)
     assert [p.name for p in store.iterdir()] == [NOW_NAME]
+
+
+def test_a_record_from_before_its_source_was_written_still_says_which_save_it_holds(tmp_path: Path) -> None:
+    folder, store = tmp_path / "world", tmp_path / "backups"
+    store.mkdir()
+    write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
+    backup = take(folder, store, "Meadowfold", NOW)
+    assert backup is not None
+    path = store / backup.name / backups.RECORD
+    record = json.loads(path.read_text())
+    del record["source"]
+    RECORD.validate(record)
+    path.write_text(json.dumps(record))
+    assert backups.last_saved(store, backup.name) == backup.saved
 
 
 def test_a_backup_says_when_it_was_taken_and_which_save_it_holds(tmp_path: Path) -> None:

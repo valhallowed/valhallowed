@@ -44,6 +44,12 @@ def test_a_staged_backup_is_its_complete_save_and_says_its_objects(place: Place)
     assert save is not None and save.number == 3 and chunk_name(CHUNK) in save.files
 
 
+def test_a_backup_whose_record_predates_its_source_is_staged(place: Place) -> None:
+    name = backup_of(place)
+    edit_record(place, name, lambda r: r.pop("source"))
+    assert restore.stage(place, name) == 120
+
+
 def test_a_backup_that_is_gone_is_refused(place: Place) -> None:
     with pytest.raises(RestoreFailed, match="no longer exists"):
         restore.stage(place, "20261118T194011Z")
