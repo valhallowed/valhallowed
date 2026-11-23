@@ -1,3 +1,4 @@
+import http.client
 import json
 import logging
 import socket
@@ -7,14 +8,16 @@ import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from vhd_control import client, listeners
+from vhd_control.daemon import ActionRefused
 from vhd_control.listeners import MAX_BODY, control_server, status_server
 from vhd_control.naming import child_id
 from vhd_control.status import StatusBook
-from vhd_control.test_daemon import PASSWORD, SCHEMAS, Install
+from vhd_control.test_daemon import BACKUP, PASSWORD, SCHEMAS, Install, reports
 
 REPORT = {"contract": 1, "generation": 1, "world": "Meadowfold", "state": "running", "objects": 10, "players": 2}
 
@@ -267,3 +270,103 @@ def test_a_fault_in_handling_a_report_is_logged_as_one(caplog: pytest.LogCapture
     finally:
         listener.close()
     assert any(r.levelno == logging.WARNING and "failed" in r.message for r in caplog.records)
+
+
+class Control:
+    """The control API on a Unix socket, over an install."""
+
+    def __init__(self, install: Install, path: Path) -> None:
+        self.install = install
+        self.path = path
+        self.server = control_server(install.daemon, path)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def post(self, body: bytes, target: str = "/restore") -> tuple[int, dict[str, Any]]:
+        connection = client._UnixConnection(self.path)
+        try:
+            connection.request("POST", target, body, {"Content-Type": "application/json"})
+            response = connection.getresponse()
+            return response.status, json.loads(response.read() or b"{}")
+        finally:
+            connection.close()
+
+    def restore(self, **fields: object) -> tuple[int, dict[str, Any]]:
+        request = {"contract": 1, "world": "Meadowfold", "backup": BACKUP, **fields}
+        return self.post(json.dumps(request).encode())
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+@pytest.fixture
+def control(tmp_path: Path) -> Iterator[Control]:
+    running = Control(Install(tmp_path), tmp_path / "control.sock")
+    try:
+        yield running
+    finally:
+        running.close()
+
+
+def test_a_restore_is_taken_with_a_reply_that_keeps_its_contract(control: Control) -> None:
+    reports(control.install)
+    status, reply = control.restore()
+    assert status == http.client.ACCEPTED
+    assert SCHEMAS.problem("contracts/control.restore-reply.schema.json", reply) is None
+    assert (reply["world"], reply["backup"]) == ("Meadowfold", BACKUP)
+    assert control.install.store.load().restores[child_id("Meadowfold")].id == reply["id"]
+
+
+@pytest.mark.parametrize(
+    "request_body",
+    [
+        b"{",
+        json.dumps({"contract": 1, "world": "Meadowfold", "backup": "last night"}).encode(),
+        json.dumps({"contract": 1, "world": "Meadowfold"}).encode(),
+        json.dumps({"contract": 1, "world": "Meadowfold", "backup": BACKUP, "force": True}).encode(),
+        json.dumps({"contract": 2, "world": "Meadowfold", "backup": BACKUP}).encode(),
+    ],
+)
+def test_a_restore_that_breaks_its_contract_is_refused_and_changes_nothing(
+    control: Control, request_body: bytes
+) -> None:
+    reports(control.install)
+    status, reply = control.post(request_body)
+    assert status == http.client.BAD_REQUEST
+    assert reply["error"]
+    assert control.install.store.load().restores == {}
+
+
+def test_an_oversized_restore_is_refused_unread(control: Control) -> None:
+    status, _ = control.post(b" " * (MAX_BODY + 1))
+    assert status == http.client.REQUEST_ENTITY_TOO_LARGE
+
+
+def test_the_control_api_posts_to_restore_and_nothing_else(control: Control) -> None:
+    body = json.dumps({"contract": 1, "world": "Meadowfold", "backup": BACKUP}).encode()
+    status, _ = control.post(body, "/status")
+    assert status == http.client.NOT_FOUND
+
+
+@pytest.mark.parametrize("status", [404, 409, 503])
+def test_what_the_daemon_refuses_a_restore_for_reaches_the_caller_as_it_said_it(
+    control: Control, monkeypatch: pytest.MonkeyPatch, status: int
+) -> None:
+    def refuse(world: str, backup: str) -> None:
+        raise ActionRefused(status, f"refused with {status}")
+
+    monkeypatch.setattr(control.install.daemon, "request_restore", refuse)
+    assert control.restore() == (status, {"error": f"refused with {status}"})
+
+
+def test_a_restore_for_a_world_the_install_does_not_run_is_a_404(control: Control) -> None:
+    status, reply = control.restore(world="Hollowmere")
+    assert status == http.client.NOT_FOUND
+    assert "Hollowmere" in reply["error"]
+
+
+def test_a_restore_for_a_backup_the_runtime_has_not_reported_is_a_409(control: Control) -> None:
+    reports(control.install)
+    status, reply = control.restore(backup="20261101T000000Z")
+    assert status == http.client.CONFLICT
+    assert reply["error"]
