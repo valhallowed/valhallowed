@@ -9,12 +9,13 @@ folder in the layout the game reads. Each action prints its result as its last l
 output, one JSON document as contracts/game-runtime.import-export.schema.json defines it, and logs
 to standard error.
 
-    /import                         the save folder, mounted read-only under its own name
+    /import                         a folder holding only the save folder, named for the world;
+                                    vhd mounts it read-only
     /backups                        the world's own folder of the install's backups
     /backups/.import-<id>/          an import under way, or one a kill cut short; a start of the
                                     world's runtime removes it once it is old
-    /export                         an empty folder, which an export copies the backup into, as
-                                    worlds_local/<world>/
+    /export                         a folder with no worlds_local/<world> yet, which an export
+                                    copies the backup into, as worlds_local/<world>/
 """
 
 import errno
@@ -372,7 +373,7 @@ def _kind(mode: int) -> str:
 
 
 def _summary(number: int, objects: int, written_ns: int) -> SaveSummary:
-    """The save, as the result names it: when the game completed it is in UTC, to the second."""
+    """The save, as the result names it: `written` is when the game completed it, in UTC, to the second."""
     written = datetime.fromtimestamp(written_ns // 1_000_000_000, UTC).strftime(backups.TAKEN_FORMAT)
     return {"number": number, "objects": objects, "written": written}
 

@@ -41,11 +41,11 @@ RECORD = "backup.json"
 PARTIAL = ".partial-"
 # An import under way, which vhd runs in a container of its own (vhd_runtime.transfer).
 IMPORT_STAGING = ".import-"
-# An import's staging folder unmodified for longer than this is one a kill cut short. vhd stops an
-# import's container well within it, so a start never removes an import still under way.
+# An import's staging folder unmodified for longer than this is one a kill cut short. vhd must stop
+# an import's container well within it, so a start never removes an import still under way.
 IMPORT_STAGING_MAX_AGE_S = 3600
 NAME_FORMAT = "%Y%m%dT%H%M%SZ"
-# When a backup was taken, as its record says it.
+# A time in UTC, to the second, as a record and an import's or an export's result write it.
 TAKEN_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 _NAME = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 # How many times a copy that lost a file to the next save starts again.
@@ -134,7 +134,7 @@ def world_folder(saves: Path, world: str) -> Path:
 def tend(place: Place, settings: Settings, now: datetime, last: Saved | None, *, starting: bool = False) -> Tended:
     """One turn, off the supervisor's loop: back up the world's newest complete save unless the
     newest backup holds it, then keep what the settings say, and the backup a restore asks for.
-    Starting, it first clears copies a stop cut short and imports a kill cut short, and takes the
+    Starting, it first clears copies a stop cut short and the staging of imports a kill cut short, and takes the
     save the newest backup holds from its record, so a save the game stopped with that a stop never
     backed up is backed up now.
     Raises OSError only when the folder cannot be listed."""
