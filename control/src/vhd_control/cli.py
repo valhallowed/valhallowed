@@ -47,11 +47,11 @@ def main(argv: list[str] | None = None, out: TextIO = sys.stdout) -> int:
         elif args.command == "backups":
             show_backups(client.status(layout.CONTROL_SOCKET, schemas), args.world, out)
         elif args.command == "restore":
-            held = client.restore(layout.CONTROL_SOCKET, schemas, args.world, args.backup)
+            kept = client.restore(layout.CONTROL_SOCKET, schemas, args.world, args.backup)
             print(
-                f"vhd restore: the control plane holds restore {held['id']} of {held['world']}'s backup "
-                f"{held['backup']} and hands it to the world's runtime, which restores it once no players are "
-                "online; vhd apply --disconnect-players restores it now. vhd status shows how it ends.",
+                f"vhd restore: restore {kept['id']} of {kept['world']}'s backup {kept['backup']} is asked for. "
+                "The world's runtime restores it once no players are online, or now with vhd apply "
+                "--disconnect-players; vhd status shows while it waits, and how it ends.",
                 file=out,
             )
         elif args.command == "apply":
@@ -82,6 +82,8 @@ def show_backups(status: dict[str, Any], world: str, out: TextIO, now: datetime 
     now = now or datetime.now(UTC)
     if world not in status["worlds"]:
         raise NoSuchWorld(f"the install runs no world {world}")
+    if status["worlds"][world].get("removed"):
+        print(f"{world}: removed from the manifest, so vhd restore cannot restore these", file=out)
     backups = status["worlds"][world].get("report", {}).get("backups")
     if backups is None:
         print(f"{world}: its runtime has not reported its backups yet", file=out)
@@ -168,14 +170,15 @@ def _backups(backups: dict[str, Any], now: datetime) -> str:
     return text
 
 
-def _restore(held: dict[str, str] | None, acted: dict[str, str] | None) -> str:
-    """A world's restore for its status line: the one the control plane holds, and how the runtime
-    says the newest one it acted on stands, when that is the one held, or when none is."""
+def _restore(kept: dict[str, str] | None, acted: dict[str, str] | None) -> str:
+    """A world's restore for its status line: the one the control plane keeps, and how the runtime
+    says the newest one it acted on stands, when that is the one kept, or when none is."""
     text = ""
-    if held is not None:
-        text = f"; restore of backup {held['backup']} asked"
-    if acted is not None and (held is None or acted["id"] == held["id"]):
-        text += f"; restore {acted['outcome']}"
+    if kept is not None:
+        text = f"; restore of backup {kept['backup']} asked"
+    if acted is not None and (kept is None or acted["id"] == kept["id"]):
+        outcome = "under way" if acted["outcome"] == "restoring" else acted["outcome"]
+        text += f"; restore {outcome}"
         if "reason" in acted:
             text += f" ({_printable(acted['reason'])})"
     return text

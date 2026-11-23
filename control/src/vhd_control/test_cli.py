@@ -169,7 +169,7 @@ def test_backups_for_an_unknown_world_fails_the_command(
     assert "runs no world Hollowmere" in capsys.readouterr().err
 
 
-def test_restore_says_it_is_handed(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_restore_says_it_is_asked_for(monkeypatch: pytest.MonkeyPatch) -> None:
     asked: list[tuple[str, str]] = []
 
     def restore(path: Path, schemas: Schemas, world: str, backup: str) -> dict[str, Any]:
@@ -181,7 +181,7 @@ def test_restore_says_it_is_handed(monkeypatch: pytest.MonkeyPatch) -> None:
     out = io.StringIO()
     assert cli.main(["restore", "Meadowfold", BACKUP], out) == 0
     assert asked == [("Meadowfold", BACKUP)]
-    assert f"holds restore {'a' * 32} of Meadowfold's backup {BACKUP} and hands it" in out.getvalue()
+    assert f"restore {'a' * 32} of Meadowfold's backup {BACKUP} is asked for" in out.getvalue()
 
 
 def test_a_refused_restore_fails_the_command_with_the_reason(
@@ -204,7 +204,7 @@ def status_line(world: dict[str, Any]) -> str:
     return out.getvalue().splitlines()[1]
 
 
-HELD = {"id": "a" * 32, "backup": BACKUP}
+KEPT = {"id": "a" * 32, "backup": BACKUP}
 
 
 def report_with(**more: object) -> dict[str, Any]:
@@ -212,23 +212,38 @@ def report_with(**more: object) -> dict[str, Any]:
 
 
 def test_status_shows_a_restore_asked() -> None:
-    world = {"state": "running", "report": report_with(), "restore": HELD}
+    world = {"state": "running", "report": report_with(), "restore": KEPT}
     assert status_line(world) == f"Meadowfold: running; restore of backup {BACKUP} asked"
 
 
-@pytest.mark.parametrize("held", [HELD, None])
-def test_status_shows_the_outcome_of_the_restore_held_or_of_the_newest_when_none_is(
-    held: dict[str, str] | None,
+@pytest.mark.parametrize("kept", [KEPT, None])
+def test_status_shows_the_outcome_of_the_restore_kept_or_of_the_newest_when_none_is(
+    kept: dict[str, str] | None,
 ) -> None:
     acted = {"id": "a" * 32, "outcome": "failed", "reason": "no space\x1b[2J"}
     world: dict[str, Any] = {"state": "running", "report": report_with(restore=acted)}
-    if held is not None:
-        world["restore"] = held
-    asked = f"; restore of backup {BACKUP} asked" if held else ""
+    if kept is not None:
+        world["restore"] = kept
+    asked = f"; restore of backup {BACKUP} asked" if kept else ""
     assert status_line(world) == f"Meadowfold: running{asked}; restore failed (no space?[2J)"
 
 
-def test_status_hides_the_outcome_of_another_restore_than_the_one_held() -> None:
+def test_status_hides_the_outcome_of_another_restore_than_the_one_kept() -> None:
     acted = {"id": "b" * 32, "outcome": "done"}
-    world = {"state": "running", "report": report_with(restore=acted), "restore": HELD}
+    world = {"state": "running", "report": report_with(restore=acted), "restore": KEPT}
     assert status_line(world) == f"Meadowfold: running; restore of backup {BACKUP} asked"
+
+
+def test_backups_of_a_world_removed_from_the_manifest_say_vhd_restore_cannot_restore_them() -> None:
+    status = world_status(backups={"names": [BACKUP]})
+    status["worlds"]["Meadowfold"]["removed"] = True
+    assert backups_of(status) == [
+        "Meadowfold: removed from the manifest, so vhd restore cannot restore these",
+        f"{BACKUP}, 24m old",
+    ]
+
+
+def test_status_shows_a_restore_its_runtime_is_on_as_under_way() -> None:
+    acted = {"id": "a" * 32, "outcome": "restoring"}
+    world = {"state": "running", "report": report_with(restore=acted), "restore": KEPT}
+    assert status_line(world) == f"Meadowfold: running; restore of backup {BACKUP} asked; restore under way"
