@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from vhd_runtime import backups, transfer
+from vhd_runtime import backups, generation, transfer
 from vhd_runtime.generation import validator
 from vhd_runtime.test_backups import CONTRACTS, NOW, NOW_NAME, RECORD, chunk_name, no_locks, staging, write_save
 from vhd_runtime.transfer import Mounts
@@ -282,6 +282,53 @@ def test_an_action_without_its_results_contract_is_refused_before_it_starts(
     code = transfer.run("export", WORLD, tmp_path, never)
     result = result_of(capsys)
     assert code == 1 and result["reason"].startswith("export cannot read its result's contract")
+
+
+@pytest.mark.parametrize("action", ["import", "export"])
+def test_an_action_whose_contracts_refer_to_a_schema_the_image_lacks_is_refused_before_it_starts(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], action: transfer.Action
+) -> None:
+    contracts = tmp_path / "contracts"
+    shutil.copytree(CONTRACTS, contracts)
+
+    def never() -> transfer.Result:
+        raise AssertionError("acted without the schema its contracts refer to")
+
+    code = transfer.run(action, WORLD, contracts, never)
+    result = result_of(capsys)
+    assert code == 1 and result["reason"] == (
+        f"{action} cannot read its result's contract: game-runtime.import-export.schema.json refers to "
+        "../schema/manifest.schema.json#/$defs/save_name, which cannot be found"
+    )
+
+
+def test_a_record_contract_that_refers_to_a_schema_the_image_lacks_is_refused_before_an_import_starts(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    put_save(mounts)
+    contracts = tmp_path / "contracts"
+    shutil.copytree(CONTRACTS, contracts)
+    lacking = dataclasses.replace(mounts, contracts=contracts)
+    code = transfer.run("import", WORLD, CONTRACTS, lambda: transfer.import_save(lacking, WORLD, lambda: NOW))
+    result = result_of(capsys)
+    assert code == 1 and result["reason"] == (
+        "cannot read the contract of a backup's record: game-runtime.backup.schema.json refers to "
+        "../schema/manifest.schema.json#/$defs/save_name, which cannot be found"
+    )
+    assert kept(mounts) == []
+
+
+def test_a_result_that_cannot_be_checked_against_its_contract_is_printed_as_refused(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unresolvable(contract: object, document: object) -> str | None:
+        raise LookupError("no such schema")
+
+    monkeypatch.setattr(generation, "breach", unresolvable)
+    save: transfer.SaveSummary = {"number": 41, "objects": 1234, "written": "2026-11-18T19:40:12Z"}
+    code = transfer.run("export", WORLD, CONTRACTS, lambda: transfer._done("export", WORLD, NOW_NAME, save))
+    result = result_of(capsys)
+    assert (code, result["reason"]) == (1, "export's result cannot be checked against its contract: no such schema")
 
 
 def test_a_file_of_another_save_is_refused(mounts: Mounts, capsys: pytest.CaptureFixture[str]) -> None:

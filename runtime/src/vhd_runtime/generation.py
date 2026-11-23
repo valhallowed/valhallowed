@@ -1,13 +1,14 @@
 """B1: this runtime's generation and scoped secrets, validated on every read."""
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
 from jsonschema import Draft202012Validator, ValidationError
 from referencing import Registry, Resource
+from referencing.exceptions import Unresolvable
 from referencing.jsonschema import DRAFT202012
 
 GENERATION_FILE = "generation.json"
@@ -191,13 +192,36 @@ def _stamp(*paths: Path) -> tuple[int, ...]:
 
 def validator(schema_path: Path) -> Draft202012Validator:
     """A validator for one contract. The control plane's schemas.Schemas does the same; the two
-    ship in separate images, so each carries its own."""
+    ship in separate images, so each carries its own. Raises ValueError when the contract refers
+    to a schema it cannot find, before anything is validated against it."""
     schema = json.loads(schema_path.read_text())
     # A contract refers to the manifest schema by relative path: the schema gets
     # its own file URI as base, and the registry holds every schema it may name,
     # so validation never reads a file it was not given.
     schema["$id"] = schema_path.resolve().as_uri()
-    return Draft202012Validator(schema, registry=_registry(schema_path.parent))
+    registry = _registry(schema_path.parent).with_resource(
+        schema["$id"], Resource.from_contents(schema, default_specification=DRAFT202012)
+    )
+    resolver = registry.resolver(base_uri=schema["$id"])
+    for reference in _references(schema):
+        try:
+            resolver.lookup(reference)
+        except Unresolvable as error:
+            raise ValueError(f"{schema_path.name} refers to {reference}, which cannot be found") from error
+    return Draft202012Validator(schema, registry=registry)
+
+
+def _references(schema: object) -> Iterator[str]:
+    """Each $ref in a schema."""
+    if isinstance(schema, dict):
+        for key, value in schema.items():
+            if key == "$ref" and isinstance(value, str):
+                yield value
+            else:
+                yield from _references(value)
+    elif isinstance(schema, list):
+        for value in schema:
+            yield from _references(value)
 
 
 def _registry(contracts: Path) -> Registry[_Schema]:

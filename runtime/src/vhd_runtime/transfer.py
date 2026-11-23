@@ -150,12 +150,21 @@ def run(action: Action, world: str, contracts: Path, act: Callable[[], Result]) 
     finally:
         for signum, handler in previous.items():
             signal.signal(signum, handler)
-    breach = generation.breach(contract, result)
+    breach = _breach(action, contract, result)
     if breach is not None:
-        _log.error("%s of %s has a result that breaks its contract %s: %s", action, world, breach, result)
-        result = _refused(action, world, f"{action}'s result breaks its contract {breach}")
+        _log.error("%s of %s refused: %s: %s", action, world, breach, result)
+        result = _refused(action, world, breach)
     print(json.dumps(result), flush=True)
     return 0 if result["outcome"] == "done" else 1
+
+
+def _breach(action: Action, contract: Draft202012Validator, result: Result) -> str | None:
+    """Why a result counts as refused: it breaks its contract, or cannot be checked against it."""
+    try:
+        breach = generation.breach(contract, result)
+    except Exception as error:
+        return f"{action}'s result cannot be checked against its contract: {error}"
+    return None if breach is None else f"{action}'s result breaks its contract {breach}"
 
 
 def _stop(signum: int, frame: FrameType | None) -> NoReturn:
