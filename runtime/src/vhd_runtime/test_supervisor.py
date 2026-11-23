@@ -1,17 +1,18 @@
 import itertools
 import json
+import shutil
 import signal
 import subprocess
 from collections.abc import Callable
 from concurrent.futures import Executor, Future
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 from urllib.error import URLError
 
 import pytest
 
-from vhd_runtime import backups, steam, supervisor
+from vhd_runtime import backups, restore, steam, supervisor
 from vhd_runtime.generation import Reader, validator
 from vhd_runtime.supervisor import Clock, Paths, Supervisor
 from vhd_runtime.test_backups import write_save
@@ -23,6 +24,7 @@ STATUS = validator(CONTRACTS / "game-runtime.status.schema.json")
 # The wall clock when the fake one reads 0.
 START = datetime(2026, 11, 18, 20, 0, 0, tzinfo=UTC)
 T = TypeVar("T")
+RESTORE_ID = "5f0c9a3e1b7d4c2a8e6f0b1d3c5a7e9f"
 
 
 class Deferred(Executor):
@@ -152,6 +154,8 @@ class World:
         *,
         keep: int = 24,
         every_s: int = 3600,
+        restore: str | None = None,
+        restore_id: str = RESTORE_ID,
     ) -> None:
         """Write a generation, and unless told not to, its secrets, as the control plane does."""
         if secrets:
@@ -167,6 +171,8 @@ class World:
         }
         if disconnect:
             document["disconnect_players"] = True
+        if restore is not None:
+            document["restore"] = {"id": restore_id, "backup": restore}
         self.replace("generation.json", document)
 
     def secrets(self, number: int, password: str | None = None) -> None:
@@ -261,6 +267,28 @@ class World:
     def stop_at(self, when: float, sup: Supervisor) -> None:
         """Send the supervisor SIGTERM's stop request at a time, as Docker does on a stop."""
         self.time.at(when, lambda: sup.request_stop(signal.SIGTERM, None))
+
+    def backup_of(self, number: int, *, hours_ago: int = 2) -> str:
+        """A backup of save number, taken hours ago from a copy of the world as it was then."""
+        then = self.paths.data / "then" / "Meadowfold"
+        write_save(then, number, [{"chunk": 258, "size": 64, "version": number, "objects": 100 + number}])
+        taken = backups.take(then, self.paths.backups, "Meadowfold", self.now() - timedelta(hours=hours_ago))
+        assert taken is not None
+        shutil.rmtree(then.parent)
+        return taken.name
+
+    def save_number(self) -> int | None:
+        save = backups.newest_complete(self.paths.saves / "worlds_local" / "Meadowfold")
+        return None if save is None else save.number
+
+    def restores(self) -> list[object]:
+        """The restore outcomes reported, a repeated one counted once."""
+        outcomes: list[object] = []
+        for report in self.reports:
+            outcome = cast(dict[str, object], report.get("restore", {})).get("outcome")
+            if outcome is not None and (not outcomes or outcomes[-1] != outcome):
+                outcomes.append(outcome)
+        return outcomes
 
     def held_reasons(self) -> list[object]:
         return [r["reason"] for r in self.reports if r["state"] == "held"]
@@ -1008,3 +1036,266 @@ def test_a_shorter_interval_set_while_the_world_runs_holds_from_the_next_backup(
     assert world.backed_up() == [1, 2]
     taken = [backups.taken(name) for name in reversed(backups.names(world.paths.backups, world.now()))]
     assert (taken[1] - taken[0]).total_seconds() < 3700
+
+
+def place_of(world: World) -> restore.Place:
+    return restore.Place(world.paths.saves, world.paths.vhd, world.paths.backups, "Meadowfold")
+
+
+def restore_reasons(world: World) -> list[object]:
+    return [cast(dict[str, object], r["restore"]).get("reason") for r in world.reports if "restore" in r]
+
+
+def test_a_restore_swaps_the_backup_in_before_the_install_and_world_truth_passes_it(world: World) -> None:
+    world.game_saves(5)
+    world.remember("Meadowfold", 105)
+    name = world.backup_of(3)
+    world.generation(restore=name)
+    sup = world.supervisor()
+    world.plugin_running(103)
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert world.save_number() == 3
+    assert world.states() == ["held", "installing", "loading", "running"]
+    assert world.reports[0]["reason"] == f"restoring backup {name}"
+    assert world.restores() == ["restoring", "done"]
+    # The save it replaced was backed up first, and the restored one is never backed up twice.
+    assert world.backed_up() == [3, 5]
+    assert not place_of(world).aside.exists() and not place_of(world).intent.exists()
+
+
+def test_a_restored_save_that_loads_empty_is_swapped_back_and_the_next_start_runs_the_old_one(
+    world: World,
+) -> None:
+    world.game_saves(5)
+    world.remember("Meadowfold", 105)
+    name = world.backup_of(3)
+    world.generation(restore=name)
+    sup = world.supervisor()
+    world.time.at(30, lambda: world.plugin_reports(0))
+    world.stop_at(600, sup)
+
+    assert sup.run() == 0
+    assert world.process.killed and world.process.signals == []
+    assert world.save_number() == 5
+    assert world.restores() == ["restoring", "rolled-back"]
+    assert "loaded with no objects where it held 103; the save it replaced is back" in str(restore_reasons(world)[-1])
+    assert json.loads(world.paths.last_objects.read_text())["objects"] == 105
+
+    # Docker starts the container again: the same generation's restore is done, and not done twice.
+    world.process, world.reports = FakeProcess(), []
+    again = world.supervisor()
+    world.plugin_running(105, start=int(world.time.now) + 30)
+    world.stop_at(world.time.now + 60, again)
+    assert again.run() == 0
+    assert world.save_number() == 5
+    assert "held" not in world.states()
+    assert world.restores() == ["rolled-back"]
+
+
+def test_a_load_the_plugin_never_reports_holds_the_restored_save_without_swapping_back(world: World) -> None:
+    world.game_saves(5)
+    world.remember("Meadowfold", 105)
+    world.generation(restore=world.backup_of(3))
+    sup = world.supervisor()
+    world.stop_at(supervisor.LOAD_TIMEOUT_S + 60, sup)
+
+    assert sup.run() == 0
+    assert world.save_number() == 3 and place_of(world).aside.exists()
+    assert world.restores() == ["restoring"]
+    assert "world truth has not judged the restored save" in str(restore_reasons(world)[-1])
+    intent = restore.read_intent(place_of(world))
+    assert intent is not None and intent.phase == "swapped"
+
+
+def test_a_backup_that_is_gone_is_refused_and_the_world_starts_on_its_own_save(world: World) -> None:
+    world.game_saves(5)
+    world.generation(restore="20261118T100000Z")
+    sup = world.supervisor()
+    world.plugin_running(105)
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert world.save_number() == 5
+    assert world.restores() == ["restoring", "failed"]
+    assert "no longer exists" in str(restore_reasons(world)[-1])
+    assert len(world.launches) == 1
+
+
+def test_a_world_that_never_started_loads_the_restored_save_at_its_first_start(world: World) -> None:
+    name = world.backup_of(3)
+    world.generation(restore=name)
+    sup = world.supervisor()
+    world.plugin_running(103)
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert world.save_number() == 3
+    assert world.restores() == ["restoring", "done"]
+
+
+def test_a_world_with_a_pre_1_0_save_is_not_restored(world: World) -> None:
+    (world.paths.saves / "worlds_local").mkdir(parents=True)
+    (world.paths.saves / "worlds_local" / "Meadowfold.db").write_bytes(b"pre-1.0")
+    world.generation(restore=world.backup_of(3))
+    sup = world.supervisor()
+    world.plugin_running(40)
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    # Refused before anything was touched, so no report ever said it was restoring.
+    assert world.restores() == ["failed"]
+    assert "pre-1.0" in str(restore_reasons(world)[-1])
+    assert world.save_number() is None
+
+
+def test_a_save_that_cannot_be_backed_up_is_kept_aside_until_world_truth_passes(world: World) -> None:
+    world.game_saves(5, missing=("_main.5.db2",))
+    world.remember("Meadowfold", 105)
+    world.generation(restore=world.backup_of(3))
+    sup = world.supervisor()
+    aside: list[bool] = []
+    world.time.at(20, lambda: aside.append(place_of(world).aside.exists()))
+    world.plugin_running(103)
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert aside == [True] and not place_of(world).aside.exists()
+    assert world.restores() == ["restoring", "done"]
+    assert any("could not be backed up" in str(r) for r in restore_reasons(world))
+    assert world.backed_up() == [3]
+
+
+def test_a_running_world_restarts_for_a_new_restore_and_restores_at_its_next_start(world: World) -> None:
+    world.game_saves(5)
+    name = world.backup_of(3)
+    world.generation(1)
+    sup = world.supervisor()
+    world.plugin_running(105)
+    world.time.at(60, lambda: world.generation(2, restore=name))
+    world.stop_at(600, sup)
+
+    assert sup.run() == 0
+    assert world.process.signals == [signal.SIGINT]
+    assert world.save_number() == 5
+
+    world.process = FakeProcess()
+    again = world.supervisor()
+    world.plugin_running(103, start=int(world.time.now) + 30)
+    world.stop_at(world.time.now + 60, again)
+    assert again.run() == 0
+    assert world.save_number() == 3
+    assert world.restores()[-1] == "done"
+
+
+def test_a_generation_that_drops_a_done_restore_restarts_nothing(world: World) -> None:
+    world.game_saves(5)
+    restore.finish(place_of(world), restore.Done(RESTORE_ID, "done"))
+    world.generation(1, restore=world.backup_of(3))
+    sup = world.supervisor()
+    world.plugin_running(105)
+    world.time.at(60, lambda: world.generation(2))
+    world.stop_at(120, sup)
+
+    assert sup.run() == 0
+    assert world.save_number() == 5
+    assert len(world.launches) == 1 and world.reports[-1]["generation"] == 2
+    assert world.restores() == ["done"]
+
+
+def test_a_swap_a_crash_cut_short_is_finished_and_judged_at_the_next_start(world: World) -> None:
+    world.game_saves(5)
+    world.remember("Meadowfold", 105)
+    name = world.backup_of(3)
+    place = place_of(world)
+    restore.stage(place, name)
+    place.save.rename(place.aside)
+    restore.write_intent(place, restore.Intent(RESTORE_ID, name, "swapping", before=105, had_save=True, objects=103))
+    world.generation(restore=name)
+    sup = world.supervisor()
+    world.time.at(30, lambda: world.plugin_reports(0))
+    world.stop_at(600, sup)
+
+    # Judged against the backup it restored, which held objects: an empty load swaps it back.
+    assert sup.run() == 0
+    assert world.save_number() == 5
+    assert world.restores() == ["restoring", "rolled-back"]
+
+
+def test_a_swap_back_a_crash_cut_short_is_finished_at_the_next_start(world: World) -> None:
+    world.game_saves(5)
+    name = world.backup_of(3)
+    place = place_of(world)
+    restore.stage(place, name)
+    restore.swap(place, had_save=True)
+    restore.write_intent(
+        place, restore.Intent(RESTORE_ID, name, "unswapping", before=105, had_save=True, objects=103, reason="empty")
+    )
+    world.generation(restore=name)
+    sup = world.supervisor()
+    world.plugin_running(105)
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert world.save_number() == 5 and not place.aside.exists()
+    assert world.restores() == ["rolled-back"]
+    assert json.loads(world.paths.last_objects.read_text())["objects"] == 105
+
+
+def test_a_newer_restore_puts_back_the_save_of_one_still_unjudged_first(world: World) -> None:
+    world.game_saves(5)
+    first, second = world.backup_of(3, hours_ago=3), world.backup_of(4)
+    place = place_of(world)
+    restore.stage(place, first)
+    restore.swap(place, had_save=True)
+    restore.write_intent(place, restore.Intent("a" * 32, first, "swapped", before=105, had_save=True, objects=103))
+    world.generation(restore=second)
+    sup = world.supervisor()
+    world.plugin_running(104)
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert world.save_number() == 4
+    # The save the first replaced was put back, then backed up before the second replaced it.
+    assert world.backed_up() == [3, 4, 5]
+    assert world.restores() == ["restoring", "done"]
+    assert restore.read_done(place) == restore.Done(RESTORE_ID, "done")
+
+
+class SlowCopy(Executor):
+    """Finishes a restore's copy a while after it is submitted, in fake time, as a slow disk does,
+    and every other task at once."""
+
+    def __init__(self, time: FakeTime, seconds: float) -> None:
+        self.time, self.seconds = time, seconds
+
+    def submit(self, fn: Callable[..., T], /, *args: Any, **kwargs: Any) -> Future[T]:
+        if fn is not restore.stage:
+            return Immediate().submit(fn, *args, **kwargs)
+        future: Future[T] = Future()
+
+        def finish() -> None:
+            try:
+                future.set_result(fn(*args, **kwargs))
+            except Exception as error:
+                future.set_exception(error)
+
+        self.time.at(self.time.now + self.seconds, finish)
+        return future
+
+
+def test_status_keeps_reporting_the_world_held_while_a_slow_restore_copies(world: World) -> None:
+    world.game_saves(5)
+    name = world.backup_of(3)
+    world.generation(restore=name)
+    sup = world.supervisor()
+    sup.executor = SlowCopy(world.time, 20)
+    world.plugin_running(103, start=60)
+    world.stop_at(120, sup)
+
+    assert sup.run() == 0
+    restoring = [r for r in world.reports if r.get("reason") == f"restoring backup {name}"]
+    # One report on every interval of the 20 seconds the copy takes.
+    assert len(restoring) >= 20 // 5
+    assert world.save_number() == 3

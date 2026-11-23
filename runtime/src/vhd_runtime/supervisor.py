@@ -1,4 +1,4 @@
-"""The runtime's state machine: generation, install, launch, world truth, backups, stop and hold."""
+"""The runtime's state machine: generation, restore, install, launch, world truth, backups, stop and hold."""
 
 import json
 import logging
@@ -9,15 +9,15 @@ import subprocess
 import time
 from collections.abc import Callable, Mapping
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from types import FrameType
 from typing import Protocol
 
-from vhd_runtime import backups, server, status, steam
-from vhd_runtime.generation import Generation, IncompleteGeneration, InvalidGeneration, Reader
+from vhd_runtime import backups, restore, server, status, steam
+from vhd_runtime.generation import Generation, IncompleteGeneration, InvalidGeneration, Reader, Restore
 
 # Well below the game's autosave interval (30 minutes unless changed), so a
 # world held at this point has not saved.
@@ -96,9 +96,14 @@ class Paths:
         return self.data / "map-export"
 
     @property
+    def vhd(self) -> Path:
+        """The runtime's own records in the data volume."""
+        return self.data / "vhd"
+
+    @property
     def last_objects(self) -> Path:
         """The object count the runtime last saw its world hold, kept in the data volume."""
-        return self.data / "vhd" / "last-objects.json"
+        return self.vhd / "last-objects.json"
 
 
 class Process(Protocol):
@@ -159,6 +164,11 @@ class Supervisor:
     _backup_failure: str | None = field(default=None, init=False)
     # The last report the loop sent, for the last word after a stop.
     _last_report: status.RuntimeStatus | None = field(default=None, init=False)
+    # A restored save world truth has not judged yet; the newest restore acted on, for status; and
+    # the id of the newest restore finished, which a generation's restore never costs a restart for.
+    _judging: restore.Intent | None = field(default=None, init=False)
+    _restore_report: status.Restore | None = field(default=None, init=False)
+    _done_id: str | None = field(default=None, init=False)
 
     def request_stop(self, signum: int, frame: FrameType | None) -> None:
         """Signal handler: stop at the next poll, saving the world first."""
@@ -169,6 +179,7 @@ class Supervisor:
         if generation is None:
             return 0
         reporter = status.Reporter(generation.status_url, self.post)
+        self._restore(generation, reporter)
         build = self._install(generation, reporter)
         if build is None:
             return 0
@@ -221,6 +232,8 @@ class Supervisor:
             "world": generation.world,
             "state": State.INSTALLING,
         }
+        if self._restore_report is not None:
+            installing["restore"] = self._restore_report
         reporter.send(installing)
         next_report = self.clock.now() + generation.status_interval_s
 
@@ -272,7 +285,11 @@ class Supervisor:
             current = world if self._seen_within(EMPTY_WITHIN, generation) else None
             generation, newer = self._follow(generation)
             if newer is not None and self._may_restart(state, newer, current):
-                why = "a newer generation changes this world's settings"
+                why = (
+                    f"a newer generation restores backup {newer.restore.backup}"
+                    if self._restore_due(newer) and newer.restore is not None
+                    else "a newer generation changes this world's settings"
+                )
                 return self._shut_down(process, state, why, generation, reporter)
             previous = state
             if state in (State.LOADING, State.UNVERIFIED) and fresh is not None:
@@ -281,6 +298,13 @@ class Supervisor:
                 self._remember_objects(generation.world, fresh.objects)
             elif state is State.LOADING and self.clock.now() - launched > LOAD_TIMEOUT_S:
                 state, reason = self._on_load_timeout(process, generation.world, save_existed)
+            judging = self._judging
+            if judging is not None and state is not previous:
+                if state is State.HELD and reason != HELD_UNREPORTED:
+                    self._swap_back(judging, generation)
+                    self._report(reporter, _status(generation, state, reason, build, fresh))
+                    return 0
+                self._judged(judging, state, generation)
             self._back_up(generation, running=state in (State.RUNNING, State.UNVERIFIED))
             if state is not previous or self.clock.now() >= next_report:
                 self._report(reporter, _status(generation, state, reason, build, fresh))
@@ -484,12 +508,199 @@ class Supervisor:
         return report
 
     def _report(self, reporter: status.Reporter, report: status.RuntimeStatus) -> None:
-        """Send a report, with the world's backups."""
+        """Send a report, with the world's backups and its newest restore."""
         backed_up = self._backups_status()
         if backed_up is not None:
             report["backups"] = backed_up
+        if self._restore_report is not None:
+            report["restore"] = self._restore_report
         self._last_report = report
         reporter.send(report)
+
+    def _place(self, world: str) -> restore.Place:
+        return restore.Place(self.paths.saves, self.paths.vhd, self.paths.backups, world)
+
+    def _restore(self, generation: Generation, reporter: status.Reporter) -> None:
+        """Before the game installs or launches, so its save is never replaced under it: carry forward
+        or back a restore a stop or a crash cut short, then do the one the generation asks for, once
+        for its id (Game runtimes, Restore). World truth judges a restored save at the launch."""
+        place = self._place(generation.world)
+        done = restore.read_done(place)
+        if done is not None:
+            self._done_id = done.id
+            self._restore_status(done.id, done.outcome, done.reason)
+        intent = restore.read_intent(place)
+        if intent is not None:
+            self._recover(place, intent, generation)
+        asked = generation.restore
+        if asked is None or asked.id == self._done_id or self._judging is not None:
+            return
+        try:
+            self._begin(place, generation, asked, reporter)
+        except restore.RestoreFailed as error:
+            _log.error("restore %s of backup %s refused: %s", asked.id, asked.backup, error)
+            self._finish(place, restore.Done(asked.id, "failed", _reason(str(error))))
+
+    def _recover(self, place: restore.Place, intent: restore.Intent, generation: Generation) -> None:
+        """Carry a restore that a stop or a crash cut short to where it is safe: a copy is dropped and
+        asked for again, a swap is finished, a swap back is finished, and a judged one is forgotten."""
+        _log.info("carrying on restore %s of backup %s from %s", intent.id, intent.backup, intent.phase)
+        if intent.phase == "staging":
+            restore.clear_staged(place)
+            place.intent.unlink(missing_ok=True)
+            return
+        if intent.phase == "unswapping":
+            self._roll_back(place, intent, intent.reason or "the restored save failed world truth")
+            return
+        if intent.phase == "judged":
+            restore.drop_aside(place)
+            self._finish(place, restore.Done(intent.id, "done"))
+            return
+        if intent.phase == "swapping":
+            restore.swap(place, intent.had_save)
+            intent = replace(intent, phase="swapped")
+            restore.write_intent(place, intent)
+        if generation.restore is not None and generation.restore.id == intent.id:
+            # A crash may have come before the count was written: judge against the backup's.
+            if intent.objects is not None:
+                self._remember_objects(generation.world, intent.objects)
+            self._judging = intent
+            self._restore_status(intent.id, "restoring", intent.reason)
+        else:
+            self._roll_back(place, intent, "a newer generation withdrew the restore before world truth judged it")
+
+    def _begin(self, place: restore.Place, generation: Generation, asked: Restore, reporter: status.Reporter) -> None:
+        """Back up the save the restore replaces, as this start's turn of the backups, then copy and
+        check the backup, and swap it in. Raises RestoreFailed while the world's save is as it was."""
+        self._restore_status(asked.id, "restoring", None)
+        holding: status.RuntimeStatus = {
+            "contract": 1,
+            "generation": generation.number,
+            "world": generation.world,
+            "state": State.HELD,
+            "reason": f"restoring backup {asked.backup}",
+        }
+        _log.info("restoring backup %s of world %s", asked.backup, generation.world)
+        if place.legacy_save.exists():
+            raise restore.RestoreFailed(
+                f"the world has a pre-1.0 save, {place.legacy_save.name}, which no backup replaces"
+            )
+        if place.aside.exists():
+            raise restore.RestoreFailed(f"a save an earlier restore set aside is still at {place.aside}")
+        every = generation.status_interval_s
+        turn = self._await(self._tend(generation), reporter, holding, every)
+        kept = None
+        try:
+            tended = turn.result()
+        except Exception as error:
+            kept = f"{type(error).__name__}: {error}"
+        else:
+            if tended.take_failed:
+                kept = tended.failure or "the backup failed"
+        self._settle(turn, generation)
+        if kept is not None:
+            kept = _reason(
+                f"the save it replaces could not be backed up ({kept}); it is kept aside until world truth passes"
+            )
+            _log.warning("restore: %s", kept)
+        intent = restore.Intent(
+            id=asked.id,
+            backup=asked.backup,
+            phase="staging",
+            before=self._last_objects(generation.world),
+            had_save=place.save.exists(),
+            reason=kept,
+        )
+        restore.write_intent(place, intent)
+        # A refusal leaves nothing staged, and its done record replaces this intent.
+        staged = self.executor.submit(restore.stage, place, asked.backup)
+        objects = self._await(staged, reporter, holding, every).result()
+        intent = replace(intent, phase="swapping", objects=objects)
+        restore.write_intent(place, intent)
+        restore.swap(place, intent.had_save)
+        intent = replace(intent, phase="swapped")
+        restore.write_intent(place, intent)
+        # World truth judges the restored save against what its backup holds.
+        self._remember_objects(generation.world, objects)
+        try:
+            restored = backups.newest_complete(place.save)
+        except backups.BackupFailed:
+            restored = None
+        if restored is not None:
+            # The backup holds this save already: the next turn takes no copy of it.
+            self._backed_up = restored.saved
+        self._judging = intent
+        self._restore_status(intent.id, "restoring", kept)
+        _log.info("restored backup %s of %s, %d objects, for world truth", asked.backup, generation.world, objects)
+
+    def _await[T](
+        self, future: Future[T], reporter: status.Reporter, holding: status.RuntimeStatus, every: int
+    ) -> Future[T]:
+        """Wait for work off the loop, reporting the world held meanwhile, so it never shows as unknown."""
+        next_report = self.clock.now()
+        while True:
+            if self.clock.now() >= next_report:
+                self._report(reporter, holding.copy())
+                next_report = self.clock.now() + every
+            if future.done():
+                return future
+            self.clock.sleep(POLL_S)
+
+    def _judged(self, intent: restore.Intent, state: State, generation: Generation) -> None:
+        """World truth on a restored save: a world that loaded it runs, and the save it replaced goes.
+        A load the plugin never reported is no verdict on the save, so the restore waits on the next."""
+        if state is State.HELD:
+            waits = "world truth has not judged the restored save: " + HELD_UNREPORTED
+            self._restore_status(intent.id, "restoring", waits)
+            return
+        if state not in (State.RUNNING, State.UNVERIFIED):
+            return
+        place = self._place(generation.world)
+        restore.write_intent(place, replace(intent, phase="judged"))
+        restore.drop_aside(place)
+        self._finish(place, restore.Done(intent.id, "done"))
+        self._judging = None
+        _log.info("the restored backup %s passed world truth", intent.backup)
+
+    def _swap_back(self, intent: restore.Intent, generation: Generation) -> None:
+        """A restored save that loaded empty: the game was killed before it saved, so put back the
+        save it replaced, and the next start launches that."""
+        # A turn of the backups may still be reading the save folder.
+        if self._tending is not None:
+            self._settle(self._tending, generation)
+        back = "the save it replaced is back" if intent.had_save else "the world has no save again"
+        why = f"backup {intent.backup}'s save loaded with no objects where it held {intent.objects}; {back}"
+        self._roll_back(self._place(generation.world), intent, why)
+
+    def _roll_back(self, place: restore.Place, intent: restore.Intent, why: str) -> None:
+        _log.error("restore %s rolled back: %s", intent.id, why)
+        restore.write_intent(place, replace(intent, phase="unswapping", reason=_reason(why)))
+        restore.unswap(place, intent.had_save)
+        if intent.before is None:
+            self.paths.last_objects.unlink(missing_ok=True)
+            self._remembered = None
+        else:
+            self._remember_objects(place.world, intent.before)
+        self._finish(place, restore.Done(intent.id, "rolled-back", _reason(why)))
+        self._judging = None
+
+    def _finish(self, place: restore.Place, done: restore.Done) -> None:
+        restore.finish(place, done)
+        self._done_id = done.id
+        self._restore_status(done.id, done.outcome, done.reason)
+
+    def _restore_status(self, id: str, outcome: restore.Outcome, reason: str | None) -> None:
+        report: status.Restore = {"id": id, "outcome": outcome}
+        if reason is not None:
+            report["reason"] = _reason(reason)
+        self._restore_report = report
+
+    def _restore_due(self, generation: Generation) -> bool:
+        """Whether the generation asks for a restore not done yet, which costs a restart."""
+        asked = generation.restore
+        if asked is None or asked.id == self._done_id:
+            return False
+        return self._judging is None or self._judging.id != asked.id
 
     def _wait_for_generation(self) -> Generation | None:
         while not self._stop:
@@ -506,7 +717,7 @@ class Supervisor:
         newer = self._read_generation()
         if newer is None or newer.number <= current.number:
             return current, None
-        if newer.same_settings(current):
+        if newer.same_settings(current) and not self._restore_due(newer):
             _log.info("generation %d changes nothing %d restarts for; running on", newer.number, current.number)
             return newer, None
         return current, newer
