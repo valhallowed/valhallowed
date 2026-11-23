@@ -168,11 +168,12 @@ def test_a_ref_inside_a_value_that_holds_data_is_data_not_a_reference(tmp_path: 
     assert validator(path).is_valid({"link": {"$ref": "missing.schema.json"}})
 
 
-def test_a_property_named_for_a_data_keyword_is_a_schema_whose_ref_is_checked(tmp_path: Path) -> None:
+@pytest.mark.parametrize("keyword", ["properties", "$defs", "dependencies"])
+def test_a_schema_named_for_a_data_keyword_is_a_schema_whose_ref_is_checked(tmp_path: Path, keyword: str) -> None:
     schema = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
-        "properties": {"default": {"$ref": "missing.schema.json"}},
+        keyword: {"default": {"$ref": "missing.schema.json"}},
     }
     path = tmp_path / "contracts" / "named.schema.json"
     path.parent.mkdir()

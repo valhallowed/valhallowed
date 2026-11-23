@@ -193,7 +193,9 @@ def _stamp(*paths: Path) -> tuple[int, ...]:
 # Keywords whose values are instances, never schemas, so a "$ref" key inside one is data.
 _DATA_KEYWORDS = frozenset({"const", "enum", "default", "examples"})
 # Keywords whose values map names to schemas: a property named "default" is a schema.
-_SCHEMA_MAPS = frozenset({"properties", "patternProperties", "$defs", "definitions", "dependentSchemas"})
+_SCHEMA_MAPS = frozenset(
+    {"properties", "patternProperties", "$defs", "definitions", "dependentSchemas", "dependencies"}
+)
 
 
 def validator(schema_path: Path) -> Draft202012Validator:
