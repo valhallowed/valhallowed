@@ -527,6 +527,21 @@ def test_a_start_removes_the_staging_an_import_a_kill_cut_short_left_and_spares_
     assert tended.names == [] and tended.failure is None
 
 
+def test_a_start_spares_the_staging_an_import_holds_whatever_its_age(tmp_path: Path) -> None:
+    place = Place(tmp_path / "world", tmp_path / "backups", "Meadowfold")
+    place.backups.mkdir()
+    old = staging(place.backups, backups.IMPORT_STAGING_MAX_AGE_S * 24)
+    settings = Settings(every_s=3600, keep=1, keep_daily=0)
+    held = backups.lock_folder(old)
+    try:
+        backups.tend(place, settings, NOW, None, starting=True)
+        assert old.exists()
+    finally:
+        os.close(held)
+    backups.tend(place, settings, NOW, None, starting=True)
+    assert not old.exists()
+
+
 def test_names_and_pruning_leave_an_imports_staging_alone(tmp_path: Path) -> None:
     store = tmp_path / "backups"
     store.mkdir()

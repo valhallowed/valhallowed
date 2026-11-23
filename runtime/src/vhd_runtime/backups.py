@@ -15,14 +15,16 @@ into place once whole, so a folder named as a backup always holds one.
     <backups>/<taken>/<file>        the save's files, named as in the world's save folder
     <backups>/.partial-<taken>/     a copy under way, or a backup being removed, or either cut short;
                                     removed at each start
-    <backups>/.import-<id>/         an import under way, in a container of its own, or one a kill cut
-                                    short; removed at a start once IMPORT_STAGING_MAX_AGE_S old
+    <backups>/.import-<id>/         an import under way, in a container of its own, which holds a lock
+                                    on it, or one a kill cut short; removed at a start, and by the
+                                    next import, once IMPORT_STAGING_MAX_AGE_S old and no import holds it
 
 Every function here may block on the backups folder's disk, so the supervisor runs them off its
 loop, through tend.
 """
 
 import errno
+import fcntl
 import hashlib
 import io
 import json
@@ -44,8 +46,9 @@ RECORD = "backup.json"
 PARTIAL = ".partial-"
 # An import under way, which vhd runs in a container of its own (vhd_runtime.transfer).
 IMPORT_STAGING = ".import-"
-# An import's staging folder unmodified for longer than this is one a kill cut short. vhd must stop
-# an import's container well within it, so a start never removes an import still under way.
+# An import's staging folder unmodified for longer than this, which no import holds a lock on, is
+# one a kill cut short. The lock spares an import whose copy outlasts it; vhd stops an import well
+# within it all the same.
 IMPORT_STAGING_MAX_AGE_S = 3600
 NAME_FORMAT = "%Y%m%dT%H%M%SZ"
 # A time in UTC, to the second, as a record and an import's or an export's result write it.
@@ -470,13 +473,32 @@ def clear_partials(backups: Path) -> None:
 
 def clear_import_staging(backups: Path, now: datetime) -> None:
     """Remove the staging folders of imports a kill cut short: those unmodified for longer than
-    IMPORT_STAGING_MAX_AGE_S. A newer one may be an import still under way."""
+    IMPORT_STAGING_MAX_AGE_S that no import holds a lock on. Any other may be an import still under
+    way. Raises OSError only when the folder cannot be listed."""
     for entry in backups.iterdir():
         if not entry.name.startswith(IMPORT_STAGING):
             continue
         try:
-            modified = entry.lstat().st_mtime
-        except FileNotFoundError:
+            if now.timestamp() - entry.lstat().st_mtime <= IMPORT_STAGING_MAX_AGE_S:
+                continue
+            held = lock_folder(entry)
+        except OSError:
+            # Gone, no folder, or held by an import under way.
             continue
-        if now.timestamp() - modified > IMPORT_STAGING_MAX_AGE_S:
+        try:
             shutil.rmtree(entry, ignore_errors=True)
+        finally:
+            os.close(held)
+
+
+def lock_folder(folder: Path) -> int:
+    """An exclusive lock on a folder, never through a link and without waiting for another holder:
+    the descriptor that holds it until it is closed. Raises BlockingIOError when another holds it,
+    and OSError when the folder cannot be opened."""
+    descriptor = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return descriptor

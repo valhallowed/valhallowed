@@ -12,8 +12,9 @@ to standard error.
     /import                         a folder holding only the save folder, named for the world;
                                     vhd mounts it read-only
     /backups                        the world's own folder of the install's backups
-    /backups/.import-<id>/          an import under way, or one a kill cut short; a start of the
-                                    world's runtime removes it once it is old
+    /backups/.import-<id>/          an import under way, which holds a lock on it until it is named
+                                    as a backup, or one a kill cut short; a start of the world's
+                                    runtime, and the next import, remove it once it is old and unheld
     /export                         a folder with no worlds_local/<world> yet, which an export
                                     copies the backup into, as worlds_local/<world>/
 """
@@ -142,6 +143,10 @@ def import_save(mounts: Mounts, world: str, now: Callable[[], datetime]) -> Resu
     1.0+ save and fits, and its record keeps its contract. Raises Refused, keeping nothing."""
     contract = _record_contract(mounts)
     try:
+        backups.clear_import_staging(mounts.backups, now())
+    except OSError as error:
+        raise Refused(f"cannot read the world's backups folder: {error.strerror or error}") from error
+    try:
         folder = _save_folder(mounts.imported, world)
         sizes = _save_files(folder)
         number = _one_save(folder, set(sizes))
@@ -163,7 +168,12 @@ def import_save(mounts: Mounts, world: str, now: Callable[[], datetime]) -> Resu
     except OSError as error:
         raise Refused(f"cannot write into the backup folder: {error.strerror or error}") from error
     try:
-        name, objects = _keep(found, staging, mounts.backups, now, contract)
+        # Held until the backup is named, so no cleanup removes it, however long the copy takes.
+        held = backups.lock_folder(staging)
+        try:
+            name, objects = _keep(found, staging, mounts.backups, now, contract)
+        finally:
+            os.close(held)
     except OSError as error:
         shutil.rmtree(staging, ignore_errors=True)
         raise Refused(f"cannot copy the save into the backup folder: {error.strerror or error}") from error

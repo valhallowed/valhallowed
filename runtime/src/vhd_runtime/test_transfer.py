@@ -13,7 +13,7 @@ import pytest
 
 from vhd_runtime import backups, transfer
 from vhd_runtime.generation import validator
-from vhd_runtime.test_backups import CONTRACTS, NOW, NOW_NAME, RECORD, chunk_name, write_save
+from vhd_runtime.test_backups import CONTRACTS, NOW, NOW_NAME, RECORD, chunk_name, staging, write_save
 from vhd_runtime.transfer import Mounts
 
 RESULT = validator(CONTRACTS / "game-runtime.import-export.schema.json")
@@ -348,6 +348,45 @@ def test_a_file_that_grows_while_it_is_copied_is_refused(
     assert (code, result["reason"]) == (1, "the save's _main.41.db2 grew while it was copied")
     assert kept(mounts) == []
     assert (folder / "_main.41.db2").exists()
+
+
+def test_an_import_clears_the_staging_a_kill_cut_short_and_spares_any_an_import_holds(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str]
+) -> None:
+    put_save(mounts)
+    cut_short = staging(mounts.backups, backups.IMPORT_STAGING_MAX_AGE_S + 1)
+    under_way = staging(mounts.backups, backups.IMPORT_STAGING_MAX_AGE_S + 2)
+    recent = staging(mounts.backups, backups.IMPORT_STAGING_MAX_AGE_S - 60)
+    held = backups.lock_folder(under_way)
+    try:
+        code, _ = act(mounts, capsys)
+    finally:
+        os.close(held)
+    assert code == 0 and not cut_short.exists()
+    assert kept(mounts) == sorted([NOW_NAME, under_way.name, recent.name])
+
+
+def test_an_import_holds_its_staging_until_it_is_named_so_no_cleanup_removes_it(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    put_save(mounts)
+    copy_file = backups.copy_file
+    held: list[str] = []
+
+    def cleared_meanwhile(source: Path, target: Path, limit: int | None = None) -> dict[str, object]:
+        # A start of the world's runtime well after the age, as the copy of a large save may outlast it.
+        backups.clear_import_staging(mounts.backups, datetime.now(UTC) + timedelta(hours=2))
+        assert target.parent.is_dir()
+        with pytest.raises(BlockingIOError):
+            backups.lock_folder(target.parent)
+        held.append(target.parent.name)
+        return copy_file(source, target, limit)
+
+    monkeypatch.setattr(backups, "copy_file", cleared_meanwhile)
+    code, _ = act(mounts, capsys)
+    assert code == 0 and len(held) == len(CHUNKS) + 4 and kept(mounts) == [NOW_NAME]
+    # Released once named.
+    os.close(backups.lock_folder(mounts.backups / NOW_NAME))
 
 
 def test_a_name_the_runtimes_own_backup_takes_meanwhile_is_named_again(
