@@ -1719,6 +1719,18 @@ def test_a_world_with_a_pre_1_0_save_is_not_held_after_a_failed_restore(world: W
     assert len(world.launches) == 1 and not held_without_save(world)
 
 
+def test_a_world_whose_save_folder_is_a_file_is_held_after_a_failed_restore(world: World) -> None:
+    (world.paths.saves / "worlds_local").mkdir(parents=True)
+    (world.paths.saves / "worlds_local" / "Meadowfold").write_bytes(b"no save folder")
+    world.generation(restore="20261118T100000Z")
+    sup = world.supervisor()
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert world.restores()[-1] == "failed"
+    assert world.launches == [] and held_without_save(world)
+
+
 def test_a_new_world_with_no_restore_is_not_held(world: World) -> None:
     world.generation()
     sup = world.supervisor()
