@@ -208,12 +208,15 @@ def take(folder: Path, backups: Path, world: str, now: datetime, last: Saved | N
 
 def read_chunks(path: Path, number: int) -> tuple[list[str], int]:
     """The chunk files a save's .chunks file names, and the objects it counts. Fails closed on a
-    file in any other format, as a save parser outside its validated range must (Game facts)."""
+    file in any other format, as a save parser outside its validated range must (Game facts), and on
+    one that is no regular file."""
     try:
-        with path.open("rb") as reader:
+        with open_regular(path) as reader:
             data = reader.read(CHUNKS_MAX_BYTES + 1)
     except FileNotFoundError as error:
         raise BackupFailed(f"save {number} lacks _main.{number}.chunks") from error
+    except OSError as error:
+        raise BackupFailed(f"save {number}'s .chunks file cannot be read: {error.strerror or error}") from error
     if len(data) >= _HEADER.size:
         magic, objects, count = _HEADER.unpack_from(data)
         if magic == _MAGIC and objects >= 0 and count >= 0 and len(data) == _HEADER.size + count * _ENTRY.size:

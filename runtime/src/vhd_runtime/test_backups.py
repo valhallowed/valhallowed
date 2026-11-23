@@ -4,11 +4,14 @@ import json
 import os
 import re
 import shutil
+import signal
 import stat
 import struct
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import FrameType
 from typing import Any
 
 import pytest
@@ -192,6 +195,42 @@ def test_a_chunks_file_in_another_format_fails_closed(tmp_path: Path, data: byte
     (folder / "_main.7.chunks").write_bytes(data)
     with pytest.raises(BackupFailed, match=r"^save 7's \.chunks file is not in the format this runtime reads$"):
         take(folder, store, "Meadowfold", NOW)
+
+
+@contextmanager
+def within(seconds: float) -> Iterator[None]:
+    """Fail a test that would wait longer than seconds, as one waiting on a pipe would forever."""
+
+    def late(signum: int, frame: FrameType | None) -> None:
+        raise AssertionError(f"waited longer than {seconds} s")
+
+    previous = signal.signal(signal.SIGALRM, late)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+@pytest.mark.parametrize(
+    ("make", "reason"),
+    [
+        (os.mkfifo, "_main.7.chunks is not a regular file"),
+        (lambda path: path.symlink_to(path.with_name("elsewhere")), "_main.7.chunks is a link"),
+    ],
+)
+def test_a_chunks_file_that_is_no_regular_file_fails_closed_without_waiting(
+    tmp_path: Path, make: Callable[[Path], object], reason: str
+) -> None:
+    folder, store = tmp_path / "world", tmp_path / "backups"
+    store.mkdir()
+    write_save(folder, 7, [])
+    (folder / "_main.7.chunks").rename(folder / "elsewhere")
+    make(folder / "_main.7.chunks")
+    with within(5), pytest.raises(BackupFailed, match=f"^save 7's \\.chunks file cannot be read: {reason}$"):
+        take(folder, store, "Meadowfold", NOW)
+    assert list(store.iterdir()) == []
 
 
 def held(store: Path, *times: datetime) -> None:
