@@ -12,7 +12,7 @@ from urllib.error import URLError
 
 import pytest
 
-from vhd_runtime import backups, restore, steam, supervisor
+from vhd_runtime import backups, restore, status, steam, supervisor
 from vhd_runtime.generation import Reader, validator
 from vhd_runtime.supervisor import Clock, Paths, Supervisor
 from vhd_runtime.test_backups import write_save
@@ -985,6 +985,7 @@ def test_a_backup_that_keeps_failing_is_tried_again_less_often(world: World, mon
 
 
 def test_the_largest_report_fits_the_status_listener() -> None:
+    sent: list[bytes] = []
     # control/src/vhd_control/listeners.py, MAX_BODY: the control plane refuses a longer report.
     max_body = 16 * 1024
     longest = "\U0001f6e1" * supervisor.REASON_MAX
@@ -1001,8 +1002,8 @@ def test_the_largest_report_fits_the_status_listener() -> None:
         "restore": {"id": RESTORE_ID, "outcome": "rolled-back", "reason": longest},
     }
     STATUS.validate(report)
-    # As status.Reporter sends it.
-    assert len(json.dumps(report, ensure_ascii=False).encode()) <= max_body
+    status.Reporter(STATUS_URL, lambda url, body, timeout: sent.append(body)).send(cast(Any, report))
+    assert len(sent[0]) <= max_body
 
 
 def test_a_start_turn_that_fails_is_tried_again_as_one(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1063,8 +1064,9 @@ def test_a_restore_swaps_the_backup_in_before_the_install_and_world_truth_passes
     assert world.states() == ["held", "installing", "loading", "running"]
     assert world.reports[0]["reason"] == f"restoring backup {name}"
     assert world.restores() == ["restoring", "done"]
-    # The save it replaced was backed up first, and the restored one is never backed up twice.
-    assert world.backed_up() == [3, 5]
+    # The save it replaced was backed up first, and the restored one again once it launched, so the
+    # newest backup holds the save the world runs on.
+    assert world.backed_up() == [3, 5, 3]
     assert not place_of(world).aside.exists() and not place_of(world).intent.exists()
 
 
@@ -1167,7 +1169,7 @@ def test_a_save_that_cannot_be_backed_up_is_kept_aside_until_world_truth_passes(
     assert aside == [True] and not place_of(world).aside.exists()
     assert world.restores() == ["restoring", "done"]
     assert any("could not be backed up" in str(r) for r in restore_reasons(world))
-    assert world.backed_up() == [3]
+    assert world.backed_up() == [3, 3]
 
 
 def test_a_running_world_restarts_for_a_new_restore_and_restores_at_its_next_start(world: World) -> None:
@@ -1261,7 +1263,7 @@ def test_a_newer_restore_puts_back_the_save_of_one_still_unjudged_first(world: W
     assert sup.run() == 0
     assert world.save_number() == 4
     # The save the first replaced was put back, then backed up before the second replaced it.
-    assert world.backed_up() == [3, 4, 5]
+    assert world.backed_up() == [3, 4, 5, 4]
     assert world.restores() == ["restoring", "done"]
     done = restore.read_done(place)
     assert done is not None and (done.id, done.outcome) == (RESTORE_ID, "done")
@@ -1343,7 +1345,7 @@ def test_the_stop_for_a_restore_keeps_the_backup_it_asks_for(world: World) -> No
     world.stop_at(world.time.now + 60, again)
     assert again.run() == 0
     assert world.save_number() == 3 and world.restores()[-1] == "done"
-    assert world.backed_up() == [5, 6]
+    assert world.backed_up()[-1] == 3
 
 
 def test_a_restored_save_that_ends_the_game_as_it_loads_is_swapped_back(world: World) -> None:
@@ -1481,3 +1483,36 @@ def test_a_stop_before_the_copy_leaves_the_save_untouched_for_the_next_start(wor
     assert sup.run() == 0
     assert world.launches == [] and world.save_number() == 5
     assert restore.read_intent(place_of(world)) is None and restore.read_done(place_of(world)) is None
+
+
+def test_a_held_world_restarts_when_a_newer_generation_drops_its_unjudged_restore(world: World) -> None:
+    world.game_saves(5)
+    world.remember("Meadowfold", 105)
+    world.generation(1, restore=world.backup_of(3))
+    sup = world.supervisor()
+    world.time.at(supervisor.LOAD_TIMEOUT_S + 60, lambda: world.generation(2))
+    world.stop_at(5000, sup)
+
+    assert sup.run() == 0
+    assert world.time.now < 5000 and world.held_reasons()
+
+    world.process = FakeProcess()
+    again = world.supervisor()
+    world.plugin_running(105, start=int(world.time.now) + 30)
+    world.stop_at(world.time.now + 60, again)
+    assert again.run() == 0
+    assert world.save_number() == 5 and world.restores()[-1] == "rolled-back"
+
+
+def test_a_world_still_loading_a_restore_a_newer_generation_drops_is_judged_first(world: World) -> None:
+    world.game_saves(5)
+    world.generation(1, restore=world.backup_of(3))
+    sup = world.supervisor()
+    world.time.at(10, lambda: world.generation(2))
+    world.plugin_running(103)
+    world.stop_at(120, sup)
+
+    assert sup.run() == 0
+    assert len(world.launches) == 1 and world.process.signals == [signal.SIGINT]
+    assert world.save_number() == 3 and world.restores() == ["restoring", "done"]
+    assert world.reports[-1]["generation"] == 2

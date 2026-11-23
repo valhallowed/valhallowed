@@ -122,16 +122,15 @@ def world_folder(saves: Path, world: str) -> Path:
 
 
 def tend(place: Place, settings: Settings, now: datetime, last: Saved | None, *, starting: bool = False) -> Tended:
-    """One turn, off the supervisor's loop: back up the world's newest complete save unless last,
-    the save the newest backup holds, is that save, then keep what the settings say, and the
-    backup a restore asks for. Starting, it first clears copies a stop cut short, and, with no
-    last given, takes it from the newest backup's record, so a save the game stopped with that a
-    stop never backed up is backed up now. Raises OSError only when the folder cannot be listed."""
+    """One turn, off the supervisor's loop: back up the world's newest complete save unless the
+    newest backup holds it, then keep what the settings say, and the backup a restore asks for.
+    Starting, it first clears copies a stop cut short, and takes the save the newest backup holds
+    from its record, so a save the game stopped with that a stop never backed up is backed up now.
+    Raises OSError only when the folder cannot be listed."""
     if starting:
         clear_partials(place.backups)
-        if last is None:
-            held = names(place.backups, now)
-            last = last_saved(place.backups, held[0]) if held else None
+        held = names(place.backups, now)
+        last = last_saved(place.backups, held[0]) if held else None
     failure, take_failed = None, False
     try:
         backup = take(place.saves, place.backups, place.world, now, last)

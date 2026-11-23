@@ -191,7 +191,7 @@ def test_a_backup_file_that_is_a_pipe_is_refused_without_waiting(place: Place) -
         restore.stage(place, name)
 
 
-def test_a_backup_file_larger_than_its_record_says_is_not_copied_past_that(place: Place) -> None:
+def test_a_backup_file_larger_than_its_record_says_is_refused(place: Place) -> None:
     name = backup_of(place)
     with (place.backups / name / "_main.3.db2").open("ab") as appender:
         appender.write(b"x" * (2 << 20))

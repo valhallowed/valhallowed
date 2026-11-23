@@ -7,7 +7,7 @@ import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict
 from urllib.request import Request, urlopen
 
 REPORT_TIMEOUT_S = 5
@@ -32,11 +32,15 @@ class Backups(TypedDict):
     failure: NotRequired[str]
 
 
+# How a restore stands, as the status contract names it.
+RestoreOutcome = Literal["restoring", "done", "failed", "rolled-back"]
+
+
 class Restore(TypedDict):
     """The newest restore the runtime acted on: its id, its outcome, and why."""
 
     id: str
-    outcome: str
+    outcome: RestoreOutcome
     reason: NotRequired[str]
 
 

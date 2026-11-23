@@ -12,8 +12,8 @@ forward or back at the next start, and the world is never left without its save:
 
 Its phases, in order: staging, swapping, swapped (the game may run; world truth has not judged the
 restored save), then judged on a pass, or unswapping on a fail or when a newer generation drops or
-replaces the restore first, and the done record last. Everything
-here is in the data volume, beside the saves, so each swap is a rename.
+replaces the restore first, and the done record last. Everything here is in the data volume,
+beside the saves, so each swap is a rename. A record may carry keys a later runtime adds.
 """
 
 import json
@@ -27,12 +27,12 @@ from typing import Any, Literal, cast, get_args
 from vhd_runtime import backups
 
 Phase = Literal["staging", "swapping", "swapped", "judged", "unswapping"]
-# How a restore ends, and how status names one under way.
+# How a restore ends.
 Finished = Literal["done", "failed", "rolled-back"]
-Outcome = Literal["restoring", Finished]
 _PHASES = get_args(Phase)
 _FINISHED = get_args(Finished)
-_INTENT_KEYS = {"id", "backup", "phase", "before", "had_save", "objects", "reason", "saved"}
+_INTENT_KEYS = {"id", "backup", "phase", "before", "had_save", "objects", "reason"}
+_DONE_KEYS = {"id", "outcome", "reason"}
 
 # The files a 1.0+ save is made of (Game facts): the save's own four, and its chunks.
 _FILE = re.compile(r"_main\.[0-9]+\.(chunks|db2|fwl2|ok)|[0-9a-f]{2}_[0-9a-f]{2}__[0-9]+_[0-9]+\.chunk")
@@ -95,8 +95,6 @@ class Intent:
     objects: int | None = None
     # Why the restore went the way it did, for status.
     reason: str | None = None
-    # The restored save, as a backup knows it: its backup holds it, so no turn copies it again.
-    saved: backups.Saved | None = None
 
 
 @dataclass(frozen=True)
@@ -104,8 +102,6 @@ class Done:
     id: str
     outcome: Finished
     reason: str | None = None
-    # The save a restore that passed put in place, which its backup holds.
-    saved: backups.Saved | None = None
 
 
 def read_intent(place: Place) -> Intent | None:
@@ -113,7 +109,7 @@ def read_intent(place: Place) -> Intent | None:
     record = _read(place.intent)
     if (
         record is None
-        or set(record) != _INTENT_KEYS
+        or not _INTENT_KEYS <= set(record)
         or not _is_id(record["id"])
         or not (isinstance(record["backup"], str) and backups.is_name(record["backup"]))
         or record["phase"] not in _PHASES
@@ -121,7 +117,6 @@ def read_intent(place: Place) -> Intent | None:
         or type(record["had_save"]) is not bool
         or not _count(record["objects"])
         or not (record["reason"] is None or isinstance(record["reason"], str))
-        or not _is_saved(record["saved"])
     ):
         return None
     return Intent(
@@ -132,7 +127,6 @@ def read_intent(place: Place) -> Intent | None:
         had_save=record["had_save"],
         objects=cast(int | None, record["objects"]),
         reason=record["reason"],
-        saved=_saved(record["saved"]),
     )
 
 
@@ -145,19 +139,13 @@ def read_done(place: Place) -> Done | None:
     record = _read(place.done)
     if (
         record is None
-        or set(record) != {"id", "outcome", "reason", "saved"}
+        or not _DONE_KEYS <= set(record)
         or not _is_id(record["id"])
         or record["outcome"] not in _FINISHED
         or not (record["reason"] is None or isinstance(record["reason"], str))
-        or not _is_saved(record["saved"])
     ):
         return None
-    return Done(
-        id=cast(str, record["id"]),
-        outcome=cast(Finished, record["outcome"]),
-        reason=record["reason"],
-        saved=_saved(record["saved"]),
-    )
+    return Done(id=cast(str, record["id"]), outcome=cast(Finished, record["outcome"]), reason=record["reason"])
 
 
 def finish(place: Place, done: Done) -> None:
@@ -274,19 +262,6 @@ def _record(source: Path, world: str, name: str) -> tuple[int, list[dict[str, An
 
 def _is_id(value: object) -> bool:
     return isinstance(value, str) and _ID.fullmatch(value) is not None
-
-
-def _is_saved(value: object) -> bool:
-    return value is None or (
-        isinstance(value, list) and len(value) == 2 and all(type(v) is int and v >= 0 for v in value)
-    )
-
-
-def _saved(value: object) -> backups.Saved | None:
-    """A save as JSON keeps it, a list, as a backup knows it."""
-    if not isinstance(value, list):
-        return None
-    return value[0], value[1]
 
 
 def _count(value: object) -> bool:
