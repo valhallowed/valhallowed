@@ -14,7 +14,7 @@ from urllib.error import URLError
 
 import pytest
 
-from vhd_runtime import backups, restore, status, steam, supervisor, transfer
+from vhd_runtime import backups, generation, restore, status, steam, supervisor, transfer
 from vhd_runtime.generation import Reader, validator
 from vhd_runtime.supervisor import Clock, Paths, Supervisor
 from vhd_runtime.test_backups import RECORD, write_save
@@ -1082,7 +1082,15 @@ def test_a_restore_checks_its_backup_with_the_record_contract_read_at_the_start(
     def read_again(contracts: Path) -> object:
         raise AssertionError("read the record's contract again")
 
+    load = generation.validator
+
+    def loaded_again(path: Path) -> object:
+        if path.name == restore.RECORD_CONTRACT:
+            raise AssertionError("loaded the record's contract again")
+        return load(path)
+
     monkeypatch.setattr(restore, "record_contract", read_again)
+    monkeypatch.setattr(generation, "validator", loaded_again)
     world.plugin_running(103)
     world.stop_at(60, sup)
 
