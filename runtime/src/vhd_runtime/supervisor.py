@@ -226,10 +226,17 @@ class Supervisor:
         did not end done, and the generation asks for no restore the runtime has not done. The game
         would make an empty world in place of the one the restore was for, and the restore's
         outcome makes the control plane drop it, so this holds across starts until the server
-        manager asks for another restore or an import."""
+        manager asks for another restore or an import. A record of that restore that cannot be read
+        holds the world too, as one may be of a restore that did not end done."""
         if server.save_exists(self.paths.saves, generation.world) or self._due(generation) is not None:
             return None
-        done = restore.read_done(self._place(generation.world))
+        place = self._place(generation.world)
+        done = restore.read_done(place)
+        if done is None and os.path.lexists(place.done):
+            return _reason(
+                f"the world has no save and the record of its newest restore, {place.done.name} in its data volume, "
+                f"cannot be read, so no new world is made; {HELD_UNSAVED_ASK}"
+            )
         if done is None or done.outcome == "done":
             return None
         ended = "failed" if done.outcome == "failed" else "was rolled back"

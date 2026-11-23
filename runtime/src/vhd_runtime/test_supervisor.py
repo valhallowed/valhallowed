@@ -1663,6 +1663,22 @@ def test_the_reason_a_world_is_held_without_a_save_says_what_to_do_whole_and_cut
     )
 
 
+@pytest.mark.parametrize("record", ["{", "[]", json.dumps({"id": RESTORE_ID, "outcome": "unknown", "reason": None})])
+def test_a_world_with_no_save_whose_restore_record_cannot_be_read_is_held(world: World, record: str) -> None:
+    place_of(world).vhd.mkdir(parents=True)
+    place_of(world).done.write_text(record)
+    world.generation()
+    sup = world.supervisor()
+    world.stop_at(30, sup)
+
+    assert sup.run() == 0
+    assert world.launches == [] and world.states() == ["held"]
+    assert held_without_save(world)[-1].startswith(
+        "the world has no save and the record of its newest restore, restore-done.json in its data volume, "
+        "cannot be read, so no new world is made; ask for another restore or an import"
+    )
+
+
 def test_a_world_with_a_pre_1_0_save_is_not_held_after_a_failed_restore(world: World) -> None:
     (world.paths.saves / "worlds_local").mkdir(parents=True)
     (world.paths.saves / "worlds_local" / "Meadowfold.db").write_bytes(b"pre-1.0")
@@ -1682,4 +1698,6 @@ def test_a_new_world_with_no_restore_is_not_held(world: World) -> None:
     world.plugin_running(0)
     world.stop_at(60, sup)
     assert sup.run() == 0
+    # It has no record of a restore: a missing record holds nothing.
+    assert not place_of(world).done.exists()
     assert len(world.launches) == 1 and not held_without_save(world)
