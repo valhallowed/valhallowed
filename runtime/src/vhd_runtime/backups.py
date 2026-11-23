@@ -15,6 +15,8 @@ into place once whole, so a folder named as a backup always holds one.
     <backups>/<taken>/<file>        the save's files, named as in the world's save folder
     <backups>/.partial-<taken>/     a copy under way, or a backup being removed, or either cut short;
                                     removed at each start
+    <backups>/.import-<id>/         an import under way, in a container of its own, or one a kill cut
+                                    short; removed at a start once IMPORT_STAGING_MAX_AGE_S old
 
 Every function here may block on the backups folder's disk, so the supervisor runs them off its
 loop, through tend.
@@ -39,6 +41,9 @@ RECORD = "backup.json"
 PARTIAL = ".partial-"
 # An import under way, which vhd runs in a container of its own (vhd_runtime.transfer).
 IMPORT_STAGING = ".import-"
+# An import's staging folder unmodified for longer than this is one a kill cut short. vhd stops an
+# import's container well within it, so a start never removes an import still under way.
+IMPORT_STAGING_MAX_AGE_S = 3600
 NAME_FORMAT = "%Y%m%dT%H%M%SZ"
 # When a backup was taken, as its record says it.
 TAKEN_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
@@ -129,11 +134,13 @@ def world_folder(saves: Path, world: str) -> Path:
 def tend(place: Place, settings: Settings, now: datetime, last: Saved | None, *, starting: bool = False) -> Tended:
     """One turn, off the supervisor's loop: back up the world's newest complete save unless the
     newest backup holds it, then keep what the settings say, and the backup a restore asks for.
-    Starting, it first clears copies a stop cut short, and takes the save the newest backup holds
-    from its record, so a save the game stopped with that a stop never backed up is backed up now.
+    Starting, it first clears copies a stop cut short and imports a kill cut short, and takes the
+    save the newest backup holds from its record, so a save the game stopped with that a stop never
+    backed up is backed up now.
     Raises OSError only when the folder cannot be listed."""
     if starting:
         clear_partials(place.backups)
+        clear_import_staging(place.backups, now)
         held = names(place.backups, now)
         last = last_saved(place.backups, held[0]) if held else None
     failure, take_failed = None, False
@@ -413,4 +420,18 @@ def clear_partials(backups: Path) -> None:
     """Remove the copies and removals a stop cut short: none of them is a backup."""
     for entry in backups.iterdir():
         if entry.name.startswith(PARTIAL):
+            shutil.rmtree(entry, ignore_errors=True)
+
+
+def clear_import_staging(backups: Path, now: datetime) -> None:
+    """Remove the staging folders of imports a kill cut short: those unmodified for longer than
+    IMPORT_STAGING_MAX_AGE_S. A newer one may be an import still under way."""
+    for entry in backups.iterdir():
+        if not entry.name.startswith(IMPORT_STAGING):
+            continue
+        try:
+            modified = entry.lstat().st_mtime
+        except FileNotFoundError:
+            continue
+        if now.timestamp() - modified > IMPORT_STAGING_MAX_AGE_S:
             shutil.rmtree(entry, ignore_errors=True)

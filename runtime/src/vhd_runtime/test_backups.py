@@ -416,3 +416,40 @@ def test_a_starting_turn_clears_cut_short_copies_and_backs_up_a_save_no_backup_h
     assert not (place.backups / ".partial-20261118T204000Z").exists()
     again = backups.tend(place, Settings(every_s=3600, keep=24, keep_daily=14), NOW, None, starting=True)
     assert again.backup is None and again.newest == tended.backup.saved
+
+
+def staging(store: Path, age_s: float) -> Path:
+    """An import's staging folder, its record written, last modified age_s before now."""
+    folder = store / f"{backups.IMPORT_STAGING}{age_s:032.0f}"
+    folder.mkdir()
+    (folder / backups.RECORD).write_text("{}")
+    os.utime(folder, (NOW.timestamp() - age_s, NOW.timestamp() - age_s))
+    return folder
+
+
+def test_a_start_removes_the_staging_an_import_a_kill_cut_short_left_and_spares_one_under_way(
+    tmp_path: Path,
+) -> None:
+    place = Place(tmp_path / "world", tmp_path / "backups", "Meadowfold")
+    place.backups.mkdir()
+    old = staging(place.backups, backups.IMPORT_STAGING_MAX_AGE_S + 1)
+    recent = staging(place.backups, backups.IMPORT_STAGING_MAX_AGE_S - 60)
+    settings = Settings(every_s=3600, keep=1, keep_daily=0)
+
+    backups.tend(place, settings, NOW, None)
+    assert old.exists() and recent.exists()
+
+    tended = backups.tend(place, settings, NOW, None, starting=True)
+    assert not old.exists() and recent.exists()
+    assert tended.names == [] and tended.failure is None
+
+
+def test_names_and_pruning_leave_an_imports_staging_alone(tmp_path: Path) -> None:
+    store = tmp_path / "backups"
+    store.mkdir()
+    held(store, NOW - timedelta(days=2), NOW - timedelta(days=1), NOW)
+    under_way = staging(store, 0)
+    assert backups.names(store, NOW) == [NOW_NAME, "20261117T204012Z", "20261116T204012Z"]
+    assert backups.prune(store, keep=1, keep_daily=0, now=NOW) == ([NOW_NAME], None)
+    backups.clear_partials(store)
+    assert sorted(p.name for p in store.iterdir()) == sorted([NOW_NAME, under_way.name])
