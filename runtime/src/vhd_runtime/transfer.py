@@ -149,11 +149,15 @@ def run(action: Action, world: str, contracts: Path, act: Callable[[], Result]) 
         print(json.dumps(result), flush=True)
     finally:
         # A stop still held came once the action could no longer stop: its result answers it.
-        for signum in STOP_SIGNALS:
-            signal.signal(signum, signal.SIG_IGN)
-        signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+        try:
+            for signum in STOP_SIGNALS:
+                signal.signal(signum, signal.SIG_IGN)
+        finally:
+            # Set back even where no handler can be set, as outside the main thread.
+            signal.pthread_sigmask(signal.SIG_SETMASK, mask)
         for signum, handler in previous.items():
-            # None: a handler not set from Python, which Python cannot set back.
+            # None: a handler not set from Python, which Python cannot set back, so the signal
+            # stays ignored.
             if handler is not None:
                 signal.signal(signum, handler)
     return 0 if result["outcome"] == "done" else 1

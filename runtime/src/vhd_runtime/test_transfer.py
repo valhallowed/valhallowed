@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import signal
+import threading
 from collections import namedtuple
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -848,6 +849,37 @@ def test_a_results_contract_that_is_no_schema_is_refused_with_a_result_line(
     code = transfer.run("import", WORLD, contracts, lambda: transfer._refused("import", WORLD, "never"))
     result = result_of(capsys)
     assert code == 1 and result["reason"].startswith("import cannot read its result's contract: ")
+
+
+def test_an_action_run_outside_the_main_thread_leaves_its_mask_as_it_found_it() -> None:
+    seen: list[object] = []
+
+    def outside() -> None:
+        mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+        try:
+            transfer.run("import", WORLD, CONTRACTS, lambda: transfer._refused("import", WORLD, "never"))
+        except ValueError:
+            pass
+        seen.append(signal.pthread_sigmask(signal.SIG_BLOCK, ()) == mask)
+
+    thread = threading.Thread(target=outside)
+    thread.start()
+    thread.join()
+    assert seen == [True]
+
+
+def test_a_handler_python_cannot_set_back_leaves_the_signal_ignored(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    getsignal = signal.getsignal
+    monkeypatch.setattr(signal, "getsignal", lambda signum: None if signum == signal.SIGTERM else getsignal(signum))
+    previous = getsignal(signal.SIGTERM)
+    try:
+        code = transfer.run("import", WORLD, CONTRACTS, lambda: transfer._refused("import", WORLD, "no save"))
+        assert getsignal(signal.SIGTERM) == signal.SIG_IGN
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+    assert (code, result_of(capsys)["reason"]) == (1, "no save")
 
 
 def test_an_interrupt_still_ends_with_a_result_line(capsys: pytest.CaptureFixture[str]) -> None:
