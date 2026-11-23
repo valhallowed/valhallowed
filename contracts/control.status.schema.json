@@ -59,7 +59,7 @@
           "minimum": 1
         },
         "pending": {
-          "description": "A newer generation this world waits for.",
+          "description": "A generation newer than the one this world's runtime runs, which waits: in the control plane, or, for a restore handed to the runtime, in the runtime.",
           "type": "object",
           "additionalProperties": false,
           "required": ["generation", "waits_for"],
@@ -80,8 +80,8 @@
           "additionalProperties": false,
           "required": ["id", "backup"],
           "properties": {
-            "id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
-            "backup": { "type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z$" }
+            "id": { "$ref": "game-runtime.generation.schema.json#/properties/restore/properties/id" },
+            "backup": { "$ref": "game-runtime.generation.schema.json#/properties/restore/properties/backup" }
           }
         },
         "removed": {

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Control API restore reply",
-  "description": "I0: what the control API's POST /restore answers with 202: the restore it holds for the world, which its generation carries (B1) until the world's runtime reports how it ended.",
+  "description": "I0: what the control API's POST /restore answers with 202: the restore it keeps for the world, which its generation carries (B1) until the world's runtime reports how it ended.",
   "type": "object",
   "additionalProperties": false,
   "required": ["contract", "id", "world", "backup"],
@@ -12,8 +12,7 @@
     },
     "id": {
       "description": "The restore's id, opaque and never reused, as the generation and the runtime's status name it.",
-      "type": "string",
-      "pattern": "^[0-9a-f]{32}$"
+      "$ref": "game-runtime.generation.schema.json#/properties/restore/properties/id"
     },
     "world": {
       "description": "The world's save name.",
@@ -21,8 +20,7 @@
     },
     "backup": {
       "description": "The backup it restores.",
-      "type": "string",
-      "pattern": "^[0-9]{8}T[0-9]{6}Z$"
+      "$ref": "game-runtime.generation.schema.json#/properties/restore/properties/backup"
     }
   }
 }
