@@ -222,10 +222,9 @@ class Supervisor:
         would make an empty world in place of the one the restore was for, and the restore's
         outcome makes the control plane drop it, so this holds across starts until the server
         manager asks for another restore or an import."""
-        place = self._place(generation.world)
-        if place.save.exists() or place.legacy_save.exists() or self._due(generation) is not None:
+        if server.save_exists(self.paths.saves, generation.world) or self._due(generation) is not None:
             return None
-        done = restore.read_done(place)
+        done = restore.read_done(self._place(generation.world))
         if done is None or done.outcome == "done":
             return None
         ended = "failed" if done.outcome == "failed" else "was rolled back"

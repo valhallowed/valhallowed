@@ -1645,6 +1645,19 @@ def test_a_rolled_back_restore_on_a_world_with_no_save_holds_it_at_the_next_star
     assert cast(dict[str, object], world.reports[-1]["backups"])["names"]
 
 
+def test_a_world_with_a_pre_1_0_save_is_not_held_after_a_failed_restore(world: World) -> None:
+    (world.paths.saves / "worlds_local").mkdir(parents=True)
+    (world.paths.saves / "worlds_local" / "Meadowfold.db").write_bytes(b"pre-1.0")
+    world.generation(restore="20261118T100000Z")
+    sup = world.supervisor()
+    world.plugin_running(40)
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert world.restores() == ["failed"]
+    assert len(world.launches) == 1 and not held_without_save(world)
+
+
 def test_a_new_world_with_no_restore_is_not_held(world: World) -> None:
     world.generation()
     sup = world.supervisor()
