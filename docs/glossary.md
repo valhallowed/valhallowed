@@ -112,10 +112,11 @@ Reconcile produces it whole or not at all: when a new manifest is rejected,
 the last good generation keeps running. Each child receives its own part, its
 generation document (B1), and adopts all of it or none.
 
-**Hold** — A game runtime whose game is not running: after the world failed
-world truth, while its files are replaced at a start, before the game
-launches, or for a world with no save whose restore did not end done, so no
-empty world is made in its place; all without a Docker socket (G13).
+**Hold** — A game runtime whose game is not running, without a Docker socket
+(G13): after the world failed world truth; while its files are replaced at a
+start, before the game launches; or, for a world with no save whose restore did
+not end done, until another restore is asked for, so no empty world is made in
+its place.
 
 **Host check** — The control plane's comparison of what the manifest asks for
 (memory and CPU per world, disk) with what the host has. A shortfall is a

@@ -264,21 +264,23 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   named for the world's save name holding exactly one complete save and nothing
   else, of regular files only, at most 4 GiB: more than one complete save is
   refused, since the game picks the newest by modification time, which a copy
-  may have lost. It copies into a staging folder that the runtime's backup turns
-  leave alone, and names it as a backup only once whole; a start removes staging
-  an import left more than an hour ago, so `vhd` stops an import well within
-  that. Its result (B13, `contracts/game-runtime.import-export.schema.json`) is
-  the one line `vhd` reads. A world that has never started loads an imported
-  save at its first start, so no empty world is made first, and a world with no
-  save whose restore did not end done is held rather than started empty, across
-  restarts, until another restore is asked for or its data volume is removed. An
-  export copies a backup, the newest by default, into the install folder in the
-  layout the game reads, after checking it against its record. A restore or an
-  import waits as a pending change while its world has players online, like a
-  game-server restart, unless the server manager confirms it; a restore waits in
-  its runtime (Restart gating is shared), and `vhd apply` counts one its runtime
-  has not acted on as a restart, so an apply while it waits for an empty world
-  asks for `--disconnect-players`, which confirms it.
+  may have lost. It copies into a folder that the runtime's backup turns leave
+  alone, and names it as a backup only once whole; a start, and the next import,
+  remove one an import left more than an hour ago and no longer holds, so `vhd`
+  stops an import well within that. Its result (B13,
+  `contracts/game-runtime.import-export.schema.json`) is the one line `vhd`
+  reads. A world that has never started loads an imported save at its first
+  start, so no empty world is made first, and a world with no save whose restore
+  did not end done is held rather than started empty, across restarts, until
+  another restore is asked for or its data volume is removed, which also removes
+  its installed server, so its next start downloads it again. An export copies a
+  backup, the newest by default, into the install folder in the layout the game
+  reads, after checking it against its record. A restore or an import waits as a
+  pending change while its world has players online, like a game-server restart,
+  unless the server manager confirms it; a restore waits in its runtime (Restart
+  gating is shared), and `vhd apply` counts one its runtime has not acted on as
+  a restart, so an apply while it waits for an empty world asks for
+  `--disconnect-players`, which confirms it.
 - **Updates.** Under the default update policy, a runtime compares its
   installed game build with Steam's newest public build every 15 minutes, and
   restarts its world to update once no players are online, by its own final
@@ -408,7 +410,7 @@ boundary, and every boundary follows one standard. Each contract lives in
 | B10 | Players → game runtime | Game traffic and chat lines | Game protocol (not ours); chat commands parsed and rate-limited by the plugin, issued through the broker | The command is refused and audited |
 | B11 | Players → web map | Web requests | Web map API schemas (live players; worlds and their render geometry); identity from the session only | The request is rejected; while the web map cannot read the database, the live players answer 503, and the worlds and their renders are still served |
 | B12 | Supervisor ↔ plugin | The plugin's generated config; the world status file back | Plugin config schema, world status schema | The report counts as absent, and world truth decides what that means for the world |
-| B13 | Game runtime image → `vhd`, and into the backups | An import's backup, and an import's or an export's result, from the one-off container `vhd` runs it in | Backup record schema, import and export result schema | Output that breaks it, or none, counts as refused; an import keeps no backup it did not finish |
+| B13 | Game runtime image → `vhd`, and into the backups | An import's backup, and an import's or an export's result, from the one-off container `vhd` runs it in | Backup record schema, import and export result schema | Output that breaks it, or none, counts as refused; an import cut short after naming its backup may have kept it, and the world's backups then list it |
 
 ### Exposure
 
