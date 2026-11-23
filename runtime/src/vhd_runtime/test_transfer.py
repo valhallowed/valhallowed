@@ -298,7 +298,7 @@ def test_a_name_the_runtimes_own_backup_takes_meanwhile_is_named_again(
     mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     put_save(mounts)
-    name_time = backups._name_time
+    name_time = backups.name_time
     raced: list[str] = []
 
     def runtime_takes_it(store: Path, now: datetime) -> datetime:
@@ -311,7 +311,7 @@ def test_a_name_the_runtimes_own_backup_takes_meanwhile_is_named_again(
             raced.append(name)
         return when
 
-    monkeypatch.setattr(backups, "_name_time", runtime_takes_it)
+    monkeypatch.setattr(backups, "name_time", runtime_takes_it)
     code, result = act(mounts, capsys)
     assert code == 0 and raced == [NOW_NAME]
     assert result["backup"] == "20261118T204013Z"
@@ -324,7 +324,7 @@ def test_an_import_whose_every_name_is_taken_meanwhile_is_refused(
     mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     put_save(mounts)
-    name_time = backups._name_time
+    name_time = backups.name_time
 
     def runtime_takes_each(store: Path, now: datetime) -> datetime:
         when = name_time(store, now)
@@ -332,7 +332,7 @@ def test_an_import_whose_every_name_is_taken_meanwhile_is_refused(
         (store / when.strftime(backups.NAME_FORMAT) / backups.RECORD).write_text("{}")
         return when
 
-    monkeypatch.setattr(backups, "_name_time", runtime_takes_each)
+    monkeypatch.setattr(backups, "name_time", runtime_takes_each)
     code, result = act(mounts, capsys)
     assert code == 1 and result["reason"].startswith("the runtime's own backups took each name the import tried")
     assert not any(name.startswith(backups.IMPORT_STAGING) for name in kept(mounts))
@@ -463,6 +463,18 @@ def test_a_backup_of_another_world_is_refused(mounts: Mounts, capsys: pytest.Cap
     path.write_text(json.dumps({**json.loads(path.read_text()), "world": "Ashwake"}))
     code, result = export(mounts, capsys)
     assert (code, result["reason"]) == (1, f"backup {name} is not a backup of Meadowfold")
+    assert list(mounts.exported.iterdir()) == []
+
+
+@pytest.mark.parametrize("written_ns", [-1, "1763498412000000000", None])
+def test_a_backup_whose_record_says_no_time_the_save_was_completed_is_refused(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], written_ns: object
+) -> None:
+    name = backup_of(mounts, 41, NOW)
+    path = mounts.backups / name / backups.RECORD
+    path.write_text(json.dumps({**json.loads(path.read_text()), "written_ns": written_ns}))
+    code, result = export(mounts, capsys)
+    assert (code, result["reason"]) == (1, f"backup {name}'s record cannot be read")
     assert list(mounts.exported.iterdir()) == []
 
 

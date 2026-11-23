@@ -61,7 +61,7 @@ RESERVE = 1 << 30
 # ahead would otherwise stay newest, and drag every later name after it.
 AHEAD = timedelta(days=1)
 
-_OK = re.compile(r"^_main\.([0-9]+)\.ok$")
+OK_FILE = re.compile(r"^_main\.([0-9]+)\.ok$")
 # The .chunks file, as the game writes it (Game facts): little-endian 42, the save's objects, the
 # chunks it names, then each chunk's index, size, version and objects.
 _HEADER = struct.Struct("<hii")
@@ -163,7 +163,7 @@ def newest_complete(folder: Path) -> Save | None:
     except FileNotFoundError:
         return None
     for entry in entries:
-        match = _OK.match(entry.name)
+        match = OK_FILE.match(entry.name)
         if match is None:
             continue
         try:
@@ -174,7 +174,7 @@ def newest_complete(folder: Path) -> Save | None:
         return None
     written_ns, number = max(written)
     main = tuple(f"_main.{number}.{kind}" for kind in ("chunks", "db2", "fwl2", "ok"))
-    chunks, objects = _chunks(folder / main[0], number)
+    chunks, objects = read_chunks(folder / main[0], number)
     for name in main:
         if not (folder / name).is_file():
             raise BackupFailed(f"save {number} lacks {name}")
@@ -206,7 +206,7 @@ def take(folder: Path, backups: Path, world: str, now: datetime, last: Saved | N
     raise BackupFailed(failure)
 
 
-def _chunks(path: Path, number: int) -> tuple[list[str], int]:
+def read_chunks(path: Path, number: int) -> tuple[list[str], int]:
     """The chunk files a save's .chunks file names, and the objects it counts. Fails closed on a
     file in any other format, as a save parser outside its validated range must (Game facts)."""
     try:
@@ -226,7 +226,7 @@ def _chunks(path: Path, number: int) -> tuple[list[str], int]:
 
 
 def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) -> Backup:
-    taken_at = _name_time(backups, now)
+    taken_at = name_time(backups, now)
     name = taken_at.strftime(NAME_FORMAT)
     partial = backups / f"{PARTIAL}{name}"
     try:
@@ -263,7 +263,7 @@ def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) ->
     return Backup(name=name, saved=save.saved)
 
 
-def _name_time(backups: Path, now: datetime) -> datetime:
+def name_time(backups: Path, now: datetime) -> datetime:
     """When a new backup counts as taken: now, or a second after the newest, if the clock has gone
     back since that was taken. Names order backups, so a new one always comes newest."""
     held = names(backups, now)

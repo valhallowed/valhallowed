@@ -35,7 +35,7 @@ _INTENT_KEYS = {"id", "backup", "phase", "before", "had_save", "objects", "reaso
 _DONE_KEYS = {"id", "outcome", "reason"}
 
 # The files a 1.0+ save is made of (Game facts): the save's own four, and its chunks.
-_FILE = re.compile(r"_main\.[0-9]+\.(chunks|db2|fwl2|ok)|[0-9a-f]{2}_[0-9a-f]{2}__[0-9]+_[0-9]+\.chunk")
+SAVE_FILE = re.compile(r"_main\.[0-9]+\.(chunks|db2|fwl2|ok)|[0-9a-f]{2}_[0-9a-f]{2}__[0-9]+_[0-9]+\.chunk")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _ID = re.compile(r"[0-9a-f]{32}")
 # A record lists a save's few thousand files at most; anything longer is no record of ours.
@@ -104,6 +104,16 @@ class Done:
     reason: str | None = None
 
 
+@dataclass(frozen=True)
+class Record:
+    """What a backup's record says of its save: its number, when the game completed it, and each
+    of its files."""
+
+    number: int
+    written_ns: int
+    files: list[dict[str, Any]]
+
+
 def read_intent(place: Place) -> Intent | None:
     """The restore under way, or None. A record missing a key, or with a bad value, is none: only this
     runtime writes it."""
@@ -169,18 +179,18 @@ def stage(place: Place, name: str) -> int:
     source = place.backups / name
     if not (source / backups.RECORD).is_file():
         raise RestoreFailed(f"backup {name} no longer exists in {place.backups}")
-    number, files = _record(source, place.world, name)
+    record = read_record(source, place.world, name)
     clear_staged(place)
     try:
         place.staged.mkdir(parents=True)
-        needed = sum(file["size"] for file in files)
+        needed = sum(file["size"] for file in record.files)
         free = shutil.disk_usage(place.staged).free
         if free - needed < backups.RESERVE:
             raise RestoreFailed(
                 f"the data volume has {free // backups.MIB} MiB free; backup {name} needs {needed // backups.MIB} MiB, "
                 f"and {backups.RESERVE // backups.MIB} MiB must stay free"
             )
-        objects = copy_checked(source, place.staged, name, number, files)
+        objects = copy_checked(source, place.staged, name, record.number, record.files)
         backups.sync(place.staged)
     except RestoreFailed:
         clear_staged(place)
@@ -243,13 +253,20 @@ def drop_aside(place: Place) -> None:
     shutil.rmtree(place.aside, ignore_errors=True)
 
 
-def _record(source: Path, world: str, name: str) -> tuple[int, list[dict[str, Any]]]:
-    """The save a backup's record names, and its files, once it names this world and lists only a
-    save's files, each once."""
+def read_record(source: Path, world: str, name: str) -> Record:
+    """The save a backup's record names, once it names this world and lists only a save's files,
+    each once. Raises RestoreFailed."""
     record = _read(source / backups.RECORD)
     files = record.get("files") if record is not None else None
     number = record.get("save") if record is not None else None
-    if record is None or not isinstance(files, list) or type(number) is not int:
+    written_ns = record.get("written_ns") if record is not None else None
+    if (
+        record is None
+        or not isinstance(files, list)
+        or type(number) is not int
+        or type(written_ns) is not int
+        or written_ns < 0
+    ):
         raise RestoreFailed(f"backup {name}'s record cannot be read")
     if record.get("world") != world:
         raise RestoreFailed(f"backup {name} is not a backup of {world}")
@@ -258,7 +275,7 @@ def _record(source: Path, world: str, name: str) -> tuple[int, list[dict[str, An
         if (
             not isinstance(file, dict)
             or not isinstance(file.get("name"), str)
-            or not _FILE.fullmatch(file["name"])
+            or not SAVE_FILE.fullmatch(file["name"])
             or file["name"] in seen
             or type(file.get("size")) is not int
             or file["size"] < 0
@@ -267,7 +284,7 @@ def _record(source: Path, world: str, name: str) -> tuple[int, list[dict[str, An
         ):
             raise RestoreFailed(f"backup {name}'s record lists a file that is no part of a save")
         seen.add(file["name"])
-    return number, files
+    return Record(number, written_ns, files)
 
 
 def _is_id(value: object) -> bool:

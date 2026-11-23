@@ -169,20 +169,16 @@ def export_backup(mounts: Mounts, world: str, backup: str | None, now: Callable[
         raise Refused(f"backup {name} does not exist in the backup folder")
     source = mounts.backups / name
     try:
-        number, files = restore._record(source, world, name)
+        record = restore.read_record(source, world, name)
     except restore.RestoreFailed as error:
         raise Refused(str(error)) from error
-    record = restore._read(source / backups.RECORD) or {}
-    written_ns = record.get("written_ns")
-    if type(written_ns) is not int or written_ns < 0:
-        raise Refused(f"backup {name}'s record cannot be read")
     try:
-        _room(mounts.exported, "the export folder", f"backup {name}", sum(file["size"] for file in files))
+        _room(mounts.exported, "the export folder", f"backup {name}", sum(file["size"] for file in record.files))
     except OSError as error:
         raise Refused(f"cannot read the export folder: {error.strerror or error}") from error
     target, written = _export_target(mounts.exported, world)
     try:
-        objects = restore.copy_checked(source, target, name, number, files)
+        objects = restore.copy_checked(source, target, name, record.number, record.files)
         backups.sync(target)
         backups.sync(target.parent)
     except restore.RestoreFailed as error:
@@ -194,8 +190,8 @@ def export_backup(mounts: Mounts, world: str, backup: str | None, now: Callable[
     except BaseException:
         shutil.rmtree(written, ignore_errors=True)
         raise
-    _log.info("exported backup %s of world %s, save %d, %d objects", name, world, number, objects)
-    return _done("export", world, name, _summary(number, objects, written_ns))
+    _log.info("exported backup %s of world %s, save %d, %d objects", name, world, record.number, objects)
+    return _done("export", world, name, _summary(record.number, objects, record.written_ns))
 
 
 def _room(folder: Path, where: str, what: str, needed: int) -> None:
@@ -260,7 +256,7 @@ def _save_files(folder: Path) -> dict[str, int]:
             )
         if entry.name.endswith(_PRE_1_0):
             raise Refused(f"the save holds {entry.name}, a pre-1.0 save's file; an import takes a 1.0+ save only")
-        if not restore._FILE.fullmatch(entry.name):
+        if not restore.SAVE_FILE.fullmatch(entry.name):
             raise Refused(f"the save holds {entry.name}, which is no file of a save")
         sizes[entry.name] = mode.st_size
     return sizes
@@ -269,7 +265,7 @@ def _save_files(folder: Path) -> dict[str, int]:
 def _one_save(folder: Path, present: set[str]) -> int:
     """The save's number, once the folder holds exactly one complete save, all of its files and
     nothing else."""
-    numbers = sorted(int(match[1]) for name in present if (match := backups._OK.match(name)))
+    numbers = sorted(int(match[1]) for name in present if (match := backups.OK_FILE.match(name)))
     if not numbers:
         raise Refused("the save folder holds no complete save: no _main.<n>.ok")
     if len(numbers) > 1:
@@ -283,7 +279,7 @@ def _one_save(folder: Path, present: set[str]) -> int:
     if lacks:
         raise Refused(f"save {number} lacks {lacks[0]}")
     try:
-        chunks, _ = backups._chunks(folder / f"_main.{number}.chunks", number)
+        chunks, _ = backups.read_chunks(folder / f"_main.{number}.chunks", number)
     except backups.BackupFailed as error:
         raise Refused(str(error)) from error
     expected = main | set(chunks)
@@ -330,7 +326,7 @@ def _keep(found: _Found, staging: Path, store: Path, world: str, now: Callable[[
         "files": files,
     }
     for _ in range(NAME_ATTEMPTS):
-        taken_at = backups._name_time(store, now())
+        taken_at = backups.name_time(store, now())
         name = taken_at.strftime(backups.NAME_FORMAT)
         record["taken"] = taken_at.strftime(backups.TAKEN_FORMAT)
         _write_record(staging, record)
