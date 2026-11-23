@@ -190,10 +190,17 @@ def _stamp(*paths: Path) -> tuple[int, ...]:
     return tuple(stamp)
 
 
+# Keywords whose values are instances, never schemas, so a "$ref" key inside one is data.
+_DATA_KEYWORDS = frozenset({"const", "enum", "default", "examples"})
+# Keywords whose values map names to schemas: a property named "default" is a schema.
+_SCHEMA_MAPS = frozenset({"properties", "patternProperties", "$defs", "definitions", "dependentSchemas"})
+
+
 def validator(schema_path: Path) -> Draft202012Validator:
     """A validator for one contract. The control plane's schemas.Schemas does the same; the two
-    ship in separate images, so each carries its own. Raises ValueError when the contract refers
-    to a schema it cannot find, before anything is validated against it."""
+    ship in separate images, so each carries its own. Raises ValueError when a $ref in the
+    contract itself names a schema it cannot find, before anything is validated against it; a $ref
+    inside a schema it names is not followed."""
     schema = json.loads(schema_path.read_text())
     # A contract refers to the manifest schema by relative path: the schema gets
     # its own file URI as base, and the registry holds every schema it may name,
@@ -212,12 +219,15 @@ def validator(schema_path: Path) -> Draft202012Validator:
 
 
 def _references(schema: object) -> Iterator[str]:
-    """Each $ref in a schema."""
+    """Each $ref in a schema, leaving out the values of keywords that hold data, not schemas."""
     if isinstance(schema, dict):
         for key, value in schema.items():
             if key == "$ref" and isinstance(value, str):
                 yield value
-            else:
+            elif key in _SCHEMA_MAPS and isinstance(value, dict):
+                for each in value.values():
+                    yield from _references(each)
+            elif key not in _DATA_KEYWORDS:
                 yield from _references(value)
     elif isinstance(schema, list):
         for value in schema:
