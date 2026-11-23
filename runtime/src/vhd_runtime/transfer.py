@@ -425,13 +425,13 @@ def _keep(
         except backups.Gone as error:
             raise Refused(f"the save's {name} went while it was copied") from error
         except backups.Changed as error:
-            raise Refused(f"the save's {name} changed while it was copied") from error
+            raise Refused(f"the save's {name} changed after the import found it") from error
         except OSError as error:
             if error.errno == errno.EFBIG:
                 raise Refused(f"the save's {name} grew while it was copied") from error
             raise
         if copied["size"] != size:
-            raise Refused(f"the save's {name} changed while it was copied")
+            raise Refused(f"the save's {name} changed after the import found it")
         files.append(copied)
     try:
         save = backups.newest_complete(staging)

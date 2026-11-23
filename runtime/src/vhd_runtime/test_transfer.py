@@ -551,7 +551,7 @@ def test_a_file_that_changes_while_it_is_copied_is_refused(
 
     monkeypatch.setattr(backups, "open_regular", written_as_read)
     code, result = act(mounts, capsys)
-    assert (code, result["reason"]) == (1, "the save's _main.41.db2 changed while it was copied")
+    assert (code, result["reason"]) == (1, "the save's _main.41.db2 changed after the import found it")
     assert kept(mounts) == []
     assert (folder / "_main.41.db2").exists()
 
@@ -572,7 +572,7 @@ def test_a_file_that_changes_after_the_scan_and_before_its_copy_is_refused(
 
     monkeypatch.setattr(backups, "open_regular", rewritten_first)
     code, result = act(mounts, capsys)
-    assert (code, result["reason"]) == (1, "the save's _main.41.db2 changed while it was copied")
+    assert (code, result["reason"]) == (1, "the save's _main.41.db2 changed after the import found it")
     assert kept(mounts) == []
     assert (folder / "_main.41.db2").exists()
 
@@ -744,7 +744,7 @@ def test_a_stop_during_the_cleanup_of_a_refused_import_lets_it_finish_and_keeps_
     monkeypatch.setattr(backups, "open_regular", written_as_read)
     monkeypatch.setattr(shutil, "rmtree", stopped_while_removing)
     code, result = act(mounts, capsys)
-    assert (code, result["reason"]) == (1, "the save's _main.41.db2 changed while it was copied")
+    assert (code, result["reason"]) == (1, "the save's _main.41.db2 changed after the import found it")
     assert kept(mounts) == []
 
 
