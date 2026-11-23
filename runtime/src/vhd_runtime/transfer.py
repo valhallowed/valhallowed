@@ -44,8 +44,6 @@ BACKUPS_FOLDER = Path("/backups")
 EXPORT_FOLDER = Path("/export")
 # The largest save an import takes, summed over its files before any is copied.
 IMPORT_MAX_BYTES = 4 << 30
-# How many times an import names its backup again when the runtime's own turn took the name first.
-NAME_ATTEMPTS = 3
 CONTRACT = 1
 RESULT_CONTRACT = "game-runtime.import-export.schema.json"
 # The record contract's bound on a save's number.
@@ -327,9 +325,8 @@ def _one_save(folder: Path, present: set[str]) -> int:
 def _keep(
     found: _Found, staging: Path, store: Path, now: Callable[[], datetime], contract: Draft202012Validator
 ) -> tuple[str, int]:
-    """Copy the save into staging, check the copy, record it as a backup of the world its folder is
-    named for once the record keeps its contract, and name it as a backup: the backup's name and the
-    save's objects."""
+    """Copy the save into staging, check the copy, and name it as a backup of the world its folder is
+    named for, once its record keeps its contract: the backup's name and the save's objects."""
     sizes, number = found.sizes, found.number
     files: list[dict[str, object]] = []
     # Chunks first and the .ok last, as the game writes a save.
@@ -360,40 +357,13 @@ def _keep(
         "source": "import",
         "files": files,
     }
-    for _ in range(NAME_ATTEMPTS):
-        taken_at = backups.name_time(store, now())
-        name = taken_at.strftime(backups.NAME_FORMAT)
-        record["taken"] = taken_at.strftime(backups.TAKEN_FORMAT)
-        breach = generation.breach(contract, record)
-        if breach is not None:
-            raise Refused(f"the save's record breaks its contract {breach}")
-        _write_record(staging, record)
-        try:
-            staging.rename(store / name)
-        except OSError as error:
-            # The runtime's own turn took the name meanwhile: the next is a second after it.
-            if error.errno in (errno.EEXIST, errno.ENOTEMPTY):
-                continue
-            raise
-        # The backup is whole and in place; a sync that fails now loses at most its name in a power cut.
-        try:
-            backups.sync(store)
-        except OSError:
-            pass
-        return name, save.objects
-    raise Refused(f"the runtime's own backups took each name the import tried, {NAME_ATTEMPTS} times")
-
-
-def _write_record(staging: Path, record: dict[str, object]) -> None:
-    """Write the record whole and synced, replacing an earlier one, before its folder takes a
-    backup's name."""
-    temporary = staging / f".{backups.RECORD}.tmp"
-    with temporary.open("w") as writer:
-        writer.write(json.dumps(record, indent=2) + "\n")
-        writer.flush()
-        os.fsync(writer.fileno())
-    temporary.replace(staging / backups.RECORD)
-    backups.sync(staging)
+    try:
+        named = backups.name_backup(staging, store, record, now(), contract)
+    except backups.BackupFailed as error:
+        raise Refused(str(error)) from error
+    if named is None:
+        raise Refused(f"the runtime's own backups took each name the import tried, {backups.NAME_ATTEMPTS} times")
+    return named, save.objects
 
 
 def _kind(mode: int) -> str:

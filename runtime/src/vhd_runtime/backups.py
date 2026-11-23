@@ -35,6 +35,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from jsonschema import Draft202012Validator
+
+from vhd_runtime import generation
 from vhd_runtime.generation import Backups as Settings
 
 RECORD = "backup.json"
@@ -50,6 +53,9 @@ TAKEN_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 _NAME = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 # How many times a copy that lost a file to the next save starts again.
 ATTEMPTS = 3
+# How many times a backup is named again when another writer took its name first: an import, in
+# a container of its own, or the runtime's own turn.
+NAME_ATTEMPTS = 3
 # A .chunks file names one chunk in 11 bytes, and a world has a few thousand chunks at most.
 CHUNKS_MAX_BYTES = 1 << 20
 COPY_BLOCK = 1 << 20
@@ -236,8 +242,8 @@ def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) ->
         _room(folder, save, backups)
         shutil.rmtree(partial, ignore_errors=True)
         partial.mkdir()
-        files = [copy_file(folder / file, partial / file) for file in save.files]
-        record = {
+        files: list[dict[str, object]] = [copy_file(folder / file, partial / file) for file in save.files]
+        record: dict[str, object] = {
             "world": world,
             "save": save.number,
             "written_ns": save.written_ns,
@@ -246,24 +252,60 @@ def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) ->
             "source": "runtime",
             "files": files,
         }
-        with (partial / RECORD).open("x") as writer:
-            writer.write(json.dumps(record, indent=2) + "\n")
-            writer.flush()
-            os.fsync(writer.fileno())
-        sync(partial)
-        partial.rename(backups / name)
+        named = name_backup(partial, backups, record, now)
     except Gone:
         shutil.rmtree(partial, ignore_errors=True)
         raise
     except OSError as error:
         shutil.rmtree(partial, ignore_errors=True)
         raise BackupFailed(f"cannot write backup {name} into {backups}: {error.strerror or error}") from error
-    # The backup is whole and in place; a sync that fails now loses at most its name in a power cut.
-    try:
-        sync(backups)
-    except OSError:
-        pass
-    return Backup(name=name, saved=save.saved)
+    if named is None:
+        shutil.rmtree(partial, ignore_errors=True)
+        raise BackupFailed(f"imports took each name the runtime's backup tried, {NAME_ATTEMPTS} times")
+    return Backup(name=named, saved=save.saved)
+
+
+def name_backup(
+    folder: Path, backups: Path, record: dict[str, object], now: datetime, contract: Draft202012Validator | None = None
+) -> str | None:
+    """Write the record into the folder, then rename the folder into the backups as a backup named
+    for when it is taken, which the record says: the backup's name, or None when another writer
+    took each name it tried, NAME_ATTEMPTS times. Raises BackupFailed when the record breaks the
+    contract it is given, and OSError when it cannot be written or renamed."""
+    for _ in range(NAME_ATTEMPTS):
+        taken_at = name_time(backups, now)
+        name = taken_at.strftime(NAME_FORMAT)
+        record["taken"] = taken_at.strftime(TAKEN_FORMAT)
+        breach = None if contract is None else generation.breach(contract, record)
+        if breach is not None:
+            raise BackupFailed(f"the backup's record breaks its contract {breach}")
+        _write_record(folder, record)
+        try:
+            folder.rename(backups / name)
+        except OSError as error:
+            # Another writer took the name meanwhile: the next is a second after it.
+            if error.errno in (errno.EEXIST, errno.ENOTEMPTY):
+                continue
+            raise
+        # The backup is whole and in place; a sync that fails now loses at most its name in a power cut.
+        try:
+            sync(backups)
+        except OSError:
+            pass
+        return name
+    return None
+
+
+def _write_record(folder: Path, record: dict[str, object]) -> None:
+    """Write the record whole and synced, replacing an earlier one, before its folder takes a
+    backup's name."""
+    temporary = folder / f".{RECORD}.tmp"
+    with temporary.open("w") as writer:
+        writer.write(json.dumps(record, indent=2) + "\n")
+        writer.flush()
+        os.fsync(writer.fileno())
+    temporary.replace(folder / RECORD)
+    sync(folder)
 
 
 def name_time(backups: Path, now: datetime) -> datetime:

@@ -324,6 +324,50 @@ def test_a_folder_named_for_a_time_that_does_not_exist_is_no_backup(tmp_path: Pa
     assert backups.names(store, NOW) == [NOW_NAME]
 
 
+def an_import_takes(names: int, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """An import naming its backup first under each of the next names a copy, once whole, tries."""
+    name_time = backups.name_time
+    taken: list[str] = []
+
+    def import_first(store: Path, now: datetime) -> datetime:
+        when = name_time(store, now)
+        whole = any(entry.name.startswith(backups.PARTIAL) for entry in store.iterdir())
+        if whole and len(taken) < names:
+            name = when.strftime(backups.NAME_FORMAT)
+            (store / name).mkdir()
+            (store / name / backups.RECORD).write_text("{}")
+            taken.append(name)
+        return when
+
+    monkeypatch.setattr(backups, "name_time", import_first)
+    return taken
+
+
+def test_a_name_an_import_takes_meanwhile_is_named_again(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    folder, store = tmp_path / "world", tmp_path / "backups"
+    store.mkdir()
+    write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
+    taken = an_import_takes(1, monkeypatch)
+    backup = take(folder, store, "Meadowfold", NOW)
+    assert backup is not None and taken == [NOW_NAME] and backup.name == "20261118T204013Z"
+    record = json.loads((store / backup.name / backups.RECORD).read_text())
+    RECORD.validate(record)
+    assert record["taken"] == "2026-11-18T20:40:13Z"
+    assert sorted(p.name for p in store.iterdir()) == [NOW_NAME, backup.name]
+
+
+def test_a_backup_whose_every_name_an_import_takes_fails_and_keeps_no_partial_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder, store = tmp_path / "world", tmp_path / "backups"
+    store.mkdir()
+    write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
+    taken = an_import_takes(backups.NAME_ATTEMPTS, monkeypatch)
+    with pytest.raises(BackupFailed, match=r"^imports took each name the runtime's backup tried, 3 times$"):
+        take(folder, store, "Meadowfold", NOW)
+    assert sorted(p.name for p in store.iterdir()) == taken
+
+
 def test_after_the_clock_goes_back_a_new_backup_still_comes_newest(tmp_path: Path) -> None:
     folder, store = tmp_path / "world", tmp_path / "backups"
     store.mkdir()

@@ -241,7 +241,7 @@ def test_a_record_that_would_break_its_contract_is_never_named_as_a_backup(
 
     monkeypatch.setattr(backups, "newest_complete", counts_below_zero)
     code, result = act(mounts, capsys)
-    assert (code, result["reason"]) == (1, "the save's record breaks its contract at objects: breaks minimum 0")
+    assert (code, result["reason"]) == (1, "the backup's record breaks its contract at objects: breaks minimum 0")
     assert kept(mounts) == []
 
 
@@ -392,7 +392,7 @@ def test_an_import_whose_every_name_is_taken_meanwhile_is_refused(
     code, result = act(mounts, capsys)
     assert code == 1 and result["reason"].startswith("the runtime's own backups took each name the import tried")
     assert not any(name.startswith(backups.IMPORT_STAGING) for name in kept(mounts))
-    assert len(kept(mounts)) == transfer.NAME_ATTEMPTS
+    assert len(kept(mounts)) == backups.NAME_ATTEMPTS
 
 
 def test_an_unexpected_error_is_refused_with_a_one_line_reason_as_the_last_line(
