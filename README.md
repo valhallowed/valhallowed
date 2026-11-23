@@ -46,6 +46,15 @@ Edit either file and the control plane applies the change, keeping a game-server
 restart pending while players are online. A change to the containers themselves,
 such as a new world, port or backups folder, waits for the next `vhd apply`.
 
+## Backups and restore
+
+Each world's runtime backs its save up into the install folder's `backups`
+folder. `vhd backups <save name>` lists a world's backups, newest first.
+`vhd restore <save name> <backup>` restores one: the world restarts onto it once
+no players are online, or now with `vhd apply --disconnect-players`. The save it
+replaces is kept until the restored one loads, and put back if it loads empty.
+`vhd status` shows the restore and how it ended.
+
 ## A held world
 
 `vhd status` shows a world as `held`, with the reason, when it fails world truth:
@@ -57,9 +66,9 @@ names each world's container, and `docker volume ls` its data volume.
 
 - **After a game update the plugin cannot load on:** download the `compose.yaml`
   of the release that fixes it over the install's own, and run `vhd apply`.
-- **A missing or damaged save:** run `docker stop` on the world's container, put a
-  good save in its data volume under `saves/worlds_local/<save name>/`, and run
-  `docker start`.
+- **A missing or damaged save:** run `vhd backups <save name>` and
+  `vhd restore <save name> <backup>` with the newest backup from before the
+  damage. A held world has no players, so it restores at once.
 - **A new world stopped during its first load:** its save directory holds only
   `_main.0.fwl2`, which looks like a save. Run `docker stop`, remove that file
   and its directory, and run `docker start`, and the game creates the world

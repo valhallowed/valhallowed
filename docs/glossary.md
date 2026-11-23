@@ -173,12 +173,14 @@ newest commit against the newest game build. A candidate needs a recent pass
 of it.
 
 **Operator action** — A one-off request through the control API, such as
-importing a world, taking a backup or reading logs. Validated like the
+restoring a backup, importing a world or reading logs. Validated like the
 manifest.
 
 **Pending change** — A validated change waiting until it can apply: a
 game-server restart, a restore or an import while players are online, or a
-change to the containers that waits for `vhd apply`.
+change to the containers that waits for `vhd apply`. A restore waits in its
+world's runtime, which the control plane hands it to at once; the rest wait in
+the control plane.
 
 **Player** — A person playing in a world. Players use the game and the web map;
 they never touch the control plane.
