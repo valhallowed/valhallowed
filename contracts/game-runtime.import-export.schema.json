@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "An import's or an export's result",
-  "description": "I0: the one JSON document the game runtime's image prints, as its last line on standard output, when vhd runs it to import or export a world's save in a one-off container (Game runtimes, Restore, import and export share one path). vhd validates it against this contract; output that breaks it, or no output, counts as refused. done: an import's save is a backup of the world, or an export's save is in the install folder. refused: nothing was kept, and reason says why.",
+  "description": "B13: the one JSON document the game runtime's image prints, as its last line on standard output, when vhd runs it to import or export a world's save in a one-off container (Game runtimes, Restore, import and export share one path). vhd validates it against this contract; output that breaks it, or no output, counts as refused. done: an import's save is a backup of the world, or an export's save is in the install folder. refused: nothing was kept, and reason says why.",
   "type": "object",
   "additionalProperties": false,
   "required": ["contract", "action", "world", "outcome"],
