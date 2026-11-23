@@ -91,7 +91,7 @@
       }
     },
     "restore": {
-      "description": "A restore of one of the world's backups, done once for its id. Before the runtime installs or launches the game, it backs up the save the restore replaces, keeps that save aside, checks the backup against its record and swaps it in; world truth then judges the load, and a restored save that loads empty, or ends the game as it loads, is swapped back. Dropping or replacing a restore before world truth has judged it swaps it back too. The outcome is in the runtime's status.",
+      "description": "A restore of one of the world's backups, done once for its id. Before the runtime installs or launches the game, it backs up the save the restore replaces, keeps that save aside, checks the backup against its record and swaps it in; world truth then judges the load, and a restored save that loads empty, or ends the game as it loads, is swapped back. A newer generation that drops or replaces a restore world truth has not judged restarts the world, gated like any restart, and the next start swaps it back; a world still loading it is judged first. The outcome is in the runtime's status.",
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "backup"],
