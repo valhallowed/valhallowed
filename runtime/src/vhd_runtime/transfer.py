@@ -86,12 +86,12 @@ class Mounts:
 
 @dataclass(frozen=True)
 class _Found:
-    """The save the folder given to vhd import holds: its folder, its number, each of its files with
-    its size, and when the game completed it."""
+    """The save the folder given to vhd import holds: its folder, its number, each of its files as
+    the scan found it, and when the game completed it."""
 
     folder: Path
     number: int
-    sizes: dict[str, int]
+    scanned: dict[str, os.stat_result]
     written_ns: int
 
 
@@ -175,14 +175,14 @@ def import_save(mounts: Mounts, world: str, now: Callable[[], datetime]) -> Resu
         raise Refused(f"cannot read the world's backups folder: {error.strerror or error}") from error
     try:
         folder = _save_folder(mounts.imported, world)
-        sizes = _save_files(folder)
-        number = _one_save(folder, set(sizes))
-        found = _Found(folder, number, sizes, (folder / f"_main.{number}.ok").lstat().st_mtime_ns)
+        scanned = _save_files(folder)
+        number = _one_save(folder, set(scanned))
+        found = _Found(folder, number, scanned, scanned[f"_main.{number}.ok"].st_mtime_ns)
     except OSError as error:
         raise Refused(f"cannot read the save you put in the install folder: {error.strerror or error}") from error
     if found.written_ns < 0:
         raise Refused(f"the save's _main.{number}.ok was last modified before 1970, which no save is")
-    total = sum(sizes.values())
+    total = sum(info.st_size for info in scanned.values())
     if total > IMPORT_MAX_BYTES:
         raise Refused(
             f"the save holds {-(-total // backups.MIB)} MiB, more than the {IMPORT_MAX_BYTES // backups.MIB} MiB "
@@ -320,10 +320,10 @@ def _is_pre_1_0(name: str, world: str) -> bool:
     return name in (f"{world}{suffix}" for suffix in _PRE_1_0)
 
 
-def _save_files(folder: Path) -> dict[str, int]:
-    """Each file in the save folder and its size, once each is a regular file a save is made of.
-    Never follows a link."""
-    sizes: dict[str, int] = {}
+def _save_files(folder: Path) -> dict[str, os.stat_result]:
+    """Each file in the save folder as the scan finds it, once each is a regular file a save is made
+    of. Never follows a link."""
+    scanned: dict[str, os.stat_result] = {}
     for entry in sorted(folder.iterdir()):
         mode = entry.lstat()
         if not stat.S_ISREG(mode.st_mode):
@@ -334,8 +334,8 @@ def _save_files(folder: Path) -> dict[str, int]:
             raise Refused(f"the save holds {entry.name}, a pre-1.0 save's file; an import takes a 1.0+ save only")
         if not restore.SAVE_FILE.fullmatch(entry.name):
             raise Refused(f"the save holds {entry.name}, which is no file of a save")
-        sizes[entry.name] = mode.st_size
-    return sizes
+        scanned[entry.name] = mode
+    return scanned
 
 
 def _one_save(folder: Path, present: set[str]) -> int:
@@ -375,12 +375,13 @@ def _keep(
 ) -> tuple[str, int]:
     """Copy the save into staging, check the copy, and name it as a backup of the world its folder is
     named for, once its record keeps its contract: the backup's name and the save's objects."""
-    sizes, number = found.sizes, found.number
+    scanned, number = found.scanned, found.number
     files: list[dict[str, object]] = []
     # Chunks first and the .ok last, as the game writes a save.
-    for name in sorted(sizes, key=lambda file: (file.startswith("_main."), file)):
+    for name in sorted(scanned, key=lambda file: (file.startswith("_main."), file)):
         try:
-            copied = backups.copy_file(found.folder / name, staging / name, sizes[name], unchanged=True)
+            size = scanned[name].st_size
+            copied = backups.copy_file(found.folder / name, staging / name, size, unchanged=scanned[name])
         except backups.Gone as error:
             raise Refused(f"the save's {name} went while it was copied") from error
         except backups.Changed as error:
@@ -389,14 +390,14 @@ def _keep(
             if error.errno == errno.EFBIG:
                 raise Refused(f"the save's {name} grew while it was copied") from error
             raise
-        if copied["size"] != sizes[name]:
+        if copied["size"] != size:
             raise Refused(f"the save's {name} changed while it was copied")
         files.append(copied)
     try:
         save = backups.newest_complete(staging)
     except backups.BackupFailed as error:
         raise Refused(f"the copy is not a complete save: {error}") from error
-    if save is None or save.number != number or set(save.files) != set(sizes):
+    if save is None or save.number != number or set(save.files) != set(scanned):
         raise Refused(f"the copy does not hold save {number}")
     record: dict[str, object] = {
         "world": found.folder.name,

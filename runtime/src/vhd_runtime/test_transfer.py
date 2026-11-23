@@ -336,7 +336,7 @@ def test_a_copy_that_fails_removes_only_what_this_import_made(
     copy_file = backups.copy_file
     copies = 0
 
-    def fails_second(source: Path, target: Path, limit: int | None = None, **kwargs: bool) -> dict[str, object]:
+    def fails_second(source: Path, target: Path, limit: int | None = None, **kwargs: Any) -> dict[str, object]:
         nonlocal copies
         copies += 1
         if copies == 2:
@@ -353,15 +353,17 @@ def test_a_file_that_grows_while_it_is_copied_is_refused(
     mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     folder = put_save(mounts)
-    copy_file = backups.copy_file
+    open_regular = backups.open_regular
 
-    def grows(source: Path, target: Path, limit: int | None = None, **kwargs: bool) -> dict[str, object]:
-        if source.name == "_main.41.db2":
-            with source.open("ab") as appender:
-                appender.write(b"more")
-        return copy_file(source, target, limit, **kwargs)
+    def append(path: Path) -> None:
+        with path.open("ab") as appender:
+            appender.write(b"more")
 
-    monkeypatch.setattr(backups, "copy_file", grows)
+    def grows(source: Path) -> WrittenAsRead:
+        reader = open_regular(source)
+        return WrittenAsRead(reader, (lambda: append(source)) if source.name == "_main.41.db2" else lambda: None)
+
+    monkeypatch.setattr(backups, "open_regular", grows)
     code, result = act(mounts, capsys)
     assert (code, result["reason"]) == (1, "the save's _main.41.db2 grew while it was copied")
     assert kept(mounts) == []
@@ -391,7 +393,7 @@ def test_an_import_holds_its_staging_until_it_is_named_so_no_cleanup_removes_it(
     copy_file = backups.copy_file
     held: list[str] = []
 
-    def cleared_meanwhile(source: Path, target: Path, limit: int | None = None, **kwargs: bool) -> dict[str, object]:
+    def cleared_meanwhile(source: Path, target: Path, limit: int | None = None, **kwargs: Any) -> dict[str, object]:
         # A start of the world's runtime well after the age, as the copy of a large save may outlast it.
         backups.clear_import_staging(mounts.backups, datetime.now(UTC) + timedelta(hours=2))
         assert target.parent.is_dir()
@@ -429,6 +431,14 @@ class WrittenAsRead:
         return block
 
 
+def replaced(path: Path) -> None:
+    """A same-size file renamed over the save's file, as rsync and most copy tools write one."""
+    other = path.with_name(f".{path.name}.tmp")
+    other.write_bytes(path.read_bytes()[::-1])
+    os.utime(other, ns=(path.stat().st_atime_ns, path.stat().st_mtime_ns))
+    other.replace(path)
+
+
 @pytest.mark.parametrize(
     "write",
     [
@@ -436,6 +446,7 @@ class WrittenAsRead:
         lambda path: os.utime(path, ns=(path.stat().st_mtime_ns + 10**9,) * 2),
         lambda path: path.write_bytes(path.read_bytes()[::-1]),
         lambda path: os.truncate(path, 0),
+        replaced,
     ],
 )
 def test_a_file_that_changes_while_it_is_copied_is_refused(
@@ -449,6 +460,27 @@ def test_a_file_that_changes_while_it_is_copied_is_refused(
         return WrittenAsRead(reader, (lambda: write(source)) if source.name == "_main.41.db2" else lambda: None)
 
     monkeypatch.setattr(backups, "open_regular", written_as_read)
+    code, result = act(mounts, capsys)
+    assert (code, result["reason"]) == (1, "the save's _main.41.db2 changed while it was copied")
+    assert kept(mounts) == []
+    assert (folder / "_main.41.db2").exists()
+
+
+def test_a_file_that_changes_after_the_scan_and_before_its_copy_is_refused(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = put_save(mounts)
+    open_regular = backups.open_regular
+
+    def rewritten_first(source: Path) -> io.BufferedReader:
+        if source.name == "_main.41.db2":
+            # The same size and modification time: only its change time tells.
+            before = source.stat()
+            source.write_bytes(source.read_bytes()[::-1])
+            os.utime(source, ns=(before.st_atime_ns, before.st_mtime_ns))
+        return open_regular(source)
+
+    monkeypatch.setattr(backups, "open_regular", rewritten_first)
     code, result = act(mounts, capsys)
     assert (code, result["reason"]) == (1, "the save's _main.41.db2 changed while it was copied")
     assert kept(mounts) == []
@@ -523,7 +555,7 @@ def signalled_on_copy(signum: int, copy: int, monkeypatch: pytest.MonkeyPatch) -
     copy_file = backups.copy_file
     copies = 0
 
-    def signalled(source: Path, target: Path, limit: int | None = None, **kwargs: bool) -> dict[str, object]:
+    def signalled(source: Path, target: Path, limit: int | None = None, **kwargs: Any) -> dict[str, object]:
         nonlocal copies
         copies += 1
         if copies == copy:

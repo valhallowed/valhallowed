@@ -91,7 +91,7 @@ class Gone(Exception):
 
 
 class Changed(Exception):
-    """A file changed while it was copied."""
+    """A file changed since a scan found it, or while it was copied."""
 
 
 @dataclass(frozen=True)
@@ -342,36 +342,52 @@ def _room(folder: Path, save: Save, backups: Path) -> None:
         )
 
 
-def copy_file(source: Path, target: Path, limit: int | None = None, *, unchanged: bool = False) -> dict[str, object]:
+def copy_file(
+    source: Path, target: Path, limit: int | None = None, *, unchanged: os.stat_result | None = None
+) -> dict[str, object]:
     """Copy one file of the save to disk, and say its size and SHA-256 for the record. With a limit,
     as for a file a backup's record lists, it copies only a regular file, never through a link,
-    and no more than limit bytes, raising OSError otherwise. Unchanged, as for a file no game
-    writes, it raises Changed when the file's size, modification time or inode differ after the
-    copy from before it."""
+    and no more than limit bytes, raising OSError otherwise. Given the file as a scan found it, as
+    for a file no game writes, it raises Changed unless the file it opens, that file once copied,
+    and the file at its path once copied are each the one the scan found, unchanged: the same
+    inode, size, and modification and change times."""
     try:
         reader = open_regular(source) if limit is not None else source.open("rb")
     except FileNotFoundError as error:
         raise Gone(source.name) from error
     digest = hashlib.sha256()
     size = 0
+    expected = None if unchanged is None else _identity(unchanged)
     # An open file reads whole though the game removes it meanwhile.
     with reader, target.open("xb") as writer:
-        before = _identity(os.fstat(reader.fileno()))
+        if expected is not None and _identity(os.fstat(reader.fileno())) != expected:
+            raise Changed(source.name)
         while block := reader.read(COPY_BLOCK):
             size += len(block)
             if limit is not None and size > limit:
                 raise OSError(errno.EFBIG, f"{source.name} is larger than its record says")
             digest.update(block)
             writer.write(block)
-        if unchanged and _identity(os.fstat(reader.fileno())) != before:
+        if expected is not None and expected != _identity(os.fstat(reader.fileno())):
+            raise Changed(source.name)
+        if expected is not None and expected != _identity(_at(source)):
             raise Changed(source.name)
         writer.flush()
         os.fsync(writer.fileno())
     return {"name": target.name, "size": size, "sha256": digest.hexdigest()}
 
 
-def _identity(info: os.stat_result) -> tuple[int, int, int]:
-    return info.st_size, info.st_mtime_ns, info.st_ino
+def _identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
+    # The change time too: a write that puts the modification time back still moves it.
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+
+def _at(source: Path) -> os.stat_result:
+    """The file now at the path, which a rename may have replaced since it was opened."""
+    try:
+        return source.lstat()
+    except FileNotFoundError as error:
+        raise Gone(source.name) from error
 
 
 def open_regular(source: Path) -> io.BufferedReader:
