@@ -6,8 +6,8 @@
   speak for another.
   The sender check trusts source addresses, which holds while no child can forge one: every
   child runs without capabilities (render.LOCKED_DOWN), NET_RAW included.
-- The control API (I0): GET /status on a Unix socket in a volume only the control plane
-  and vhd mount, so no child and no network reaches it.
+- The control API (I0): GET /status, and POST /restore, an operator action, on a Unix socket in a
+  volume only the control plane and vhd mount, so no child and no network reaches it.
 """
 
 import json
@@ -24,13 +24,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, cast
 
-from vhd_control.daemon import Daemon
+from vhd_control.daemon import ActionRefused, Daemon
 from vhd_control.naming import child_id
 from vhd_control.schemas import Schemas
 from vhd_control.status import StatusBook
 
 STATUS_SCHEMA = "contracts/game-runtime.status.schema.json"
 SERVICE_STATUS_SCHEMA = "contracts/service.status.schema.json"
+RESTORE_SCHEMA = "contracts/control.restore.schema.json"
 MAX_BODY = 16 * 1024
 # A whole request, from connect to reply, gets this long.
 TIMEOUT_S = 5
@@ -260,6 +261,28 @@ def control_server(daemon: Daemon, path: Path) -> _UnixServer:
                 self.reply(HTTPStatus.SERVICE_UNAVAILABLE, {"error": "no generation yet; run vhd apply"})
                 return
             self.reply(HTTPStatus.OK, status)
+
+        def do_POST(self) -> None:
+            """An operator action: validated whole against its contract, then by the control plane
+            against the install (G6). A refusal changes nothing (actions fail closed)."""
+            if self.path != "/restore":
+                self.reply(HTTPStatus.NOT_FOUND)
+                return
+            document = self.read_json()
+            if document is None:
+                return
+            problem = daemon.schemas.problem(RESTORE_SCHEMA, document)
+            if problem is not None:
+                self.reply(HTTPStatus.BAD_REQUEST, {"error": problem})
+                return
+            request = cast(dict[str, str], document)
+            try:
+                held = daemon.request_restore(request["world"], request["backup"])
+            except ActionRefused as refused:
+                self.reply(HTTPStatus(refused.status), {"error": str(refused)})
+                return
+            reply = {"contract": 1, "id": held.id, "world": request["world"], "backup": held.backup}
+            self.reply(HTTPStatus.ACCEPTED, reply)
 
     path.unlink(missing_ok=True)
     server = _UnixServer(str(path), Handler)
