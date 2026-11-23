@@ -53,7 +53,8 @@ folder of its own. `vhd backups <save name>` lists a world's backups, newest fir
 `vhd restore <save name> <backup>` restores one: the world restarts onto it once
 no players are online, or now with `vhd apply --disconnect-players`. The save it
 replaces is kept until the restored one loads, and put back if it loads empty.
-`vhd status` shows the restore and how it ended.
+`vhd status` shows the restore and how it ended. Asking for another backup
+before then replaces the restore.
 
 ## A held world
 

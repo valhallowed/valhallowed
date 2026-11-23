@@ -188,12 +188,13 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   restore is the exception on the control plane's side: it restarts the game
   once, for a restore id the runtime has not done, costs nothing once done, and
   one dropped before world truth judges it swaps back at a restart gated like
-  any other, so the control plane hands it at once and the runtime alone holds
-  it for an empty world, keeping its backup from pruning meanwhile. Status shows
-  it pending until the runtime acts on it. A restore rides its world's
-  generation, so one asked for while another change to that world is pending
-  waits with that change, unhanded; if pruning removes its backup meanwhile,
-  the runtime refuses it and status says why.
+  any other, so the control plane hands it at once and the runtime alone makes
+  it wait for an empty world, keeping its backup from pruning meanwhile.
+  Status shows it pending until the runtime acts on it. A restore rides its
+  world's generation, so one asked for while another change to that world is
+  pending waits with that change, unhanded; if pruning removes its backup
+  meanwhile, the runtime refuses it and status says why. A restore asked for
+  another backup replaces the one under way, as a newer generation does.
 - **Children read only the effective configuration.** Generated files, such as
   the plugin's BepInEx config, are never edited by hand.
 - **World truth gates saving.** A world that fails world truth is stopped

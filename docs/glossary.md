@@ -180,7 +180,7 @@ manifest.
 game-server restart, a restore or an import while players are online, or a
 change to the containers that waits for `vhd apply`. A restore is handed to its
 world's runtime at once, unless another change to that world waits, and the
-runtime holds it for an empty world; the rest wait in the control plane.
+runtime makes it wait for an empty world; the rest wait in the control plane.
 
 **Player** — A person playing in a world. Players use the game and the web map;
 they never touch the control plane.
