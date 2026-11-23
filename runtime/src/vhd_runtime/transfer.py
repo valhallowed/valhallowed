@@ -86,7 +86,7 @@ class Mounts:
 
 @dataclass(frozen=True)
 class _Found:
-    """The save the import folder holds: its folder, its number, each of its files with its size,
+    """The save the install folder holds: its folder, its number, each of its files with its size,
     and when the game completed it."""
 
     folder: Path
@@ -166,7 +166,7 @@ def _stop(signum: int, frame: FrameType | None) -> NoReturn:
 
 
 def import_save(mounts: Mounts, world: str, now: Callable[[], datetime]) -> Result:
-    """Keep the save in the import folder as a backup of the world, once it is exactly one complete
+    """Keep the save in the install folder as a backup of the world, once it is exactly one complete
     1.0+ save and fits, and its record keeps its contract. Raises Refused, keeping nothing."""
     contract = _record_contract(mounts)
     try:
@@ -179,7 +179,7 @@ def import_save(mounts: Mounts, world: str, now: Callable[[], datetime]) -> Resu
         number = _one_save(folder, set(sizes))
         found = _Found(folder, number, sizes, (folder / f"_main.{number}.ok").lstat().st_mtime_ns)
     except OSError as error:
-        raise Refused(f"cannot read the save: {error.strerror or error}") from error
+        raise Refused(f"cannot read the save you put in the install folder: {error.strerror or error}") from error
     if found.written_ns < 0:
         raise Refused(f"the save's _main.{number}.ok was last modified before 1970, which no save is")
     total = sum(sizes.values())
@@ -190,10 +190,10 @@ def import_save(mounts: Mounts, world: str, now: Callable[[], datetime]) -> Resu
         )
     staging = mounts.backups / f"{backups.IMPORT_STAGING}{secrets.token_hex(16)}"
     try:
-        _room(mounts.backups, "the backup folder", "the save", total)
+        _room(mounts.backups, "the world's backups folder", "the save", total)
         staging.mkdir()
     except OSError as error:
-        raise Refused(f"cannot write into the backup folder: {error.strerror or error}") from error
+        raise Refused(f"cannot write into the world's backups folder: {error.strerror or error}") from error
     try:
         # Held until the backup is named, so no cleanup removes it, however long the copy takes.
         held = backups.lock_folder(staging)
@@ -203,7 +203,7 @@ def import_save(mounts: Mounts, world: str, now: Callable[[], datetime]) -> Resu
             os.close(held)
     except OSError as error:
         shutil.rmtree(staging, ignore_errors=True)
-        raise Refused(f"cannot copy the save into the backup folder: {error.strerror or error}") from error
+        raise Refused(f"cannot copy the save into the world's backups folder: {error.strerror or error}") from error
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
@@ -212,18 +212,18 @@ def import_save(mounts: Mounts, world: str, now: Callable[[], datetime]) -> Resu
 
 
 def export_backup(mounts: Mounts, world: str, backup: str | None, now: Callable[[], datetime]) -> Result:
-    """Copy one of the world's backups, the newest unless one is named, into the export folder in
-    the layout the game reads, once its record names the world, the export folder's disk has room
+    """Copy one of the world's backups, the newest unless one is named, into the install folder
+    in the layout the game reads, once its record names the world, the install folder's disk has room
     for it, and each file is the one the record lists. Raises Refused, removing what it wrote."""
     try:
         held = backups.names(mounts.backups, now())
     except OSError as error:
-        raise Refused(f"cannot read the backup folder: {error.strerror or error}") from error
+        raise Refused(f"cannot read the world's backups folder: {error.strerror or error}") from error
     if backup is None and not held:
-        raise Refused(f"the backup folder holds no backup of {world}")
+        raise Refused(f"the world's backups folder holds no backup of {world}")
     name = held[0] if backup is None else backup
     if name not in held:
-        raise Refused(f"backup {name} does not exist in the backup folder")
+        raise Refused(f"backup {name} does not exist in the world's backups folder")
     source = mounts.backups / name
     contract = _record_contract(mounts)
     try:
@@ -231,9 +231,9 @@ def export_backup(mounts: Mounts, world: str, backup: str | None, now: Callable[
     except restore.RestoreFailed as error:
         raise Refused(str(error)) from error
     try:
-        _room(mounts.exported, "the export folder", f"backup {name}", sum(file["size"] for file in record.files))
+        _room(mounts.exported, "the install folder", f"backup {name}", sum(file["size"] for file in record.files))
     except OSError as error:
-        raise Refused(f"cannot read the export folder: {error.strerror or error}") from error
+        raise Refused(f"cannot read the install folder: {error.strerror or error}") from error
     target, written = _export_target(mounts.exported, world)
     try:
         objects = restore.copy_checked(source, target, name, record.number, record.files)
@@ -244,7 +244,7 @@ def export_backup(mounts: Mounts, world: str, backup: str | None, now: Callable[
         raise Refused(str(error)) from error
     except OSError as error:
         shutil.rmtree(written, ignore_errors=True)
-        raise Refused(f"cannot copy backup {name} into the export folder: {error.strerror or error}") from error
+        raise Refused(f"cannot copy backup {name} into the install folder: {error.strerror or error}") from error
     except BaseException:
         shutil.rmtree(written, ignore_errors=True)
         raise
@@ -272,40 +272,40 @@ def _room(folder: Path, where: str, what: str, needed: int) -> None:
 
 
 def _export_target(exported: Path, world: str) -> tuple[Path, Path]:
-    """Make the world's save folder in the export folder, in the layout the game reads: the folder,
+    """Make the world's save folder in the install folder, in the layout the game reads: the folder,
     and what this export made, which a failure removes. Refuses a save folder already there."""
     layout = exported / "worlds_local"
     target = layout / world
     made_layout = not os.path.lexists(layout)
     try:
         if not made_layout and not stat.S_ISDIR(layout.lstat().st_mode):
-            raise Refused("the export folder holds worlds_local, and it is no folder")
+            raise Refused("the install folder holds worlds_local, and it is no folder")
         if os.path.lexists(target):
-            raise Refused(f"the export folder already holds worlds_local/{world}")
+            raise Refused(f"the install folder already holds worlds_local/{world}")
         layout.mkdir(exist_ok=True)
         target.mkdir()
     except OSError as error:
         if made_layout:
             shutil.rmtree(layout, ignore_errors=True)
-        raise Refused(f"cannot write into the export folder: {error.strerror or error}") from error
+        raise Refused(f"cannot write into the install folder: {error.strerror or error}") from error
     return target, layout if made_layout else target
 
 
 def _save_folder(imported: Path, world: str) -> Path:
-    """The one entry in the import folder, once it is a folder named for the world, not a link."""
+    """The one entry in the install folder for an import, once it is a folder named for the world, not a link."""
     entries = sorted(imported.iterdir())
     for entry in entries:
         if _is_pre_1_0(entry.name, world):
-            raise Refused(f"the import folder holds {entry.name}, a pre-1.0 save; an import takes a 1.0+ save only")
+            raise Refused(f"the install folder holds {entry.name}, a pre-1.0 save; an import takes a 1.0+ save only")
     if len(entries) != 1:
         held = ", ".join(entry.name for entry in entries[:3]) or "nothing"
-        raise Refused(f"the import folder holds {held}; it must hold exactly one entry, the save folder {world}")
+        raise Refused(f"the install folder holds {held}; it must hold exactly one entry, the save folder {world}")
     folder = entries[0]
     if folder.name != world:
-        raise Refused(f"the import folder holds {folder.name}, not the save folder {world}")
+        raise Refused(f"the install folder holds {folder.name}, not the save folder {world}")
     mode = folder.lstat().st_mode
     if not stat.S_ISDIR(mode):
-        raise Refused(f"the import folder holds {world} as {_kind(mode)}, not a folder")
+        raise Refused(f"the install folder holds {world} as {_kind(mode)}, not a folder")
     return folder
 
 

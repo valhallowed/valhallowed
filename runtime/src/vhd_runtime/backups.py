@@ -333,7 +333,7 @@ def _room(folder: Path, save: Save, backups: Path) -> None:
     free = shutil.disk_usage(backups).free
     if free - needed < RESERVE:
         raise BackupFailed(
-            f"the backup folder {backups} has {free // MIB} MiB free; save {save.number} needs {needed // MIB} MiB, "
+            f"the world's backups folder has {free // MIB} MiB free; save {save.number} needs {needed // MIB} MiB, "
             f"and {RESERVE // MIB} MiB must stay free"
         )
 

@@ -124,25 +124,26 @@ def test_an_import_comes_newest_after_the_runtimes_own_backups(
     [
         (
             lambda root: None,
-            "the import folder holds nothing; it must hold exactly one entry, the save folder Meadowfold",
+            "the install folder holds nothing; it must hold exactly one entry, the save folder Meadowfold",
         ),
         (
             lambda root: [(root / WORLD).mkdir(), (root / "Ashwake").mkdir()],
-            "the import folder holds Ashwake, Meadowfold; it must hold exactly one entry, the save folder Meadowfold",
+            "the install folder holds Ashwake, Meadowfold; it must hold exactly one entry, the save folder Meadowfold",
         ),
-        (lambda root: (root / "Ashwake").mkdir(), "the import folder holds Ashwake, not the save folder Meadowfold"),
-        (lambda root: (root / WORLD).write_bytes(b"x"), "the import folder holds Meadowfold as a file, not a folder"),
+        (lambda root: (root / "Ashwake").mkdir(), "the install folder holds Ashwake, not the save folder Meadowfold"),
+        (lambda root: (root / WORLD).write_bytes(b"x"), "the install folder holds Meadowfold as a file, not a folder"),
         (
             lambda root: [(root.parent / "real").mkdir(), (root / WORLD).symlink_to(root.parent / "real")],
-            "the import folder holds Meadowfold as a link, not a folder",
+            "the install folder holds Meadowfold as a link, not a folder",
         ),
         (
             lambda root: [(root / f"{WORLD}.db").write_bytes(b"x"), (root / f"{WORLD}.fwl").write_bytes(b"x")],
-            "the import folder holds Meadowfold.db, a pre-1.0 save; an import takes a 1.0+ save only",
+            "the install folder holds Meadowfold.db, a pre-1.0 save; an import takes a 1.0+ save only",
         ),
         (
             lambda root: [(root / WORLD).mkdir(), (root / "Thumbs.db").write_bytes(b"x")],
-            "the import folder holds Meadowfold, Thumbs.db; it must hold exactly one entry, the save folder Meadowfold",
+            "the install folder holds Meadowfold, Thumbs.db; it must hold exactly one entry, "
+            "the save folder Meadowfold",
         ),
     ],
 )
@@ -337,7 +338,7 @@ def test_a_copy_that_fails_removes_only_what_this_import_made(
 
     monkeypatch.setattr(backups, "copy_file", fails_second)
     code, result = act(mounts, capsys)
-    assert (code, result["reason"]) == (1, "cannot copy the save into the backup folder: Input/output error")
+    assert (code, result["reason"]) == (1, "cannot copy the save into the world's backups folder: Input/output error")
     assert kept(mounts) == [other.name]
 
 
@@ -651,10 +652,10 @@ def test_a_backup_whose_record_predates_its_source_exports(mounts: Mounts, capsy
 @pytest.mark.parametrize(
     ("backup", "reason"),
     [
-        (None, "the backup folder holds no backup of Meadowfold"),
-        ("20261118T100000Z", "backup 20261118T100000Z does not exist in the backup folder"),
-        ("../import", "backup ../import does not exist in the backup folder"),
-        (".import-00000000000000000000000000000000", "does not exist in the backup folder"),
+        (None, "the world's backups folder holds no backup of Meadowfold"),
+        ("20261118T100000Z", "backup 20261118T100000Z does not exist in the world's backups folder"),
+        ("../import", "backup ../import does not exist in the world's backups folder"),
+        (".import-00000000000000000000000000000000", "does not exist in the world's backups folder"),
     ],
 )
 def test_a_backup_that_is_not_there_is_refused(
@@ -694,7 +695,7 @@ def test_an_export_never_writes_over_a_save_already_in_the_export_folder(
     exported(mounts).mkdir(parents=True)
     (exported(mounts) / "_main.9.ok").write_text("the server manager's")
     code, result = export(mounts, capsys)
-    assert (code, result["reason"]) == (1, "the export folder already holds worlds_local/Meadowfold")
+    assert (code, result["reason"]) == (1, "the install folder already holds worlds_local/Meadowfold")
     assert [entry.name for entry in exported(mounts).iterdir()] == ["_main.9.ok"]
 
 
@@ -718,7 +719,7 @@ def test_an_export_the_install_folders_disk_has_no_room_for_is_refused_before_an
     code, result = export(mounts, capsys)
     assert code == 1
     assert result["reason"] == (
-        f"the export folder has 1024 MiB free; backup {name} needs 0 MiB, and 1024 MiB must stay free"
+        f"the install folder has 1024 MiB free; backup {name} needs 0 MiB, and 1024 MiB must stay free"
     )
     assert asked == [mounts.exported]
     assert list(mounts.exported.iterdir()) == []
@@ -765,5 +766,5 @@ def test_a_backup_file_that_is_a_link_is_refused_without_reading_through_it(
     (mounts.backups / name / "_main.41.db2").unlink()
     (mounts.backups / name / "_main.41.db2").symlink_to(secret)
     code, result = export(mounts, capsys)
-    assert (code, result["reason"]) == (1, f"cannot copy backup {name} into the export folder: _main.41.db2 is a link")
+    assert (code, result["reason"]) == (1, f"cannot copy backup {name} into the install folder: _main.41.db2 is a link")
     assert list(mounts.exported.iterdir()) == []

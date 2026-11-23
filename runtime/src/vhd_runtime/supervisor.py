@@ -515,7 +515,7 @@ class Supervisor:
         try:
             tended = tending.result()
         except OSError as error:
-            self._backup_failed(f"cannot list the backup folder {self.paths.backups}: {error.strerror or error}")
+            self._backup_failed(f"cannot list the world's backups folder: {error.strerror or error}")
             self._next_backup = now + self._retry_s
             self._retry_s = min(self._retry_s * 2, generation.backups.every_s)
             return
