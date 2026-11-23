@@ -65,7 +65,7 @@ class BackupFailed(Exception):
     """No backup was taken. The message says why, in one line."""
 
 
-class _Gone(Exception):
+class Gone(Exception):
     """A file of the save went while it was copied: the next save completed."""
 
 
@@ -185,7 +185,7 @@ def take(folder: Path, backups: Path, world: str, now: datetime, last: Saved | N
             return None
         try:
             return _copy(folder, save, backups, world, now)
-        except _Gone:
+        except Gone:
             continue
     raise BackupFailed(failure)
 
@@ -217,7 +217,7 @@ def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) ->
         _room(folder, save, backups)
         shutil.rmtree(partial, ignore_errors=True)
         partial.mkdir()
-        files = [_copy_file(folder / file, partial / file) for file in save.files]
+        files = [copy_file(folder / file, partial / file) for file in save.files]
         record = {
             "world": world,
             "save": save.number,
@@ -230,9 +230,9 @@ def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) ->
             writer.write(json.dumps(record, indent=2) + "\n")
             writer.flush()
             os.fsync(writer.fileno())
-        _sync(partial)
+        sync(partial)
         partial.rename(backups / name)
-    except _Gone:
+    except Gone:
         shutil.rmtree(partial, ignore_errors=True)
         raise
     except OSError as error:
@@ -240,7 +240,7 @@ def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) ->
         raise BackupFailed(f"cannot write backup {name} into {backups}: {error.strerror or error}") from error
     # The backup is whole and in place; a sync that fails now loses at most its name in a power cut.
     try:
-        _sync(backups)
+        sync(backups)
     except OSError:
         pass
     return Backup(name=name, saved=save.saved)
@@ -260,7 +260,7 @@ def _room(folder: Path, save: Save, backups: Path) -> None:
     try:
         needed = sum((folder / file).stat().st_size for file in save.files)
     except FileNotFoundError as error:
-        raise _Gone(error.filename) from error
+        raise Gone(error.filename) from error
     free = shutil.disk_usage(backups).free
     if free - needed < RESERVE:
         raise BackupFailed(
@@ -269,12 +269,12 @@ def _room(folder: Path, save: Save, backups: Path) -> None:
         )
 
 
-def _copy_file(source: Path, target: Path) -> dict[str, object]:
+def copy_file(source: Path, target: Path) -> dict[str, object]:
     """Copy one file of the save to disk, and say its size and SHA-256 for the record."""
     try:
         reader = source.open("rb")
     except FileNotFoundError as error:
-        raise _Gone(source.name) from error
+        raise Gone(source.name) from error
     digest = hashlib.sha256()
     size = 0
     # An open file reads whole though the game removes it meanwhile.
@@ -288,7 +288,7 @@ def _copy_file(source: Path, target: Path) -> dict[str, object]:
     return {"name": target.name, "size": size, "sha256": digest.hexdigest()}
 
 
-def _sync(directory: Path) -> None:
+def sync(directory: Path) -> None:
     """Sync a directory's entries, so a rename into it survives a power cut. A file system that
     cannot sync a directory, as some network mounts cannot, costs that and nothing else."""
     descriptor = os.open(directory, os.O_RDONLY)
