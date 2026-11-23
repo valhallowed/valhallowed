@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 from collections import namedtuple
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -450,6 +451,62 @@ def test_an_unexpected_error_is_refused_with_a_one_line_reason_as_the_last_line(
     )
     assert len(result["reason"]) == transfer.REASON_MAX
     assert "Traceback" not in captured.out
+
+
+def signalled_on_copy(signum: int, copy: int, monkeypatch: pytest.MonkeyPatch) -> None:
+    """vhd, or Docker on its behalf, sending signum to the action as it copies its copy-th file."""
+    copy_file = backups.copy_file
+    copies = 0
+
+    def signalled(source: Path, target: Path, limit: int | None = None) -> dict[str, object]:
+        nonlocal copies
+        copies += 1
+        if copies == copy:
+            signal.raise_signal(signum)
+        return copy_file(source, target, limit)
+
+    monkeypatch.setattr(backups, "copy_file", signalled)
+
+
+@pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGINT])
+def test_an_import_a_signal_stops_removes_what_it_wrote_and_says_so_last(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, signum: signal.Signals
+) -> None:
+    put_save(mounts)
+    before = {each: signal.getsignal(each) for each in transfer.STOP_SIGNALS}
+    signalled_on_copy(signum, 2, monkeypatch)
+    code, result = act(mounts, capsys)
+    assert (code, result["reason"]) == (1, f"import stopped by {signum.name} before it finished")
+    assert kept(mounts) == []
+    assert {each: signal.getsignal(each) for each in transfer.STOP_SIGNALS} == before
+
+
+def test_an_export_a_signal_stops_removes_what_it_wrote(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    backup_of(mounts, 41, NOW)
+    signalled_on_copy(signal.SIGTERM, 2, monkeypatch)
+    code, result = export(mounts, capsys)
+    assert (code, result["reason"]) == (1, "export stopped by SIGTERM before it finished")
+    assert list(mounts.exported.iterdir()) == []
+
+
+def test_an_interrupt_still_ends_with_a_result_line(capsys: pytest.CaptureFixture[str]) -> None:
+    def interrupted() -> transfer.Result:
+        raise KeyboardInterrupt
+
+    code = transfer.run("import", WORLD, CONTRACTS, interrupted)
+    result = result_of(capsys)
+    assert code == 1 and result["reason"] == "import stopped on an unexpected error: KeyboardInterrupt"
+
+
+def test_an_exit_is_not_taken_for_a_refusal(capsys: pytest.CaptureFixture[str]) -> None:
+    def exits() -> transfer.Result:
+        raise SystemExit(3)
+
+    with pytest.raises(SystemExit):
+        transfer.run("import", WORLD, CONTRACTS, exits)
+    assert capsys.readouterr().out == ""
 
 
 def test_the_result_says_when_the_game_completed_the_save_in_utc_to_the_second() -> None:

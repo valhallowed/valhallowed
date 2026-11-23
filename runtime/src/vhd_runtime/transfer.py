@@ -26,12 +26,14 @@ import os
 import re
 import secrets
 import shutil
+import signal
 import stat
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, NotRequired, TypedDict
+from types import FrameType
+from typing import Literal, NoReturn, NotRequired, TypedDict
 
 from jsonschema import Draft202012Validator
 
@@ -53,6 +55,8 @@ SAVE_NUMBER_MAX = 4294967295
 REASON_MAX = 500
 # A world's save name, as the manifest schema's save_name defines it.
 _SAVE_NAME = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9 _-]{0,62}[A-Za-z0-9])?")
+# What vhd, or Docker on its behalf, sends to stop an action under way.
+STOP_SIGNALS = (signal.SIGTERM, signal.SIGINT)
 # A pre-1.0 save's files, the format an import refuses (Game facts).
 _PRE_1_0 = (".db", ".fwl")
 
@@ -63,6 +67,11 @@ _log = logging.getLogger(__name__)
 
 class Refused(Exception):
     """The action kept nothing. The message says why, in one line."""
+
+
+class Stopped(BaseException):
+    """A signal stopped the action. A BaseException, as KeyboardInterrupt is, so nothing that handles
+    the action's errors takes it for one, and the action's own cleanup runs."""
 
 
 @dataclass(frozen=True)
@@ -112,8 +121,9 @@ def is_save_name(world: str) -> bool:
 
 def run(action: Action, world: str, contracts: Path, act: Callable[[], Result]) -> int:
     """Run one action and print its result, once it keeps its contract in the contracts folder, as
-    the last line on standard output: 0 when done, 1 when refused. Any error is a refusal with its
-    reason, never a traceback."""
+    the last line on standard output: 0 when done, 1 when refused. A SIGTERM or SIGINT stops the
+    action, which removes what it wrote; that, and anything else raised but SystemExit, is a
+    refusal with its reason, never a traceback."""
     result: Result
     try:
         contract = generation.validator(contracts / RESULT_CONTRACT)
@@ -122,20 +132,37 @@ def run(action: Action, world: str, contracts: Path, act: Callable[[], Result]) 
         result = _refused(action, world, f"{action} cannot read its result's contract: {error}")
         print(json.dumps(result), flush=True)
         return 1
+    previous = {signum: signal.signal(signum, _stop) for signum in STOP_SIGNALS}
     try:
         result = act()
     except Refused as error:
         _log.error("%s of %s refused: %s", action, world, error)
         result = _refused(action, world, str(error))
-    except Exception as error:
+    except Stopped as error:
+        _log.error("%s of %s %s", action, world, error)
+        result = _refused(action, world, f"{action} {error}")
+    except SystemExit:
+        raise
+    except BaseException as error:
         _log.exception("%s of %s stopped on an unexpected error", action, world)
-        result = _refused(action, world, f"{action} stopped on an unexpected error: {type(error).__name__}: {error}")
+        what = f"{type(error).__name__}: {error}" if str(error) else type(error).__name__
+        result = _refused(action, world, f"{action} stopped on an unexpected error: {what}")
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
     breach = generation.breach(contract, result)
     if breach is not None:
         _log.error("%s of %s has a result that breaks its contract %s: %s", action, world, breach, result)
         result = _refused(action, world, f"{action}'s result breaks its contract {breach}")
     print(json.dumps(result), flush=True)
     return 0 if result["outcome"] == "done" else 1
+
+
+def _stop(signum: int, frame: FrameType | None) -> NoReturn:
+    # Once: a second signal must not cut the action's cleanup short.
+    for each in STOP_SIGNALS:
+        signal.signal(each, signal.SIG_IGN)
+    raise Stopped(f"stopped by {signal.Signals(signum).name} before it finished")
 
 
 def import_save(mounts: Mounts, world: str, now: Callable[[], datetime]) -> Result:
