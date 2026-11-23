@@ -206,7 +206,9 @@ world generator samples them.
 defaults into a new generation.
 
 **Record** — Player-authored data such as a map marker or a journal entry.
-Stored by the data layer; never becomes a command.
+Stored by the data layer; never becomes a command. A backup's record is the
+other meaning: the `backup.json` beside a backup's files, naming its world, its
+save and each file, held to its contract (`game-runtime.backup`).
 
 **Registry** — The public image store VHD publishes to: GHCR (G10). The line
 between building VHD and running it.
