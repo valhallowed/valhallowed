@@ -42,10 +42,11 @@ if [[ -z $newest ]] || grep -qxF "$newest" <<< "$before"; then
 fi
 # A game killed at the runtime's stop timeout saves nothing, and the stop then
 # backs up an older save: the stop's own save completed after it began.
-written_ns=$("${helper[@]}" cat "/backups/$newest/backup.json" | jq -er '.written_ns') ||
-  { echo "accept: cannot read the written_ns of $newest's backup.json" >&2; exit 1; }
-if ((written_ns < stopped_ns)); then
-  echo "accept: $newest holds a save completed before the stop began, so the stop saved nothing" >&2
+# Python, not jq, which may read a nanosecond count as a float.
+written_ns=$("${helper[@]}" python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["written_ns"])' \
+  "/backups/$newest/backup.json") || { echo "accept: cannot read the written_ns of $newest's backup.json" >&2; exit 1; }
+if [[ ! $written_ns =~ ^[0-9]+$ ]] || ((written_ns < stopped_ns)); then
+  echo "accept: $newest's backup.json gives written_ns '$written_ns', not after the stop began at $stopped_ns: the stop saved nothing" >&2
   docker logs --tail 40 "$ACCEPT_WORLD" >&2 || true
   exit 1
 fi
