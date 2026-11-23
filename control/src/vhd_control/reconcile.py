@@ -33,8 +33,9 @@ ROLES = (layout.INTAKE_ROLE, layout.WEB_MAP_ROLE)
 # game, so it never waits for an empty world.
 LIVE = ("backups", "updates")
 # What the runtime alone decides the cost of: a restore restarts the game once, for an id it has not
-# done, and the runtime holds it for an empty world; a done one, or one dropped, restarts nothing. So
-# the control plane hands it at once, and its runtime keeps the backup it names from pruning.
+# done, and the runtime holds it for an empty world; a done one restarts nothing, and one dropped
+# before world truth judges it swaps back at a restart the runtime gates like any other. So the
+# control plane hands it at once, and its runtime keeps the backup it names from pruning.
 RUNTIME_GATED = ("restore",)
 
 Token = Callable[[], str]

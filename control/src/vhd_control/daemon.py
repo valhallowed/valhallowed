@@ -113,7 +113,7 @@ class Daemon:
                 state.restores[cid] = restore
                 self.store.save(state)
         except Busy:
-            raise ActionRefused(503, "vhd apply is running; try again once it is done") from None
+            raise ActionRefused(503, "the install's state is busy, as while vhd apply runs; try again") from None
         _log.info("restore %s of %s's backup %s asked for", restore.id, world, backup)
         return restore
 

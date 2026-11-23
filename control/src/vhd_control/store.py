@@ -65,7 +65,8 @@ class State:
 
 
 class Busy(Exception):
-    """The volume's lock stayed held, by vhd apply, for as long as the caller could wait."""
+    """The volume's lock stayed held, by vhd apply or the control plane's own pass, for as long as
+    the caller could wait."""
 
 
 class Store:

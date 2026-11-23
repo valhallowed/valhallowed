@@ -59,8 +59,9 @@ def status(path: Path, schemas: Schemas) -> dict[str, Any]:
 
 def restore(path: Path, schemas: Schemas, world: str, backup: str) -> dict[str, Any]:
     """POST /restore: the restore the control plane holds for the world, its reply held to its
-    contract. Raises Refused when the control plane refused it, and Unreachable when the answer
-    never came, when the control plane may have taken it all the same."""
+    contract. Raises Refused when the control plane refused it with its reason, and Unreachable
+    when the answer never came, when the control plane may have taken it all the same, or is no
+    JSON answer that meets its contract."""
     body = json.dumps({"contract": 1, "world": world, "backup": backup})
     connection = _UnixConnection(path)
     try:

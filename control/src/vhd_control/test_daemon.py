@@ -476,7 +476,7 @@ def test_a_restore_while_vhd_apply_holds_the_volume_is_refused_in_time(install: 
     holder.start()
     taken.wait(5)
     try:
-        with pytest.raises(ActionRefused, match="vhd apply is running") as refused:
+        with pytest.raises(ActionRefused, match="as while vhd apply runs") as refused:
             install.daemon.request_restore("Meadowfold", BACKUP)
     finally:
         release.set()

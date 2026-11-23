@@ -49,9 +49,9 @@ def main(argv: list[str] | None = None, out: TextIO = sys.stdout) -> int:
         elif args.command == "restore":
             held = client.restore(layout.CONTROL_SOCKET, schemas, args.world, args.backup)
             print(
-                f"vhd restore: restore {held['id']} of {held['world']}'s backup {held['backup']} is handed to its "
-                "runtime, which restores it once no players are online; vhd apply --disconnect-players restores "
-                "it now. vhd status shows how it ends.",
+                f"vhd restore: the control plane holds restore {held['id']} of {held['world']}'s backup "
+                f"{held['backup']} and hands it to the world's runtime, which restores it once no players are "
+                "online; vhd apply --disconnect-players restores it now. vhd status shows how it ends.",
                 file=out,
             )
         elif args.command == "apply":

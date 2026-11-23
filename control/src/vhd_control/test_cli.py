@@ -181,7 +181,7 @@ def test_restore_says_it_is_handed(monkeypatch: pytest.MonkeyPatch) -> None:
     out = io.StringIO()
     assert cli.main(["restore", "Meadowfold", BACKUP], out) == 0
     assert asked == [("Meadowfold", BACKUP)]
-    assert f"restore {'a' * 32} of Meadowfold's backup {BACKUP} is handed to its runtime" in out.getvalue()
+    assert f"holds restore {'a' * 32} of Meadowfold's backup {BACKUP} and hands it" in out.getvalue()
 
 
 def test_a_refused_restore_fails_the_command_with_the_reason(
