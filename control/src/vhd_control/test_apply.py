@@ -12,7 +12,7 @@ from vhd_control import client, layout
 from vhd_control.apply import MAKE_BACKUP_FOLDERS, WAIT_TIMEOUT_S, Apply, Refused
 from vhd_control.docker import DockerError
 from vhd_control.manifest import load
-from vhd_control.reconcile import reconcile
+from vhd_control.reconcile import Restore, reconcile
 from vhd_control.render import STOP_GRACE
 from vhd_control.store import Store
 from vhd_control.test_daemon import ASHWAKE, MEADOWFOLD, PASSWORD, SCHEMAS, TWO_WORLDS
@@ -794,3 +794,65 @@ def test_a_server_managers_own_orphan_setting_stands(setup: Setup) -> None:
     (setup.install / ".env").write_text("COMPOSE_IGNORE_ORPHANS=false\n")
     setup.apply()
     assert (setup.install / ".env").read_text() == "COMPOSE_IGNORE_ORPHANS=false\n"
+
+
+RESTORE = Restore("a" * 32, "20261118T194011Z")
+RESTORE_HANDED = {"id": RESTORE.id, "backup": RESTORE.backup}
+
+
+def hold_restore(setup: Setup) -> None:
+    """What the control plane leaves in the volume when a restore is asked for."""
+    store = Store(setup.volume)
+    with store.locked():
+        state = store.load()
+        state.restores[MEADOWFOLD] = RESTORE
+        store.save(state)
+
+
+def test_a_restore_the_control_plane_holds_reaches_the_generation_apply_writes(setup: Setup) -> None:
+    setup.apply()
+    hold_restore(setup)
+    setup.apply()
+    assert setup.document(MEADOWFOLD)["restore"] == RESTORE_HANDED
+    assert "restore" not in setup.document(ASHWAKE)
+
+
+def test_a_running_world_with_a_restore_its_runtime_has_not_acted_on_is_a_restart(setup: Setup) -> None:
+    setup.apply()
+    setup.docker.running = [MEADOWFOLD, ASHWAKE]
+    setup.players("Meadowfold", 2)
+    hold_restore(setup)
+
+    with pytest.raises(Refused, match=r"restarts Meadowfold \(2 player\(s\)\), where players may be online"):
+        setup.apply()
+    assert "restore" not in setup.document(MEADOWFOLD)
+
+    setup.apply(disconnect_players=True)
+    assert "restarting Meadowfold (2 player(s)), as asked" in setup.out.getvalue()
+    assert setup.document(MEADOWFOLD)["restore"] == RESTORE_HANDED
+    assert setup.document(MEADOWFOLD)["disconnect_players"] is True
+    override = Store(setup.volume).load().override
+    assert override is not None and override["worlds"] == {"Meadowfold": 2}
+
+
+def test_an_empty_world_with_a_restore_needs_no_confirmation(setup: Setup) -> None:
+    setup.apply()
+    setup.docker.running = [MEADOWFOLD, ASHWAKE]
+    setup.players("Meadowfold", 0)
+    hold_restore(setup)
+    setup.apply()
+    assert setup.document(MEADOWFOLD)["restore"] == RESTORE_HANDED
+    assert "disconnect_players" not in setup.document(MEADOWFOLD)
+
+
+def test_a_world_whose_runtime_reports_the_restore_is_not_restarted(setup: Setup) -> None:
+    setup.apply()
+    setup.docker.running = [MEADOWFOLD, ASHWAKE]
+    setup.players("Meadowfold", 2)
+    assert setup.worlds is not None
+    setup.worlds["Meadowfold"]["report"]["restore"] = {"id": RESTORE.id, "outcome": "restoring"}
+    hold_restore(setup)
+    setup.apply()
+    assert setup.document(MEADOWFOLD)["restore"] == RESTORE_HANDED
+    assert "disconnect_players" not in setup.document(MEADOWFOLD)
+    assert Store(setup.volume).load().override is None
