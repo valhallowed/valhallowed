@@ -20,7 +20,7 @@
       "$ref": "../schema/manifest.schema.json#/$defs/save_name"
     },
     "state": {
-      "description": "installing: downloading SteamCMD or the server, or waiting to retry a download that failed. loading: launched, the world not yet reported. running: the world loaded. unverified: launched, but the plugin has not reported a world that had nothing to lose: no save, or last seen empty. held: restoring a backup before the game starts; or stopped before its first autosave because the world loaded empty, or the plugin never reported it, although it held objects when last seen or, with nothing remembered, a save existed; the container stays up.",
+      "description": "installing: downloading SteamCMD or the server, or waiting to retry a download that failed. loading: launched, the world not yet reported. running: the world loaded. unverified: launched, but the plugin has not reported a world that had nothing to lose: no save, or last seen empty. held: restoring a backup before the game starts; or stopped before its first autosave because the world loaded empty, or the plugin never reported it, although it held objects when last seen or, with nothing remembered, a save existed. The container stays up, except after a restored save that loaded empty is swapped back, when it starts again.",
       "enum": ["installing", "loading", "running", "unverified", "held"]
     },
     "reason": {
@@ -78,11 +78,11 @@
           "pattern": "^[0-9a-f]{32}$"
         },
         "outcome": {
-          "description": "restoring: replacing the save, or world truth has not judged the restored save yet. done: the restored save passed world truth. failed: the restore was refused, and the world's save was left as it was. rolled-back: the restored save failed world truth, and the save it replaced is back.",
+          "description": "restoring: replacing the save, or world truth has not judged the restored save yet. done: the world loaded the restored save: world truth passed it, or it held no objects and the plugin never reported it. failed: the restore was refused, and the world's save was left as it was. rolled-back: the restored save loaded empty or ended the game as it loaded, or a newer generation dropped or replaced the restore before world truth judged it, and the save it replaced is back.",
           "enum": ["restoring", "done", "failed", "rolled-back"]
         },
         "reason": {
-          "description": "Why the restore failed or was rolled back, or what it waits on, in one line of printable text: vhd status shows it to the server manager.",
+          "description": "Why the restore failed or was rolled back, what it waits on, or that the save it replaces could not be backed up and is only kept aside, in one line of printable text: vhd status shows it to the server manager.",
           "type": "string",
           "minLength": 1,
           "maxLength": 500,

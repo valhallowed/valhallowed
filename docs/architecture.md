@@ -217,29 +217,31 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   one's age. The dedicated server's own backups (§ Game facts) sit beside the
   save, in the world's volume, and go with it.
 - **Restore, import and export share one path.** A restore puts the world's
-  runtime on hold: the runtime stops the game with a save and, at its next
-  start, backs that save up, checks the backup it was asked for against the
-  backup's record and the save format, and swaps it in for the save, which it
-  keeps aside; then it installs and starts the game, and world truth judges
+  runtime on hold: the runtime stops the game with a save, which the stop
+  backs up as every clean stop does, or its next start does when the stop did
+  not. At that start the runtime checks the backup it was asked for against
+  the backup's record and the save format, and swaps it in for the save, which
+  it keeps aside; then it installs and starts the game, and world truth judges
   the load against the backup's object count. A restored save that loads
-  empty is swapped back for the save it replaced, and status says why; a load
-  the plugin never reports is no verdict on the save, so the world is held
-  and the restore waits. Once a restored save passes, the save it replaced is
-  removed. A save that cannot be backed up, as one missing a file, is still
-  kept aside until then, since a broken save is what a restore is for.
-  Whether the dedicated server keeps its own backups of a 1.0+ save inside the
-  save's folder, where a restore sets them aside with it, is not verified.
-  Each step is recorded in the world's data volume before it is taken, so a
-  restore cut short is carried forward or back at the next start, and a
-  restore's id is done once. An import is a save, in either save format, that the server manager puts
-  in the install folder: `vhd import` validates it and keeps it as a backup of
-  its world, which is then restored like any other, and the runtime validates
-  it again before it replaces anything. A world that has never started loads
-  an imported save at its first start, so no empty world is made first. An
-  export copies a backup, the newest by default, into the install folder in
-  the layout the game reads. A restore or an import waits as a pending change
-  while its world has players online, like a game-server restart, unless the
-  server manager confirms it.
+  empty, or ends the game as it loads, is swapped back for the save it
+  replaced, and status says why; so is one whose restore a newer generation
+  drops or replaces first. A load the plugin never reports is no verdict on
+  the save, so the world is held and the restore waits. Once a restored save
+  passes, the save it replaced is removed. A save that cannot be backed up, as
+  one missing a file, is still kept aside until then, since a broken save is
+  what a restore is for. Whether the dedicated server keeps its own backups of
+  a 1.0+ save inside the save's folder, where a restore sets them aside with
+  it, is not verified. Each step is recorded in the world's data volume before
+  it is taken, so a restore cut short is carried forward or back at the next
+  start, and a restore's id is done once. An import is a save, in either save
+  format, that the server manager puts in the install folder: `vhd import`
+  validates it and keeps it as a backup of its world, which is then restored
+  like any other, and the runtime validates it again before it replaces
+  anything. A world that has never started loads an imported save at its first
+  start, so no empty world is made first. An export copies a backup, the
+  newest by default, into the install folder in the layout the game reads. A
+  restore or an import waits as a pending change while its world has players
+  online, like a game-server restart, unless the server manager confirms it.
 - **Updates.** Under the default update policy, a runtime compares its
   installed game build with Steam's newest public build every 15 minutes, and
   restarts its world to update once no players are online, by its own final

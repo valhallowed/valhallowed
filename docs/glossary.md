@@ -211,9 +211,9 @@ images, `compose.yaml`, the plugin artifact and the manifest and secrets
 schemas.
 
 **Restore** — An operator action that replaces a world's save with one of its
-backups, through a hold, once the save it replaces is backed up, or, when it
-cannot be, kept aside. World truth judges the load, and a restored save that
-loads empty is swapped back.
+backups, through a hold, once the save it replaces is backed up. That save is
+kept aside until world truth passes the restored one, even when it cannot be
+backed up; a restored save that loads empty is swapped back.
 
 **Retro** — The review a pull request passes before it is marked ready, and
 the fixes it calls for. AGENTS.md § Delivering says what it covers.
