@@ -1,5 +1,7 @@
+import errno
 import itertools
 import json
+import os
 import shutil
 import signal
 import subprocess
@@ -1677,6 +1679,30 @@ def test_a_world_with_no_save_whose_restore_record_cannot_be_read_is_held(world:
     assert held_without_save(world)[-1].startswith(
         "the world has no save and the record of its newest restore, restore-done.json in its data volume, "
         "cannot be read, so no new world is made; ask for another restore or an import"
+    )
+
+
+def test_a_world_with_no_save_whose_data_volume_cannot_be_read_is_held(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    done = place_of(world).done
+    lstat = os.lstat
+
+    def unreadable(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+        if Path(path) == done:
+            raise OSError(errno.EIO, "Input/output error")
+        return lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "lstat", unreadable)
+    world.generation()
+    sup = world.supervisor()
+    world.stop_at(30, sup)
+
+    assert sup.run() == 0
+    assert world.launches == [] and world.states() == ["held"]
+    assert held_without_save(world)[-1].startswith(
+        "the world has no save and the record of its newest restore, restore-done.json in its data volume, "
+        "cannot be read, so no new world is made"
     )
 
 
