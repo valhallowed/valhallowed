@@ -321,17 +321,22 @@ def test_a_backup_says_when_it_was_taken_and_which_save_it_holds(tmp_path: Path)
 @pytest.mark.parametrize(
     ("number", "seconds_ago", "breach"),
     [
-        (4294967296, 0, "at save: breaks maximum 4294967295"),
-        (7, NOW.timestamp() + 60, "at written_ns: breaks minimum 0"),
+        (4294967296, 0, "the save folder holds _main.4294967296.ok, numbered above any save's 4294967295"),
+        (7, NOW.timestamp() + 60, "the save's _main.7.ok was last modified before 1970, which no save is"),
     ],
 )
-def test_a_save_whose_record_would_break_its_contract_is_never_named_as_a_backup(
-    tmp_path: Path, number: int, seconds_ago: float, breach: str
+def test_a_save_whose_record_would_break_its_contract_is_refused_before_any_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, number: int, seconds_ago: float, breach: str
 ) -> None:
     folder, store = tmp_path / "world", tmp_path / "backups"
     store.mkdir()
     write_save(folder, number, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}], seconds_ago=seconds_ago)
-    with pytest.raises(BackupFailed, match=f"^the backup's record breaks its contract {breach}$"):
+
+    def never(*args: Any, **kwargs: Any) -> dict[str, object]:
+        raise AssertionError("copied a save whose record would break its contract")
+
+    monkeypatch.setattr(backups, "copy_file", never)
+    with pytest.raises(BackupFailed, match=f"^{re.escape(breach)}$"):
         take(Place(folder, store, "Meadowfold", RECORD), NOW)
     assert list(store.iterdir()) == []
 

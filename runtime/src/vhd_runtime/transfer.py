@@ -50,8 +50,6 @@ EXPORT_FOLDER = Path("/export")
 IMPORT_MAX_BYTES = 4 << 30
 CONTRACT = 1
 RESULT_CONTRACT = "game-runtime.import-export.schema.json"
-# The record contract's bound on a save's number.
-SAVE_NUMBER_MAX = 4294967295
 # The result contract's bound on a reason.
 REASON_MAX = 500
 # A world's save name, as the manifest schema's save_name defines it.
@@ -383,8 +381,10 @@ def _one_save(folder: Path, present: set[str]) -> int:
     numbers = sorted(int(match[1]) for name in present if (match := backups.OK_FILE.match(name)))
     if not numbers:
         raise Refused("the save folder holds no complete save: no _main.<n>.ok")
-    if numbers[-1] > SAVE_NUMBER_MAX:
-        raise Refused(f"the save folder holds _main.{numbers[-1]}.ok, numbered above any save's {SAVE_NUMBER_MAX}")
+    if numbers[-1] > backups.SAVE_NUMBER_MAX:
+        raise Refused(
+            f"the save folder holds _main.{numbers[-1]}.ok, numbered above any save's {backups.SAVE_NUMBER_MAX}"
+        )
     if len(numbers) > 1:
         raise Refused(
             f"the save folder holds {len(numbers)} complete saves ({', '.join(map(str, numbers[:5]))}); the game picks "
