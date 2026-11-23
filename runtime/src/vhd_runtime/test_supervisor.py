@@ -1531,3 +1531,104 @@ def test_a_world_still_loading_a_restore_a_newer_generation_drops_is_judged_firs
     assert len(world.launches) == 1 and world.process.signals == [signal.SIGINT]
     assert world.save_number() == 3 and world.restores() == ["restoring", "done"]
     assert world.reports[-1]["generation"] == 2
+
+
+OTHER_ID = "a" * 32
+
+
+def held_without_save(world: World) -> list[str]:
+    """The reasons reported for a world held because it has no save."""
+    return [str(r) for r in world.held_reasons() if str(r).startswith("the world has no save")]
+
+
+def test_a_failed_restore_on_a_world_with_no_save_holds_it_across_starts_and_makes_no_world(world: World) -> None:
+    world.generation(1, restore="20261118T100000Z")
+    sup = world.supervisor()
+    # The failed outcome makes the control plane drop the restore: a newer generation without it.
+    world.time.at(30, lambda: world.generation(2))
+    world.stop_at(5000, sup)
+
+    assert sup.run() == 0
+    assert world.time.now < 5000
+    assert world.launches == [] and world.steamcmd_runs == [] and "installing" not in world.states()
+    assert world.restores() == ["restoring", "failed"]
+    reasons = held_without_save(world)
+    assert reasons and reasons[-1].startswith(f"the world has no save and restore {RESTORE_ID} failed, so no new world")
+    assert "ask for another restore or an import, or remove the world's data volume" in reasons[-1]
+    assert "no longer exists" in reasons[-1]
+    # Reported on its interval while it waits.
+    assert len([r for r in world.reports if r["state"] == "held"]) >= 5
+
+    # Docker starts the container again on generation 2, which asks for no restore: still held.
+    world.reports = []
+    again = world.supervisor()
+    world.stop_at(world.time.now + 60, again)
+    assert again.run() == 0
+    assert world.launches == [] and world.states() == ["held"]
+    assert held_without_save(world) and world.restores() == ["failed"]
+    assert not (world.paths.saves / "worlds_local" / "Meadowfold").exists()
+
+
+def test_a_new_restore_releases_a_world_held_without_a_save(world: World) -> None:
+    world.generation(1, restore="20261118T100000Z")
+    sup = world.supervisor()
+    world.stop_at(60, sup)
+    assert sup.run() == 0
+    assert world.launches == [] and held_without_save(world)
+
+    world.reports = []
+    world.generation(2, restore=world.backup_of(3), restore_id=OTHER_ID)
+    again = world.supervisor()
+    world.plugin_running(103, start=int(world.time.now) + 30)
+    world.stop_at(world.time.now + 90, again)
+    assert again.run() == 0
+    assert len(world.launches) == 1 and world.save_number() == 3
+    assert world.restores() == ["restoring", "done"] and not held_without_save(world)
+
+
+def test_a_world_with_a_save_runs_on_it_after_a_failed_restore_across_starts(world: World) -> None:
+    world.game_saves(5)
+    world.generation(1, restore="20261118T100000Z")
+    sup = world.supervisor()
+    world.plugin_running(105)
+    world.stop_at(60, sup)
+    assert sup.run() == 0
+
+    world.process, world.reports = FakeProcess(), []
+    world.generation(2)
+    again = world.supervisor()
+    world.plugin_running(105, start=int(world.time.now) + 30)
+    world.stop_at(world.time.now + 60, again)
+    assert again.run() == 0
+    assert len(world.launches) == 2 and world.save_number() == 5
+    assert world.restores() == ["failed"] and not held_without_save(world)
+
+
+def test_a_rolled_back_restore_on_a_world_with_no_save_holds_it_at_the_next_start(world: World) -> None:
+    world.generation(1, restore=world.backup_of(3))
+    sup = world.supervisor()
+    world.time.at(30, lambda: world.plugin_reports(0))
+    world.stop_at(600, sup)
+    assert sup.run() == 0
+    assert world.restores() == ["restoring", "rolled-back"] and len(world.launches) == 1
+
+    world.process, world.reports = FakeProcess(), []
+    world.generation(2)
+    again = world.supervisor()
+    world.stop_at(world.time.now + 60, again)
+    assert again.run() == 0
+    assert len(world.launches) == 1 and world.states() == ["held"]
+    reasons = held_without_save(world)
+    assert reasons and reasons[-1].startswith(f"the world has no save and restore {RESTORE_ID} was rolled back")
+    assert "loaded with no objects" in reasons[-1]
+    # Status names the backups, so the server manager can ask for another restore.
+    assert cast(dict[str, object], world.reports[-1]["backups"])["names"]
+
+
+def test_a_new_world_with_no_restore_is_not_held(world: World) -> None:
+    world.generation()
+    sup = world.supervisor()
+    world.plugin_running(0)
+    world.stop_at(60, sup)
+    assert sup.run() == 0
+    assert len(world.launches) == 1 and not held_without_save(world)

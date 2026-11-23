@@ -182,6 +182,9 @@ class Supervisor:
             return 0
         reporter = status.Reporter(generation.status_url, self.post)
         self._restore(generation, reporter)
+        unsaved = self._unsaved(generation)
+        if unsaved is not None:
+            return self._hold_unsaved(generation, reporter, unsaved)
         build = self._install(generation, reporter)
         if build is None:
             return 0
@@ -212,6 +215,51 @@ class Supervisor:
             self.paths.server,
         )
         return self._watch(process, generation, reporter, save_existed, build)
+
+    def _unsaved(self, generation: Generation) -> str | None:
+        """Why the world is held rather than launched, if it is: it has no save, its newest restore
+        did not end done, and the generation asks for no restore the runtime has not done. The game
+        would make an empty world in place of the one the restore was for, and the restore's
+        outcome makes the control plane drop it, so this holds across starts until the server
+        manager asks for another restore or an import."""
+        place = self._place(generation.world)
+        if place.save.exists() or place.legacy_save.exists() or self._due(generation) is not None:
+            return None
+        done = restore.read_done(place)
+        if done is None or done.outcome == "done":
+            return None
+        ended = "failed" if done.outcome == "failed" else "was rolled back"
+        return _reason(
+            f"the world has no save and restore {done.id} {ended}, so no new world is made; ask for another restore "
+            f"or an import, or remove the world's data volume to start a new world. Why: {done.reason or 'unknown'}"
+        )
+
+    def _hold_unsaved(self, generation: Generation, reporter: status.Reporter, why: str) -> int:
+        """Install and launch nothing, reporting the world held, until a stop or a newer generation,
+        which the next start acts on."""
+        _log.error("held: %s", why)
+        holding: status.RuntimeStatus = {
+            "contract": 1,
+            "generation": generation.number,
+            "world": generation.world,
+            "state": State.HELD,
+            "reason": why,
+        }
+        # A start's turn of the backups, so status names them for the next restore.
+        self._tend(generation)
+        next_report = self.clock.now()
+        while not self._stop:
+            self._back_up(generation, running=False)
+            if self.clock.now() >= next_report:
+                self._report(reporter, holding.copy())
+                next_report = self.clock.now() + generation.status_interval_s
+            newer = self._read_generation()
+            if newer is not None and newer.number > generation.number:
+                _log.info("generation %d arrived while held; starting again to act on it", newer.number)
+                return 0
+            self.clock.sleep(POLL_S)
+        _log.info("stopping: stop requested while held")
+        return 0
 
     def _map_export_directory(self) -> None:
         """The directory the plugin writes the map export into, made on every start. The export is
