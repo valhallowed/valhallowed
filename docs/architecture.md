@@ -226,11 +226,15 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   an import or an export runs in. A Docker volume would go, with the world it
   protects, on `docker compose down -v`; a folder stays, and the server manager
   copies it off the host with any tool. The manifest can name another host path,
-  such as another disk (G3). A runtime reports the names of its world's backups,
-  newest first, each the time it was taken in UTC, and why it could not take or
-  keep one; the control plane learns them from there, so it mounts no world's
-  backups, and `vhd status` shows how many there are and the newest one's age.
-  Each backup carries its record
+  such as another disk (G3). The world's backups folder must be on a file system
+  that can lock a folder (`flock`), as an import holds a lock on its copy until
+  it names it: where it cannot, as on some network mounts, an import refuses,
+  and a start, and the next import, remove an import's copy left more than an
+  hour ago without the lock, since no import can be under way there. A runtime
+  reports the names of its world's backups, newest first, each the time it was
+  taken in UTC, and why it could not take or keep one; the control plane learns
+  them from there, so it mounts no world's backups, and `vhd status` shows how
+  many there are and the newest one's age. Each backup carries its record
   ([`game-runtime.backup`](../contracts/game-runtime.backup.schema.json)): the
   save it holds, its object count, and each file's size and SHA-256, which a
   restore and an export check before they use the files, and whether the runtime
