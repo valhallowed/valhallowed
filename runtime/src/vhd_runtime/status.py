@@ -99,7 +99,9 @@ class Reporter:
         if self._url is None:
             return
         try:
-            self._post(self._url, json.dumps(status).encode(), REPORT_TIMEOUT_S)
+            # UTF-8, not escapes: a reason's character takes at most 4 bytes, not 12, which keeps the
+            # largest report within the status listener's bound.
+            self._post(self._url, json.dumps(status, ensure_ascii=False).encode(), REPORT_TIMEOUT_S)
         except (OSError, http.client.HTTPException) as error:
             if not self._failing:
                 _log.warning("cannot report status to %s: %s", self._url, error)
