@@ -33,7 +33,7 @@ ROLES = (layout.INTAKE_ROLE, layout.WEB_MAP_ROLE)
 # game, so it never waits for an empty world.
 LIVE = ("backups", "updates")
 # What the runtime alone decides the cost of: a restore restarts the game once, for an id it has not
-# done, and the runtime holds it for an empty world; a done one restarts nothing, and one dropped
+# done, and the runtime makes it wait for an empty world; a done one restarts nothing, and one dropped
 # before world truth judges it swaps back at a restart the runtime gates like any other. So the
 # control plane hands it at once, and its runtime keeps the backup it names from pruning.
 RUNTIME_GATED = ("restore",)
@@ -123,7 +123,7 @@ def reconcile(
     token: Token = _token,
     restores: Mapping[str, Restore] | None = None,
 ) -> Generation:
-    """The generation for settings, each world's with the restore it holds, by child id: previous
+    """The generation for settings, each world's with the restore kept for it, by child id: previous
     itself when no child's documents changed."""
     restores = restores or {}
     _check_ports(settings.worlds)

@@ -385,15 +385,15 @@ def restore_handed(install: Install, cid: str = MEADOWFOLD) -> object:
 def test_a_restore_is_handed_at_once_with_players_online_and_shows_as_waiting(install: Install) -> None:
     reports(install)
     install.daemon.step()
-    held = install.daemon.request_restore("Meadowfold", BACKUP)
-    assert len(held.id) == 32
+    kept = install.daemon.request_restore("Meadowfold", BACKUP)
+    assert len(kept.id) == 32
     install.daemon.step()
 
-    assert restore_handed(install) == {"id": held.id, "backup": BACKUP}
+    assert restore_handed(install) == {"id": kept.id, "backup": BACKUP}
     status = install.daemon.status()
     assert status is not None
     entry = status["worlds"]["Meadowfold"]
-    assert entry["restore"] == {"id": held.id, "backup": BACKUP}
+    assert entry["restore"] == {"id": kept.id, "backup": BACKUP}
     assert entry["pending"] == {"generation": 2, "waits_for": WAITS_FOR_EMPTY}
     # Another world takes the new number, and no restore.
     assert restore_handed(install, ASHWAKE) is None
@@ -409,25 +409,25 @@ def test_the_same_request_while_under_way_gets_the_same_restore(install: Install
 
 def test_a_finished_restore_is_dropped_and_restarts_nothing(install: Install) -> None:
     reports(install)
-    held = install.daemon.request_restore("Meadowfold", BACKUP)
+    kept = install.daemon.request_restore("Meadowfold", BACKUP)
     install.daemon.step()
-    reports(install, generation=2, players=3, restore={"id": held.id, "outcome": "done"})
+    reports(install, generation=2, players=3, restore={"id": kept.id, "outcome": "done"})
     install.daemon.step()
 
     assert restore_handed(install) is None
     assert install.store.load().restores == {}
     assert install.pending("Meadowfold") is None
     # The same backup again is a new restore.
-    assert install.daemon.request_restore("Meadowfold", BACKUP).id != held.id
+    assert install.daemon.request_restore("Meadowfold", BACKUP).id != kept.id
 
 
 def test_a_restore_still_judged_is_kept(install: Install) -> None:
     reports(install)
-    held = install.daemon.request_restore("Meadowfold", BACKUP)
+    kept = install.daemon.request_restore("Meadowfold", BACKUP)
     install.daemon.step()
-    reports(install, generation=2, restore={"id": held.id, "outcome": "restoring"})
+    reports(install, generation=2, restore={"id": kept.id, "outcome": "restoring"})
     install.daemon.step()
-    assert restore_handed(install) == {"id": held.id, "backup": BACKUP}
+    assert restore_handed(install) == {"id": kept.id, "backup": BACKUP}
 
 
 def test_a_world_the_manifest_drops_drops_its_restore(install: Install) -> None:
@@ -462,7 +462,10 @@ def test_a_restore_for_a_runtime_that_has_not_reported_its_backups_is_refused(in
     assert refused.value.status == 409
 
 
-def test_a_restore_while_vhd_apply_holds_the_volume_is_refused_in_time(install: Install) -> None:
+def test_a_restore_while_vhd_apply_holds_the_volume_is_refused_in_time(
+    install: Install, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("vhd_control.daemon.ACTION_LOCK_WAIT_S", 0.2)
     reports(install)
     taken = threading.Event()
     release = threading.Event()
@@ -483,3 +486,56 @@ def test_a_restore_while_vhd_apply_holds_the_volume_is_refused_in_time(install: 
         holder.join()
     assert refused.value.status == 503
     assert install.store.load().restores == {}
+
+
+def test_a_restore_before_any_generation_is_refused(install: Install, tmp_path: Path) -> None:
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    daemon = Daemon(install.folder, Store(empty), SCHEMAS, install.book)
+    with pytest.raises(ActionRefused, match="no generation yet") as refused:
+        daemon.request_restore("Meadowfold", BACKUP)
+    assert refused.value.status == 503
+
+
+def test_a_restore_for_a_runtime_that_never_reported_says_to_wait_for_it(install: Install) -> None:
+    with pytest.raises(ActionRefused, match="has not reported since the control plane started") as refused:
+        install.daemon.request_restore("Meadowfold", BACKUP)
+    assert refused.value.status == 409
+
+
+def test_a_restore_for_a_world_with_no_container_yet_says_to_run_vhd_apply(install: Install) -> None:
+    install.write(TWO_WORLDS + "\n[world.Hollowmere]\nport = 2470\n")
+    install.daemon.step()
+    with pytest.raises(ActionRefused, match="no container yet; run vhd apply") as refused:
+        install.daemon.request_restore("Hollowmere", BACKUP)
+    assert refused.value.status == 409
+    assert install.store.load().restores == {}
+
+
+def test_a_finished_restore_not_yet_dropped_asked_again_is_a_new_restore(install: Install) -> None:
+    reports(install)
+    kept = install.daemon.request_restore("Meadowfold", BACKUP)
+    install.daemon.step()
+    reports(install, generation=2, restore={"id": kept.id, "outcome": "done"})
+    assert install.daemon.request_restore("Meadowfold", BACKUP).id != kept.id
+
+
+def test_a_restore_its_runtime_acts_on_no_longer_shows_as_waiting(install: Install) -> None:
+    reports(install)
+    kept = install.daemon.request_restore("Meadowfold", BACKUP)
+    install.daemon.step()
+    reports(install, restore={"id": kept.id, "outcome": "restoring"})
+    status = install.daemon.status()
+    assert status is not None
+    entry = status["worlds"]["Meadowfold"]
+    assert entry["restore"] == {"id": kept.id, "backup": BACKUP}
+    assert "pending" not in entry
+
+
+def test_another_backup_replaces_the_restore_in_the_generation(install: Install) -> None:
+    reports(install)
+    install.daemon.request_restore("Meadowfold", BACKUP)
+    install.daemon.step()
+    other = install.daemon.request_restore("Meadowfold", "20261118T204012Z")
+    install.daemon.step()
+    assert restore_handed(install) == {"id": other.id, "backup": "20261118T204012Z"}

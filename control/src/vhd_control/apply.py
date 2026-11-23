@@ -110,7 +110,7 @@ class Apply:
         with self.store.locked():
             state = self.store.load()
             before = _Before(state.generation, dict(state.handed), dict(state.applied or {}), dict(state.services))
-            # The restores the control plane holds, or this apply would hand documents without them,
+            # The restores the control plane keeps, or this apply would hand documents without them,
             # which a runtime judging one takes for a drop.
             generation = reconcile(settings, state.generation, restores=state.restores)
             rendered = render(generation, host)
