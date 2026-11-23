@@ -23,12 +23,17 @@ CHUNKS = [
 ]
 
 
+def make_mounts(root: Path) -> Mounts:
+    """The folders vhd mounts for an action: the import folder, the world's backups, an empty export folder."""
+    mounts = Mounts(imported=root / "import", backups=root / "backups", exported=root / "export")
+    for folder in (mounts.imported, mounts.backups, mounts.exported):
+        folder.mkdir()
+    return mounts
+
+
 @pytest.fixture
 def mounts(tmp_path: Path) -> Mounts:
-    mounts = Mounts(imported=tmp_path / "import", backups=tmp_path / "backups")
-    mounts.imported.mkdir()
-    mounts.backups.mkdir()
-    return mounts
+    return make_mounts(tmp_path)
 
 
 def put_save(mounts: Mounts, number: int = 41, chunks: list[dict[str, int]] = CHUNKS, **kwargs: Any) -> Path:
@@ -41,11 +46,21 @@ def put_save(mounts: Mounts, number: int = 41, chunks: list[dict[str, int]] = CH
 def act(mounts: Mounts, capsys: pytest.CaptureFixture[str], now: datetime = NOW) -> tuple[int, dict[str, Any]]:
     """Import, as python -m vhd_runtime import does: the exit code and the result, its last line."""
     code = transfer.run("import", WORLD, lambda: transfer.import_save(mounts, WORLD, lambda: now))
+    return code, result_of(capsys)
+
+
+def export(mounts: Mounts, capsys: pytest.CaptureFixture[str], backup: str | None = None) -> tuple[int, dict[str, Any]]:
+    """Export, as python -m vhd_runtime export does: the exit code and the result, its last line."""
+    code = transfer.run("export", WORLD, lambda: transfer.export_backup(mounts, WORLD, backup, lambda: NOW))
+    return code, result_of(capsys)
+
+
+def result_of(capsys: pytest.CaptureFixture[str]) -> dict[str, Any]:
     lines = capsys.readouterr().out.splitlines()
     result: dict[str, Any] = json.loads(lines[-1])
     # vhd counts a result that breaks the contract as refused, so none may.
     RESULT.validate(result)
-    return code, result
+    return result
 
 
 def kept(mounts: Mounts) -> list[str]:
@@ -347,3 +362,149 @@ def test_the_result_says_when_the_game_completed_the_save_in_utc_to_the_second()
     result = transfer._done("import", WORLD, NOW_NAME, transfer._summary(4294967295, 0, written_ns))
     RESULT.validate(result)
     assert result["save"] == {"number": 4294967295, "objects": 0, "written": "2026-11-18T20:40:00Z"}
+
+
+def backup_of(mounts: Mounts, number: int, when: datetime) -> str:
+    """A backup the runtime took of save number."""
+    then = mounts.backups.parent / "then" / WORLD
+    write_save(then, number, CHUNKS)
+    taken = backups.take(then, mounts.backups, WORLD, when)
+    assert taken is not None
+    shutil.rmtree(then.parent)
+    return taken.name
+
+
+def exported(mounts: Mounts) -> Path:
+    return mounts.exported / "worlds_local" / WORLD
+
+
+def same_files(one: Path, other: Path) -> bool:
+    files = sorted(entry.name for entry in one.iterdir())
+    return files == sorted(entry.name for entry in other.iterdir()) and all(
+        (one / name).read_bytes() == (other / name).read_bytes() for name in files
+    )
+
+
+def test_an_export_copies_the_newest_backup_in_the_layout_the_game_reads(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str]
+) -> None:
+    backup_of(mounts, 40, NOW - timedelta(hours=1))
+    newest = backup_of(mounts, 41, NOW)
+
+    code, result = export(mounts, capsys)
+
+    record = json.loads((mounts.backups / newest / backups.RECORD).read_text())
+    written = datetime.fromtimestamp(record["written_ns"] // 10**9, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert code == 0
+    assert result == {
+        "contract": 1,
+        "action": "export",
+        "world": WORLD,
+        "outcome": "done",
+        "backup": newest,
+        "save": {"number": 41, "objects": 1234, "written": written},
+    }
+    assert [entry.name for entry in mounts.exported.iterdir()] == ["worlds_local"]
+    save = backups.newest_complete(exported(mounts))
+    assert save is not None and save.number == 41
+    assert sorted(entry.name for entry in exported(mounts).iterdir()) == sorted(f["name"] for f in record["files"])
+    for file in record["files"]:
+        assert (exported(mounts) / file["name"]).read_bytes() == (mounts.backups / newest / file["name"]).read_bytes()
+
+
+def test_an_export_copies_the_backup_it_names(mounts: Mounts, capsys: pytest.CaptureFixture[str]) -> None:
+    older = backup_of(mounts, 40, NOW - timedelta(hours=1))
+    backup_of(mounts, 41, NOW)
+    code, result = export(mounts, capsys, older)
+    assert code == 0 and result["backup"] == older and result["save"]["number"] == 40
+    assert (exported(mounts) / "_main.40.ok").is_file()
+
+
+def test_an_imported_save_exports_as_it_was_put_in_the_install_folder(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str]
+) -> None:
+    folder = put_save(mounts)
+    assert act(mounts, capsys)[0] == 0
+    code, result = export(mounts, capsys)
+    assert code == 0 and result["backup"] == NOW_NAME
+    assert same_files(folder, exported(mounts))
+
+
+def test_a_backup_whose_record_predates_its_source_exports(mounts: Mounts, capsys: pytest.CaptureFixture[str]) -> None:
+    name = backup_of(mounts, 41, NOW)
+    path = mounts.backups / name / backups.RECORD
+    record = json.loads(path.read_text())
+    del record["source"]
+    path.write_text(json.dumps(record))
+    assert export(mounts, capsys)[0] == 0
+
+
+@pytest.mark.parametrize(
+    ("backup", "reason"),
+    [
+        (None, "the backup folder holds no backup of Meadowfold"),
+        ("20261118T100000Z", "backup 20261118T100000Z does not exist in the backup folder"),
+        ("../import", "backup ../import does not exist in the backup folder"),
+        (".import-00000000000000000000000000000000", "does not exist in the backup folder"),
+    ],
+)
+def test_a_backup_that_is_not_there_is_refused(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], backup: str | None, reason: str
+) -> None:
+    (mounts.backups / ".import-00000000000000000000000000000000").mkdir()
+    code, result = export(mounts, capsys, backup)
+    assert code == 1 and result["reason"].endswith(reason)
+    assert list(mounts.exported.iterdir()) == []
+
+
+def test_a_backup_of_another_world_is_refused(mounts: Mounts, capsys: pytest.CaptureFixture[str]) -> None:
+    name = backup_of(mounts, 41, NOW)
+    path = mounts.backups / name / backups.RECORD
+    path.write_text(json.dumps({**json.loads(path.read_text()), "world": "Ashwake"}))
+    code, result = export(mounts, capsys)
+    assert (code, result["reason"]) == (1, f"backup {name} is not a backup of Meadowfold")
+    assert list(mounts.exported.iterdir()) == []
+
+
+def test_an_export_never_writes_over_a_save_already_in_the_export_folder(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str]
+) -> None:
+    backup_of(mounts, 41, NOW)
+    exported(mounts).mkdir(parents=True)
+    (exported(mounts) / "_main.9.ok").write_text("the server manager's")
+    code, result = export(mounts, capsys)
+    assert (code, result["reason"]) == (1, "the export folder already holds worlds_local/Meadowfold")
+    assert [entry.name for entry in exported(mounts).iterdir()] == ["_main.9.ok"]
+
+
+def test_a_damaged_backup_is_refused_and_leaves_the_export_folder_as_it_was(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str]
+) -> None:
+    name = backup_of(mounts, 41, NOW)
+    (mounts.backups / name / "_main.41.db2").write_bytes(b"damaged")
+    code, result = export(mounts, capsys)
+    assert (code, result["reason"]) == (1, f"backup {name}'s _main.41.db2 is not the file its record lists")
+    assert list(mounts.exported.iterdir()) == []
+
+
+def test_a_failed_export_removes_only_what_it_wrote(mounts: Mounts, capsys: pytest.CaptureFixture[str]) -> None:
+    name = backup_of(mounts, 41, NOW)
+    other = mounts.exported / "worlds_local" / "Ashwake"
+    other.mkdir(parents=True)
+    (mounts.backups / name / chunk_name(CHUNKS[0])).unlink()
+    code, result = export(mounts, capsys)
+    assert (code, result["reason"]) == (1, f"backup {name} lacks 01_02__64_3.chunk, which its record lists")
+    assert [entry.name for entry in (mounts.exported / "worlds_local").iterdir()] == ["Ashwake"]
+
+
+def test_a_backup_file_that_is_a_link_is_refused_without_reading_through_it(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str]
+) -> None:
+    name = backup_of(mounts, 41, NOW)
+    secret = mounts.backups.parent / "secret"
+    secret.write_bytes(b"db2 of save 41")
+    (mounts.backups / name / "_main.41.db2").unlink()
+    (mounts.backups / name / "_main.41.db2").symlink_to(secret)
+    code, result = export(mounts, capsys)
+    assert (code, result["reason"]) == (1, f"cannot copy backup {name} into the export folder: _main.41.db2 is a link")
+    assert list(mounts.exported.iterdir()) == []

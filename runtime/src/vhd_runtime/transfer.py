@@ -4,13 +4,17 @@ path).
 
 An import takes a 1.0+ save the server manager put in the install folder, checks it is exactly one
 complete save, and keeps it as a backup of its world, which a restore then swaps in like any other.
-Each action prints its result as its last line on standard output, one JSON document as
-contracts/game-runtime.import-export.schema.json defines it, and logs to standard error.
+An export copies one of the world's backups, checked as a restore checks it, into the install
+folder in the layout the game reads. Each action prints its result as its last line on standard
+output, one JSON document as contracts/game-runtime.import-export.schema.json defines it, and logs
+to standard error.
 
     /import                         the save folder, mounted read-only under its own name
     /backups                        the world's own folder of the install's backups
     /backups/.import-<id>/          an import under way, or one a kill cut short; a start of the
                                     world's runtime removes it once it is old
+    /export                         an empty folder, which an export copies the backup into, as
+                                    worlds_local/<world>/
 """
 
 import errno
@@ -33,6 +37,7 @@ from vhd_runtime import backups, restore
 # backups folder, which is the same mount as the supervisor's Paths.backups.
 IMPORT_FOLDER = Path("/import")
 BACKUPS_FOLDER = Path("/backups")
+EXPORT_FOLDER = Path("/export")
 # The largest save an import takes, summed over its files before any is copied.
 IMPORT_MAX_BYTES = 4 << 30
 # How many times an import names its backup again when the runtime's own turn took the name first.
@@ -60,6 +65,7 @@ class Mounts:
 
     imported: Path = IMPORT_FOLDER
     backups: Path = BACKUPS_FOLDER
+    exported: Path = EXPORT_FOLDER
 
 
 @dataclass(frozen=True)
@@ -150,6 +156,61 @@ def import_save(mounts: Mounts, world: str, now: Callable[[], datetime]) -> Resu
         raise
     _log.info("imported save %d of world %s as backup %s, %d objects", number, world, name, objects)
     return _done("import", world, name, _summary(number, objects, found.written_ns))
+
+
+def export_backup(mounts: Mounts, world: str, backup: str | None, now: Callable[[], datetime]) -> Result:
+    """Copy one of the world's backups, the newest unless one is named, into the export folder in
+    the layout the game reads, once its record names the world and each file is the one the record
+    lists. Raises Refused, removing what it wrote."""
+    try:
+        held = backups.names(mounts.backups, now())
+    except OSError as error:
+        raise Refused(f"cannot read the backup folder: {error.strerror or error}") from error
+    if backup is None and not held:
+        raise Refused(f"the backup folder holds no backup of {world}")
+    name = held[0] if backup is None else backup
+    if name not in held:
+        raise Refused(f"backup {name} does not exist in the backup folder")
+    source = mounts.backups / name
+    try:
+        number, files = restore._record(source, world, name)
+    except restore.RestoreFailed as error:
+        raise Refused(str(error)) from error
+    record = restore._read(source / backups.RECORD) or {}
+    written_ns = record.get("written_ns")
+    if type(written_ns) is not int or written_ns < 0:
+        raise Refused(f"backup {name}'s record cannot be read")
+    layout = mounts.exported / "worlds_local"
+    target = layout / world
+    try:
+        made_layout = not os.path.lexists(layout)
+        if not made_layout and not stat.S_ISDIR(layout.lstat().st_mode):
+            raise Refused("the export folder holds worlds_local, and it is no folder")
+        if os.path.lexists(target):
+            raise Refused(f"the export folder already holds worlds_local/{world}")
+        layout.mkdir(exist_ok=True)
+        target.mkdir()
+    except OSError as error:
+        if made_layout:
+            shutil.rmtree(layout, ignore_errors=True)
+        raise Refused(f"cannot write into the export folder: {error.strerror or error}") from error
+    # What this export wrote, which a failure removes.
+    written = layout if made_layout else target
+    try:
+        objects = restore.copy_checked(source, target, name, number, files)
+        backups.sync(target)
+        backups.sync(layout)
+    except restore.RestoreFailed as error:
+        shutil.rmtree(written, ignore_errors=True)
+        raise Refused(str(error)) from error
+    except OSError as error:
+        shutil.rmtree(written, ignore_errors=True)
+        raise Refused(f"cannot copy backup {name} into the export folder: {error.strerror or error}") from error
+    except BaseException:
+        shutil.rmtree(written, ignore_errors=True)
+        raise
+    _log.info("exported backup %s of world %s, save %d, %d objects", name, world, number, objects)
+    return _done("export", world, name, _summary(number, objects, written_ns))
 
 
 def _save_folder(imported: Path, world: str) -> Path:

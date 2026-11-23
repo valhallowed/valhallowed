@@ -180,19 +180,7 @@ def stage(place: Place, name: str) -> int:
                 f"the data volume has {free // backups.MIB} MiB free; backup {name} needs {needed // backups.MIB} MiB, "
                 f"and {backups.RESERVE // backups.MIB} MiB must stay free"
             )
-        for file in files:
-            try:
-                copied = backups.copy_file(source / file["name"], place.staged / file["name"], file["size"])
-            except backups.Gone as error:
-                raise RestoreFailed(f"backup {name} lacks {file['name']}, which its record lists") from error
-            if copied["size"] != file["size"] or copied["sha256"] != file["sha256"]:
-                raise RestoreFailed(f"backup {name}'s {file['name']} is not the file its record lists")
-        try:
-            save = backups.newest_complete(place.staged)
-        except backups.BackupFailed as error:
-            raise RestoreFailed(f"backup {name} is not a complete save: {error}") from error
-        if save is None or save.number != number or set(save.files) != {file["name"] for file in files}:
-            raise RestoreFailed(f"backup {name} does not hold the save its record names")
+        objects = copy_checked(source, place.staged, name, number, files)
         backups.sync(place.staged)
     except RestoreFailed:
         clear_staged(place)
@@ -200,6 +188,27 @@ def stage(place: Place, name: str) -> int:
     except OSError as error:
         clear_staged(place)
         raise RestoreFailed(f"cannot copy backup {name} into the data volume: {error.strerror or error}") from error
+    return objects
+
+
+def copy_checked(source: Path, target: Path, name: str, number: int, files: list[dict[str, Any]]) -> int:
+    """Copy the files a backup's record lists into target, and check them: each has the size and
+    SHA-256 the record gives, and together they are the complete save the record names. Returns the
+    objects the save holds. Raises RestoreFailed, or OSError when a file cannot be copied; either
+    leaves target for the caller to remove."""
+    for file in files:
+        try:
+            copied = backups.copy_file(source / file["name"], target / file["name"], file["size"])
+        except backups.Gone as error:
+            raise RestoreFailed(f"backup {name} lacks {file['name']}, which its record lists") from error
+        if copied["size"] != file["size"] or copied["sha256"] != file["sha256"]:
+            raise RestoreFailed(f"backup {name}'s {file['name']} is not the file its record lists")
+    try:
+        save = backups.newest_complete(target)
+    except backups.BackupFailed as error:
+        raise RestoreFailed(f"backup {name} is not a complete save: {error}") from error
+    if save is None or save.number != number or set(save.files) != {file["name"] for file in files}:
+        raise RestoreFailed(f"backup {name} does not hold the save its record names")
     return save.objects
 
 
