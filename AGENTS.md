@@ -83,7 +83,7 @@ and lands through pull requests.
   | Track | Owns |
   |---|---|
   | Pipeline | `.github/`, `scripts/`, `images/debian/`, `images/tools/`, `Makefile`, `docker-bake.hcl` |
-  | Control plane | `control/`, `runtime/`, `schema/`, `install/`, their images, and the contracts of B1 and B12 |
+  | Control plane | `control/`, `runtime/`, `schema/`, `install/`, their images, and the contracts of B1, B12 and B13 |
   | Capability | `plugin/`, `data/`, `web-map/`, their images, and the contracts of every other boundary |
 
   A slice stays inside one track, and takes the docs and diagrams that

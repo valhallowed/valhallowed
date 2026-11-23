@@ -24,9 +24,10 @@ host's loopback unless the manifest opens it. Not the web map.
 by an LLM provider from facts the data layer computed (B7). Off without its
 secret.
 
-**Backup** — A copy of a world's newest complete save, which its game runtime
-takes while the world runs, into that world's own folder of the install's
-backups. A restore or an import replaces a world's save from one.
+**Backup** — A copy of a world's complete save in that world's own folder of
+the install's backups: taken by its game runtime from the world's newest save
+while the world runs, or by an import from a save the server manager put in the
+install folder. A restore replaces a world's save from one.
 
 **Board** — The `valhallowed` GitHub project, where delivery progress lives:
 one issue per slice or other piece of planned work, each in a column from
@@ -114,7 +115,7 @@ generation document (B1), and adopts all of it or none.
 **Hold** — A game runtime whose game is not running: after the world failed
 world truth, while its files are replaced at a start, before the game
 launches, or for a world with no save whose restore did not end done, so no
-empty world is made in its place. Without a Docker socket (G13).
+empty world is made in its place; all without a Docker socket (G13).
 
 **Host check** — The control plane's comparison of what the manifest asks for
 (memory and CPU per world, disk) with what the host has. A shortfall is a
