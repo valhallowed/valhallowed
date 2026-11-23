@@ -16,6 +16,8 @@ from pathlib import Path
 from types import FrameType
 from typing import Protocol
 
+from jsonschema import Draft202012Validator
+
 from vhd_runtime import backups, restore, server, status, steam
 from vhd_runtime.generation import Generation, IncompleteGeneration, InvalidGeneration, Reader, Restore
 
@@ -176,6 +178,8 @@ class Supervisor:
     _done_id: str | None = field(default=None, init=False)
     # The backup a restore asks for, which no turn of the backups prunes until the restore has it.
     _spare: str | None = field(default=None, init=False)
+    # The contract a backup's record keeps, read from the image once the first turn needs it.
+    _record: Draft202012Validator | None = field(default=None, init=False)
 
     def request_stop(self, signum: int, frame: FrameType | None) -> None:
         """Signal handler: stop at the next poll, saving the world first."""
@@ -494,8 +498,14 @@ class Supervisor:
 
     def _tend(self, generation: Generation) -> Future[backups.Tended]:
         """Start a turn of the world's backups off the loop, which keeps reporting and watching."""
+        if self._record is None:
+            self._record = restore.record_contract(self.paths.contracts)
         place = backups.Place(
-            backups.world_folder(self.paths.saves, generation.world), self.paths.backups, generation.world, self._spare
+            backups.world_folder(self.paths.saves, generation.world),
+            self.paths.backups,
+            generation.world,
+            self._record,
+            self._spare,
         )
         self._tending = self.executor.submit(
             backups.tend, place, generation.backups, self.wall(), self._backed_up, starting=self._starting

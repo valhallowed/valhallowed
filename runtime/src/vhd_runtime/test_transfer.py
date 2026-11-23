@@ -101,7 +101,7 @@ def test_an_import_keeps_the_save_as_a_backup_of_its_world(mounts: Mounts, capsy
         data = (folder / file["name"]).read_bytes()
         assert (backup / file["name"]).read_bytes() == data
         assert (file["size"], file["sha256"]) == (len(data), hashlib.sha256(data).hexdigest())
-    assert backups.last_saved(mounts.backups, NOW_NAME) == (41, record["written_ns"])
+    assert backups.last_saved(mounts.backups, NOW_NAME, RECORD) == (41, record["written_ns"])
 
 
 def test_an_import_comes_newest_after_the_runtimes_own_backups(
@@ -109,7 +109,7 @@ def test_an_import_comes_newest_after_the_runtimes_own_backups(
 ) -> None:
     then = mounts.backups.parent / "then" / WORLD
     write_save(then, 7, [CHUNKS[0]])
-    own = backups.take(then, mounts.backups, WORLD, NOW + timedelta(hours=1))
+    own = backups.take(backups.Place(then, mounts.backups, WORLD, RECORD), NOW + timedelta(hours=1))
     assert own is not None
     put_save(mounts)
 
@@ -590,7 +590,7 @@ def backup_of(mounts: Mounts, number: int, when: datetime) -> str:
     """A backup the runtime took of save number."""
     then = mounts.backups.parent / "then" / WORLD
     write_save(then, number, CHUNKS)
-    taken = backups.take(then, mounts.backups, WORLD, when)
+    taken = backups.take(backups.Place(then, mounts.backups, WORLD, RECORD), when)
     assert taken is not None
     shutil.rmtree(then.parent)
     return taken.name

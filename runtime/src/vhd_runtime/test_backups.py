@@ -93,10 +93,10 @@ def test_each_synthesized_save_is_backed_up_as_its_case_says(tmp_path: Path, nam
 
     if "failure" in document:
         with pytest.raises(BackupFailed, match=f"^{re.escape(document['failure'])}$"):
-            take(folder, store, "Meadowfold", NOW)
+            take(Place(folder, store, "Meadowfold", RECORD), NOW)
         assert list(store.iterdir()) == []
         return
-    backup = take(folder, store, "Meadowfold", NOW)
+    backup = take(Place(folder, store, "Meadowfold", RECORD), NOW)
     if expected is None:
         assert backup is None
         assert list(store.iterdir()) == []
@@ -126,10 +126,10 @@ def test_the_save_backed_up_last_is_not_backed_up_again_but_one_of_its_number_wr
     write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
     save = backups.newest_complete(folder)
     assert save is not None
-    assert take(folder, store, "Meadowfold", NOW, last=save.saved) is None
+    assert take(Place(folder, store, "Meadowfold", RECORD), NOW, last=save.saved) is None
     assert list(store.iterdir()) == []
     # As after a restore: the game numbers its saves on from the restored one's.
-    backup = take(folder, store, "Meadowfold", NOW, last=(7, save.written_ns - 1))
+    backup = take(Place(folder, store, "Meadowfold", RECORD), NOW, last=(7, save.written_ns - 1))
     assert backup is not None and backup.saved == save.saved
 
 
@@ -153,7 +153,7 @@ def test_a_copy_that_loses_a_file_to_the_next_save_takes_that_save_instead(
         return copy_file(source, target)
 
     monkeypatch.setattr(backups, "copy_file", next_save_completes)
-    backup = take(folder, store, "Meadowfold", NOW)
+    backup = take(Place(folder, store, "Meadowfold", RECORD), NOW)
     assert backup is not None and (backup.name, backup.saved[0]) == (NOW_NAME, 8)
     assert [p.name for p in store.iterdir()] == [NOW_NAME]
 
@@ -170,7 +170,7 @@ def test_a_world_saving_through_every_copy_fails_and_keeps_no_partial_copy(
 
     monkeypatch.setattr(backups, "copy_file", gone)
     with pytest.raises(BackupFailed, match="the world saved again during each copy"):
-        take(folder, store, "Meadowfold", NOW)
+        take(Place(folder, store, "Meadowfold", RECORD), NOW)
     assert list(store.iterdir()) == []
 
 
@@ -183,7 +183,7 @@ def test_a_backup_it_cannot_write_fails_with_the_reason_and_is_no_backup(tmp_pat
     with pytest.raises(
         BackupFailed, match=f"^cannot write backup {NOW_NAME} into the world's backups folder: File exists$"
     ):
-        take(folder, store, "Meadowfold", NOW)
+        take(Place(folder, store, "Meadowfold", RECORD), NOW)
     assert backups.names(store, NOW) == []
 
 
@@ -196,7 +196,7 @@ def test_a_chunks_file_in_another_format_fails_closed(tmp_path: Path, data: byte
     write_save(folder, 7, [])
     (folder / "_main.7.chunks").write_bytes(data)
     with pytest.raises(BackupFailed, match=r"^save 7's \.chunks file is not in the format this runtime reads$"):
-        take(folder, store, "Meadowfold", NOW)
+        take(Place(folder, store, "Meadowfold", RECORD), NOW)
 
 
 @contextmanager
@@ -231,7 +231,7 @@ def test_a_chunks_file_that_is_no_regular_file_fails_closed_without_waiting(
     (folder / "_main.7.chunks").rename(folder / "elsewhere")
     make(folder / "_main.7.chunks")
     with within(5), pytest.raises(BackupFailed, match=f"^save 7's \\.chunks file cannot be read: {reason}$"):
-        take(folder, store, "Meadowfold", NOW)
+        take(Place(folder, store, "Meadowfold", RECORD), NOW)
     assert list(store.iterdir()) == []
 
 
@@ -295,26 +295,57 @@ def test_a_record_from_before_its_source_was_written_still_says_which_save_it_ho
     folder, store = tmp_path / "world", tmp_path / "backups"
     store.mkdir()
     write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
-    backup = take(folder, store, "Meadowfold", NOW)
+    backup = take(Place(folder, store, "Meadowfold", RECORD), NOW)
     assert backup is not None
     path = store / backup.name / backups.RECORD
     record = json.loads(path.read_text())
     del record["source"]
     RECORD.validate(record)
     path.write_text(json.dumps(record))
-    assert backups.last_saved(store, backup.name) == backup.saved
+    assert backups.last_saved(store, backup.name, RECORD) == backup.saved
 
 
 def test_a_backup_says_when_it_was_taken_and_which_save_it_holds(tmp_path: Path) -> None:
     folder, store = tmp_path / "world", tmp_path / "backups"
     store.mkdir()
     write_save(folder, 4294967295, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
-    backup = take(folder, store, "Meadowfold", NOW)
+    backup = take(Place(folder, store, "Meadowfold", RECORD), NOW)
     assert backup is not None
     assert backups.taken(NOW_NAME) == NOW
-    assert backups.last_saved(store, NOW_NAME) == backup.saved
+    assert backups.last_saved(store, NOW_NAME, RECORD) == backup.saved
     assert backup.saved[0] == 4294967295
-    assert backups.last_saved(store, "20261118T000000Z") is None
+    assert backups.last_saved(store, "20261118T000000Z", RECORD) is None
+
+
+@pytest.mark.parametrize(
+    ("number", "seconds_ago", "breach"),
+    [
+        (4294967296, 0, "at save: breaks maximum 4294967295"),
+        (7, NOW.timestamp() + 60, "at written_ns: breaks minimum 0"),
+    ],
+)
+def test_a_save_whose_record_would_break_its_contract_is_never_named_as_a_backup(
+    tmp_path: Path, number: int, seconds_ago: float, breach: str
+) -> None:
+    folder, store = tmp_path / "world", tmp_path / "backups"
+    store.mkdir()
+    write_save(folder, number, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}], seconds_ago=seconds_ago)
+    with pytest.raises(BackupFailed, match=f"^the backup's record breaks its contract {breach}$"):
+        take(Place(folder, store, "Meadowfold", RECORD), NOW)
+    assert list(store.iterdir()) == []
+
+
+def test_a_record_that_breaks_its_contract_says_no_save(tmp_path: Path) -> None:
+    folder, store = tmp_path / "world", tmp_path / "backups"
+    store.mkdir()
+    write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
+    backup = take(Place(folder, store, "Meadowfold", RECORD), NOW)
+    assert backup is not None
+    path = store / backup.name / backups.RECORD
+    record = json.loads(path.read_text())
+    record["save"] = 4294967296
+    path.write_text(json.dumps(record))
+    assert backups.last_saved(store, backup.name, RECORD) is None
 
 
 def test_a_folder_named_for_a_time_that_does_not_exist_is_no_backup(tmp_path: Path) -> None:
@@ -350,7 +381,7 @@ def test_a_name_an_import_takes_meanwhile_is_named_again(tmp_path: Path, monkeyp
     store.mkdir()
     write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
     taken = an_import_takes(1, monkeypatch)
-    backup = take(folder, store, "Meadowfold", NOW)
+    backup = take(Place(folder, store, "Meadowfold", RECORD), NOW)
     assert backup is not None and taken == [NOW_NAME] and backup.name == "20261118T204013Z"
     record = json.loads((store / backup.name / backups.RECORD).read_text())
     RECORD.validate(record)
@@ -366,7 +397,7 @@ def test_a_backup_whose_every_name_an_import_takes_fails_and_keeps_no_partial_co
     write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
     taken = an_import_takes(backups.NAME_ATTEMPTS, monkeypatch)
     with pytest.raises(BackupFailed, match=r"^imports took each name the runtime's backup tried, 3 times$"):
-        take(folder, store, "Meadowfold", NOW)
+        take(Place(folder, store, "Meadowfold", RECORD), NOW)
     assert sorted(p.name for p in store.iterdir()) == taken
 
 
@@ -376,7 +407,7 @@ def test_after_the_clock_goes_back_a_new_backup_still_comes_newest(tmp_path: Pat
     ahead = NOW + timedelta(hours=2)
     held(store, ahead)
     write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
-    backup = take(folder, store, "Meadowfold", NOW)
+    backup = take(Place(folder, store, "Meadowfold", RECORD), NOW)
     assert backup is not None
     assert backup.name == (ahead + timedelta(seconds=1)).strftime(backups.NAME_FORMAT)
     assert backups.names(store, NOW)[0] == backup.name
@@ -390,7 +421,7 @@ def test_a_backup_the_folder_has_no_room_for_is_not_started(tmp_path: Path, monk
     # Room for the save, but not for the reserve the worlds and the database keep.
     monkeypatch.setattr(shutil, "disk_usage", lambda path: usage._replace(free=backups.RESERVE))
     with pytest.raises(BackupFailed, match=r"has 1024 MiB free; save 7 needs 0 MiB, and 1024 MiB must stay free$"):
-        take(folder, store, "Meadowfold", NOW)
+        take(Place(folder, store, "Meadowfold", RECORD), NOW)
     assert list(store.iterdir()) == []
 
 
@@ -418,12 +449,12 @@ def test_a_file_system_that_cannot_sync_a_directory_still_takes_backups(
         fsync(descriptor)
 
     monkeypatch.setattr(os, "fsync", no_directories)
-    backup = take(folder, store, "Meadowfold", NOW)
+    backup = take(Place(folder, store, "Meadowfold", RECORD), NOW)
     assert backup is not None and backups.names(store, NOW) == [backup.name]
 
 
 def test_a_backup_named_well_after_now_is_left_alone_and_named_in_the_failure(tmp_path: Path) -> None:
-    place = Place(tmp_path / "world", tmp_path / "backups", "Meadowfold")
+    place = Place(tmp_path / "world", tmp_path / "backups", "Meadowfold", RECORD)
     place.backups.mkdir()
     held(place.backups, datetime(9999, 12, 31, 23, 59, 59, tzinfo=UTC))
     write_save(place.saves, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
@@ -440,7 +471,7 @@ def test_a_backup_named_well_after_now_is_left_alone_and_named_in_the_failure(tm
 
 
 def test_a_save_folder_that_cannot_be_read_fails_the_take_by_name_and_still_prunes(tmp_path: Path) -> None:
-    place = Place(tmp_path / "world", tmp_path / "backups", "Meadowfold")
+    place = Place(tmp_path / "world", tmp_path / "backups", "Meadowfold", RECORD)
     place.backups.mkdir()
     held(place.backups, NOW - timedelta(days=1), NOW - timedelta(hours=1))
     write_save(place.saves, 7, [])
@@ -486,10 +517,10 @@ def test_a_removal_cut_short_leaves_no_backup_behind(tmp_path: Path, monkeypatch
 
 
 def test_a_starting_turn_clears_cut_short_copies_and_backs_up_a_save_no_backup_holds(tmp_path: Path) -> None:
-    place = Place(tmp_path / "world", tmp_path / "backups", "Meadowfold")
+    place = Place(tmp_path / "world", tmp_path / "backups", "Meadowfold", RECORD)
     place.backups.mkdir()
     write_save(place.saves, 5, [{"chunk": 1, "size": 64, "version": 5, "objects": 5}], seconds_ago=3600)
-    first = take(place.saves, place.backups, "Meadowfold", NOW - timedelta(hours=1))
+    first = take(place, NOW - timedelta(hours=1))
     assert first is not None
     # The game stopped with save 6, and the stop never backed it up.
     write_save(place.saves, 6, [{"chunk": 1, "size": 64, "version": 6, "objects": 6}])
@@ -518,7 +549,7 @@ def staging(store: Path, age_s: float) -> Path:
 def test_a_start_removes_the_staging_an_import_a_kill_cut_short_left_and_spares_one_under_way(
     tmp_path: Path,
 ) -> None:
-    place = Place(tmp_path / "world", tmp_path / "backups", "Meadowfold")
+    place = Place(tmp_path / "world", tmp_path / "backups", "Meadowfold", RECORD)
     place.backups.mkdir()
     old = staging(place.backups, backups.IMPORT_STAGING_MAX_AGE_S + 1)
     recent = staging(place.backups, backups.IMPORT_STAGING_MAX_AGE_S - 60)
@@ -533,7 +564,7 @@ def test_a_start_removes_the_staging_an_import_a_kill_cut_short_left_and_spares_
 
 
 def test_a_start_spares_the_staging_an_import_holds_whatever_its_age(tmp_path: Path) -> None:
-    place = Place(tmp_path / "world", tmp_path / "backups", "Meadowfold")
+    place = Place(tmp_path / "world", tmp_path / "backups", "Meadowfold", RECORD)
     place.backups.mkdir()
     old = staging(place.backups, backups.IMPORT_STAGING_MAX_AGE_S * 24)
     settings = Settings(every_s=3600, keep=1, keep_daily=0)

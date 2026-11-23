@@ -117,12 +117,13 @@ class Backup:
 
 @dataclass(frozen=True)
 class Place:
-    """A world's backups: where its saves are, where its backups go, its save name, and the backup
-    a restore asks for, which no turn prunes."""
+    """A world's backups: where its saves are, where its backups go, its save name, the contract a
+    backup's record keeps, and the backup a restore asks for, which no turn prunes."""
 
     saves: Path
     backups: Path
     world: str
+    contract: Draft202012Validator
     spare: str | None = None
 
 
@@ -155,10 +156,10 @@ def tend(place: Place, settings: Settings, now: datetime, last: Saved | None, *,
         clear_partials(place.backups)
         clear_import_staging(place.backups, now)
         held = names(place.backups, now)
-        last = last_saved(place.backups, held[0]) if held else None
+        last = last_saved(place.backups, held[0], place.contract) if held else None
     failure, take_failed = None, False
     try:
-        backup = take(place.saves, place.backups, place.world, now, last)
+        backup = take(place, now, last)
     except (BackupFailed, OSError) as error:
         backup, failure, take_failed = None, str(error), True
     newest = backup.saved if backup is not None else last
@@ -197,23 +198,23 @@ def newest_complete(folder: Path) -> Save | None:
     return Save(number=number, written_ns=written_ns, objects=objects, files=(*sorted(chunks), *main))
 
 
-def take(folder: Path, backups: Path, world: str, now: datetime, last: Saved | None = None) -> Backup | None:
+def take(place: Place, now: datetime, last: Saved | None = None) -> Backup | None:
     """Back up the world's newest complete save: the new backup, or None when the world has not
     saved, or its newest save is the one the newest backup holds. A copy that loses a file to
     the next save, or finds the save not whole, starts again from the newest complete save.
-    Raises BackupFailed once it has tried ATTEMPTS times, or when the folder lacks the room, and
-    OSError when the save folder cannot be read."""
+    Raises BackupFailed once it has tried ATTEMPTS times, when the folder lacks the room, or when
+    the backup's record would break its contract, and OSError when the save folder cannot be read."""
     failure = "the world saved again during each copy"
     for _ in range(ATTEMPTS):
         try:
-            save = newest_complete(folder)
+            save = newest_complete(place.saves)
         except BackupFailed as error:
             failure = str(error)
             continue
         if save is None or save.saved == last:
             return None
         try:
-            return _copy(folder, save, backups, world, now)
+            return _copy(place, save, now)
         except Gone:
             continue
     raise BackupFailed(failure)
@@ -241,7 +242,8 @@ def read_chunks(path: Path, number: int) -> tuple[list[str], int]:
     raise BackupFailed(f"save {number}'s .chunks file is not in the format this runtime reads")
 
 
-def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) -> Backup:
+def _copy(place: Place, save: Save, now: datetime) -> Backup:
+    folder, backups = place.saves, place.backups
     taken_at = name_time(backups, now)
     name = taken_at.strftime(NAME_FORMAT)
     partial = backups / f"{PARTIAL}{name}"
@@ -251,7 +253,7 @@ def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) ->
         partial.mkdir()
         files: list[dict[str, object]] = [copy_file(folder / file, partial / file) for file in save.files]
         record: dict[str, object] = {
-            "world": world,
+            "world": place.world,
             "save": save.number,
             "written_ns": save.written_ns,
             "objects": save.objects,
@@ -259,8 +261,8 @@ def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) ->
             "source": "runtime",
             "files": files,
         }
-        named = name_backup(partial, backups, record, now)
-    except Gone:
+        named = name_backup(partial, backups, record, now, place.contract)
+    except (Gone, BackupFailed):
         shutil.rmtree(partial, ignore_errors=True)
         raise
     except OSError as error:
@@ -275,7 +277,7 @@ def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) ->
 
 
 def name_backup(
-    folder: Path, backups: Path, record: dict[str, object], now: datetime, contract: Draft202012Validator | None = None
+    folder: Path, backups: Path, record: dict[str, object], now: datetime, contract: Draft202012Validator
 ) -> str | None:
     """Write the record into the folder, then rename the folder into the backups as a backup named
     for when it is taken, which the record says: the backup's name, or None when another writer
@@ -285,7 +287,7 @@ def name_backup(
         taken_at = name_time(backups, now)
         name = taken_at.strftime(NAME_FORMAT)
         record["taken"] = taken_at.strftime(TAKEN_FORMAT)
-        breach = None if contract is None else generation.breach(contract, record)
+        breach = generation.breach(contract, record)
         if breach is not None:
             raise BackupFailed(f"the backup's record breaks its contract {breach}")
         _write_record(folder, record)
@@ -439,13 +441,14 @@ def _ahead(backups: Path, now: datetime) -> str | None:
     )
 
 
-def last_saved(backups: Path, name: str) -> Saved | None:
-    """The save a backup holds, from its record, or None if the record cannot be read."""
+def last_saved(backups: Path, name: str, contract: Draft202012Validator) -> Saved | None:
+    """The save a backup holds, from its record, or None if the record cannot be read or breaks its
+    contract."""
     try:
         record = json.loads((backups / name / RECORD).read_text())
     except (OSError, ValueError):
         return None
-    if not isinstance(record, dict):
+    if not isinstance(record, dict) or generation.breach(contract, record) is not None:
         return None
     save, written_ns = record.get("save"), record.get("written_ns")
     if type(save) is not int or type(written_ns) is not int:

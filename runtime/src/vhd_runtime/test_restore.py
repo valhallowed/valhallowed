@@ -10,7 +10,7 @@ import pytest
 
 from vhd_runtime import backups, restore, transfer
 from vhd_runtime.restore import Place, RestoreFailed
-from vhd_runtime.test_backups import CONTRACTS, NOW, chunk_name, write_save
+from vhd_runtime.test_backups import CONTRACTS, NOW, RECORD, chunk_name, write_save
 from vhd_runtime.transfer import Mounts
 
 CHUNK = {"chunk": 258, "size": 64, "version": 3, "objects": 120}
@@ -27,7 +27,7 @@ def backup_of(place: Place, number: int = 3, chunk: dict[str, int] = CHUNK) -> s
     """A backup of a synthesized save, taken as a running world takes one."""
     source = place.saves.parent / "elsewhere" / place.world
     write_save(source, number, [chunk])
-    taken = backups.take(source, place.backups, place.world, NOW)
+    taken = backups.take(backups.Place(source, place.backups, place.world, RECORD), NOW)
     assert taken is not None
     shutil.rmtree(source)
     return taken.name

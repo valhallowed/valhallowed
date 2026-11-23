@@ -15,7 +15,7 @@ import pytest
 from vhd_runtime import backups, restore, status, steam, supervisor, transfer
 from vhd_runtime.generation import Reader, validator
 from vhd_runtime.supervisor import Clock, Paths, Supervisor
-from vhd_runtime.test_backups import write_save
+from vhd_runtime.test_backups import RECORD, write_save
 from vhd_runtime.test_steam import STEAMCMD, Download
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "contracts"
@@ -273,7 +273,9 @@ class World:
         """A backup of save number, taken hours ago from a copy of the world as it was then."""
         then = self.paths.data / "then" / "Meadowfold"
         write_save(then, number, [{"chunk": 258, "size": 64, "version": number, "objects": 100 + number}])
-        taken = backups.take(then, self.paths.backups, "Meadowfold", self.now() - timedelta(hours=hours_ago))
+        taken = backups.take(
+            backups.Place(then, self.paths.backups, "Meadowfold", RECORD), self.now() - timedelta(hours=hours_ago)
+        )
         assert taken is not None
         shutil.rmtree(then.parent)
         return taken.name
@@ -862,9 +864,7 @@ def test_a_start_clears_cut_short_copies_keeps_what_the_settings_say_and_backs_u
     for hours_ago, save in ((3, 3), (2, 4), (1, 5)):
         world.game_saves(save)
         backups.take(
-            world.paths.saves / "worlds_local" / "Meadowfold",
-            world.paths.backups,
-            "Meadowfold",
+            backups.Place(world.paths.saves / "worlds_local" / "Meadowfold", world.paths.backups, "Meadowfold", RECORD),
             START - timedelta(hours=hours_ago),
         )
     (world.paths.backups / ".partial-20261118T195959Z").mkdir()
@@ -930,7 +930,8 @@ def test_a_failed_stop_backup_is_the_last_word(world: World) -> None:
 def test_a_backup_named_ahead_of_the_clock_delays_the_next_no_more_than_the_interval(world: World) -> None:
     world.game_saves(5)
     backups.take(
-        world.paths.saves / "worlds_local" / "Meadowfold", world.paths.backups, "Meadowfold", START + timedelta(hours=6)
+        backups.Place(world.paths.saves / "worlds_local" / "Meadowfold", world.paths.backups, "Meadowfold", RECORD),
+        START + timedelta(hours=6),
     )
     world.generation(1)
     sup = world.supervisor()
