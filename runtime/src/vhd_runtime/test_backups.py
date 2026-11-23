@@ -219,6 +219,14 @@ def test_prune_never_removes_the_newest(tmp_path: Path) -> None:
     assert backups.prune(store, keep=1, keep_daily=0, now=NOW) == ([NOW_NAME], None)
 
 
+def test_prune_spares_the_backup_a_restore_asks_for(tmp_path: Path) -> None:
+    store = tmp_path / "backups"
+    store.mkdir()
+    held(store, NOW - timedelta(hours=2), NOW - timedelta(hours=1), NOW)
+    left, _ = backups.prune(store, keep=1, keep_daily=0, now=NOW, spare="20261118T184012Z")
+    assert left == [NOW_NAME, "20261118T184012Z"]
+
+
 def test_a_folder_without_its_record_is_no_backup(tmp_path: Path) -> None:
     store = tmp_path / "backups"
     store.mkdir()
