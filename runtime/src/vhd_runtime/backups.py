@@ -54,6 +54,8 @@ NAME_FORMAT = "%Y%m%dT%H%M%SZ"
 # A time in UTC, to the second, as a record and an import's or an export's result write it.
 TAKEN_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 _NAME = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
+# What flock raises on a file system that cannot lock a folder, as some network mounts cannot.
+_NO_LOCKS = (errno.ENOLCK, errno.EOPNOTSUPP, errno.EBADF)
 # How many times a copy that lost a file to the next save starts again.
 ATTEMPTS = 3
 # How many times a backup is named again when another writer took its name first: an import, in
@@ -88,6 +90,10 @@ class BackupFailed(Exception):
 
 class Gone(Exception):
     """A file of the save went while it was copied: the next save completed."""
+
+
+class NoLocks(OSError):
+    """The folder's file system cannot lock a folder."""
 
 
 class Changed(Exception):
@@ -511,32 +517,41 @@ def clear_partials(backups: Path) -> None:
 
 def clear_import_staging(backups: Path, now: datetime) -> None:
     """Remove the staging folders of imports a kill cut short: those unmodified for longer than
-    IMPORT_STAGING_MAX_AGE_S that no import holds a lock on. Any other may be an import still under
-    way. Raises OSError only when the folder cannot be listed."""
+    IMPORT_STAGING_MAX_AGE_S that no import holds a lock on, or, on a file system that cannot lock a
+    folder, any that old. Any other may be an import still under way. Raises OSError only when the
+    folder cannot be listed."""
     for entry in backups.iterdir():
         if not entry.name.startswith(IMPORT_STAGING):
             continue
+        held: int | None = None
         try:
             if now.timestamp() - entry.lstat().st_mtime <= IMPORT_STAGING_MAX_AGE_S:
                 continue
             held = lock_folder(entry)
+        except NoLocks:
+            # No import is under way where no lock can be taken: each refuses before it copies.
+            pass
         except OSError:
             # Gone, no folder, or held by an import under way.
             continue
         try:
             shutil.rmtree(entry, ignore_errors=True)
         finally:
-            os.close(held)
+            if held is not None:
+                os.close(held)
 
 
 def lock_folder(folder: Path) -> int:
     """An exclusive lock on a folder, never through a link and without waiting for another holder:
     the descriptor that holds it until it is closed. Raises BlockingIOError when another holds it,
-    and OSError when the folder cannot be opened."""
+    NoLocks when the folder's file system cannot lock a folder, and OSError when the folder cannot
+    be opened."""
     descriptor = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BaseException:
+    except BaseException as error:
         os.close(descriptor)
+        if isinstance(error, OSError) and error.errno in _NO_LOCKS:
+            raise NoLocks(error.errno, "its file system cannot lock a folder") from error
         raise
     return descriptor

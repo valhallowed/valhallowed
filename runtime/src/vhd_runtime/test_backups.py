@@ -1,4 +1,5 @@
 import errno
+import fcntl
 import hashlib
 import json
 import os
@@ -576,6 +577,28 @@ def test_a_start_spares_the_staging_an_import_holds_whatever_its_age(tmp_path: P
         os.close(held)
     backups.tend(place, settings, NOW, None, starting=True)
     assert not old.exists()
+
+
+def no_locks(number: int, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A file system that cannot lock a folder, as some network mounts cannot: flock fails with number."""
+
+    def fails(descriptor: int, operation: int) -> None:
+        raise OSError(number, os.strerror(number))
+
+    monkeypatch.setattr(fcntl, "flock", fails)
+
+
+@pytest.mark.parametrize("number", [errno.ENOLCK, errno.EOPNOTSUPP, errno.EBADF])
+def test_a_start_where_no_folder_can_be_locked_still_removes_the_staging_a_kill_cut_short(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, number: int
+) -> None:
+    store = tmp_path / "backups"
+    store.mkdir()
+    old = staging(store, backups.IMPORT_STAGING_MAX_AGE_S + 1)
+    recent = staging(store, backups.IMPORT_STAGING_MAX_AGE_S - 60)
+    no_locks(number, monkeypatch)
+    backups.clear_import_staging(store, NOW)
+    assert not old.exists() and recent.exists()
 
 
 def test_names_and_pruning_leave_an_imports_staging_alone(tmp_path: Path) -> None:

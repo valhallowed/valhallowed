@@ -16,7 +16,7 @@ import pytest
 
 from vhd_runtime import backups, transfer
 from vhd_runtime.generation import validator
-from vhd_runtime.test_backups import CONTRACTS, NOW, NOW_NAME, RECORD, chunk_name, staging, write_save
+from vhd_runtime.test_backups import CONTRACTS, NOW, NOW_NAME, RECORD, chunk_name, no_locks, staging, write_save
 from vhd_runtime.transfer import Mounts
 
 RESULT = validator(CONTRACTS / "game-runtime.import-export.schema.json")
@@ -407,6 +407,20 @@ def test_an_import_holds_its_staging_until_it_is_named_so_no_cleanup_removes_it(
     assert code == 0 and len(held) == len(CHUNKS) + 4 and kept(mounts) == [NOW_NAME]
     # Released once named.
     os.close(backups.lock_folder(mounts.backups / NOW_NAME))
+
+
+@pytest.mark.parametrize("number", [errno.ENOLCK, errno.EOPNOTSUPP, errno.EBADF])
+def test_an_import_where_the_backups_folder_cannot_be_locked_is_refused(
+    mounts: Mounts, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, number: int
+) -> None:
+    put_save(mounts)
+    no_locks(number, monkeypatch)
+    code, result = act(mounts, capsys)
+    assert (code, result["reason"]) == (
+        1,
+        "cannot copy the save into the world's backups folder: its file system cannot lock a folder",
+    )
+    assert kept(mounts) == []
 
 
 class WrittenAsRead:
