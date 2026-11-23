@@ -676,7 +676,10 @@ class Supervisor:
                 f"the world has a pre-1.0 save, {place.legacy_save.name}, which no backup replaces"
             )
         if place.aside.exists():
-            raise restore.RestoreFailed(f"a save an earlier restore set aside is still at {place.aside}")
+            where = place.aside.relative_to(self.paths.data)
+            raise restore.RestoreFailed(
+                f"a save an earlier restore set aside is still in the world's data volume, at {where}"
+            )
         every = generation.status_interval_s
         self._spare = asked.backup
         turn = self._await(self._tend(generation), reporter, holding, every)

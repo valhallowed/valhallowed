@@ -1148,6 +1148,22 @@ def test_a_backup_that_is_gone_is_refused_and_the_world_starts_on_its_own_save(w
     assert len(world.launches) == 1
 
 
+def test_a_restore_refused_for_a_save_set_aside_names_where_it_is_in_the_data_volume(world: World) -> None:
+    world.game_saves(5)
+    name = world.backup_of(3)
+    place_of(world).aside.mkdir(parents=True)
+    world.generation(restore=name)
+    sup = world.supervisor()
+    world.plugin_running(105)
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert world.restores() == ["failed"]
+    assert restore_reasons(world)[-1] == (
+        "a save an earlier restore set aside is still in the world's data volume, at vhd/restore/aside"
+    )
+
+
 def test_a_world_that_never_started_loads_the_restored_save_at_its_first_start(world: World) -> None:
     name = world.backup_of(3)
     world.generation(restore=name)
