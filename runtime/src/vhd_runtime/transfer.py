@@ -128,16 +128,19 @@ def run(action: Action, world: str, contracts: Path, act: Callable[[], Result]) 
     its cleanup or its result. A stop, and anything else raised but SystemExit, is a refusal with
     its reason, never a traceback."""
     result: Result
-    try:
-        contract = generation.validator(contracts / RESULT_CONTRACT)
-    except (OSError, ValueError) as error:
-        _log.exception("%s of %s cannot read its result's contract", action, world)
-        result = _refused(action, world, f"{action} cannot read its result's contract: {error}")
-        print(json.dumps(result), flush=True)
-        return 1
-    previous = {signum: signal.signal(signum, _stop) for signum in STOP_SIGNALS}
+    # Held first, so no stop lands before the handler or while the contract loads.
     mask = signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
+    previous = {signum: signal.getsignal(signum) for signum in STOP_SIGNALS}
     try:
+        for signum in STOP_SIGNALS:
+            signal.signal(signum, _stop)
+        try:
+            contract = generation.validator(contracts / RESULT_CONTRACT)
+        except (OSError, ValueError) as error:
+            _log.exception("%s of %s cannot read its result's contract", action, world)
+            result = _refused(action, world, f"{action} cannot read its result's contract: {error}")
+            print(json.dumps(result), flush=True)
+            return 1
         result = _outcome(action, world, act)
         breach = _breach(action, contract, result)
         if breach is not None:

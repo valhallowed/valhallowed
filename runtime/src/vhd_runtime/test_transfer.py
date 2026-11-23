@@ -279,9 +279,13 @@ def test_an_action_without_its_results_contract_is_refused_before_it_starts(
     def never() -> transfer.Result:
         raise AssertionError("acted without the result's contract")
 
+    before = {each: signal.getsignal(each) for each in transfer.STOP_SIGNALS}
+    mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
     code = transfer.run("export", WORLD, tmp_path, never)
     result = result_of(capsys)
     assert code == 1 and result["reason"].startswith("export cannot read its result's contract")
+    assert {each: signal.getsignal(each) for each in transfer.STOP_SIGNALS} == before
+    assert signal.pthread_sigmask(signal.SIG_BLOCK, ()) == mask
 
 
 @pytest.mark.parametrize("action", ["import", "export"])
@@ -658,10 +662,12 @@ def test_an_import_a_signal_stops_removes_what_it_wrote_and_says_so_last(
     put_save(mounts)
     before = {each: signal.getsignal(each) for each in transfer.STOP_SIGNALS}
     signalled_on_copy(signum, 2, monkeypatch)
+    mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
     code, result = act(mounts, capsys)
     assert (code, result["reason"]) == (1, f"import stopped by {signum.name} before it finished")
     assert kept(mounts) == []
     assert {each: signal.getsignal(each) for each in transfer.STOP_SIGNALS} == before
+    assert signal.pthread_sigmask(signal.SIG_BLOCK, ()) == mask
 
 
 def test_an_export_a_signal_stops_removes_what_it_wrote(
@@ -786,6 +792,31 @@ def test_a_stop_before_an_export_makes_the_save_folder_stops_it_at_the_copy_and_
     code, result = export(mounts, capsys)
     assert (code, result["reason"]) == (1, "export stopped by SIGTERM before it finished")
     assert list(mounts.exported.iterdir()) == []
+
+
+def test_a_stop_while_the_results_contract_loads_waits_for_the_result(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Unheld(Exception):
+        pass
+
+    def unheld(signum: int, frame: object) -> None:
+        raise Unheld
+
+    load = generation.validator
+
+    def stopped_while_loading(path: Path) -> Any:
+        signal.raise_signal(signal.SIGINT)
+        return load(path)
+
+    previous = signal.signal(signal.SIGINT, unheld)
+    try:
+        monkeypatch.setattr(generation, "validator", stopped_while_loading)
+        code = transfer.run("import", WORLD, CONTRACTS, lambda: transfer._refused("import", WORLD, "no save"))
+        assert signal.getsignal(signal.SIGINT) is unheld
+    finally:
+        signal.signal(signal.SIGINT, previous)
+    assert (code, result_of(capsys)["reason"]) == (1, "no save")
 
 
 def test_an_interrupt_still_ends_with_a_result_line(capsys: pytest.CaptureFixture[str]) -> None:
