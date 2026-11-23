@@ -318,6 +318,14 @@ def test_a_backup_says_when_it_was_taken_and_which_save_it_holds(tmp_path: Path)
     assert backups.last_saved(store, "20261118T000000Z", RECORD) is None
 
 
+def test_the_bounds_on_a_saves_number_and_time_are_the_contracts() -> None:
+    record = json.loads((CONTRACTS / "game-runtime.backup.schema.json").read_text())["properties"]
+    result = json.loads((CONTRACTS / "game-runtime.import-export.schema.json").read_text())
+    number = result["properties"]["save"]["properties"]["number"]
+    assert record["save"]["maximum"] == number["maximum"] == backups.SAVE_NUMBER_MAX
+    assert record["save"]["minimum"] == number["minimum"] == record["written_ns"]["minimum"] == 0
+
+
 @pytest.mark.parametrize(
     ("number", "seconds_ago", "breach"),
     [

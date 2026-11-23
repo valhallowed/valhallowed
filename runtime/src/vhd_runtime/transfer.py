@@ -216,8 +216,9 @@ def import_save(mounts: Mounts, world: str, now: Callable[[], datetime]) -> Resu
         found = _Found(folder, number, scanned, scanned[f"_main.{number}.ok"].st_mtime_ns)
     except OSError as error:
         raise Refused(f"cannot read the save you put in the install folder: {error.strerror or error}") from error
-    if found.written_ns < 0:
-        raise Refused(f"the save's _main.{number}.ok was last modified before 1970, which no save is")
+    breach = backups.save_breach(number, found.written_ns)
+    if breach is not None:
+        raise Refused(breach)
     total = sum(info.st_size for info in scanned.values())
     if total > IMPORT_MAX_BYTES:
         raise Refused(
@@ -381,10 +382,9 @@ def _one_save(folder: Path, present: set[str]) -> int:
     numbers = sorted(int(match[1]) for name in present if (match := backups.OK_FILE.match(name)))
     if not numbers:
         raise Refused("the save folder holds no complete save: no _main.<n>.ok")
-    if numbers[-1] > backups.SAVE_NUMBER_MAX:
-        raise Refused(
-            f"the save folder holds _main.{numbers[-1]}.ok, numbered above any save's {backups.SAVE_NUMBER_MAX}"
-        )
+    breach = backups.save_breach(numbers[-1])
+    if breach is not None:
+        raise Refused(breach)
     if len(numbers) > 1:
         raise Refused(
             f"the save folder holds {len(numbers)} complete saves ({', '.join(map(str, numbers[:5]))}); the game picks "

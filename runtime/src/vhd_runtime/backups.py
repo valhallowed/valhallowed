@@ -211,8 +211,8 @@ def take(place: Place, now: datetime, last: Saved | None = None) -> Backup | Non
     saved, or its newest save is the one the newest backup holds. A copy that loses a file to
     the next save, or finds the save not whole, starts again from the newest complete save.
     Raises BackupFailed once it has tried ATTEMPTS times, when the folder lacks the room, or when
-    the backup's record would break its contract, before any copy where the save's number or time
-    would, and OSError when the save folder cannot be read."""
+    the backup's record would break its contract (before any copy when the save's number or .ok
+    time already would), and OSError when the save folder cannot be read."""
     failure = "the world saved again during each copy"
     for _ in range(ATTEMPTS):
         try:
@@ -223,17 +223,24 @@ def take(place: Place, now: datetime, last: Saved | None = None) -> Backup | Non
         if save is None or save.saved == last:
             return None
         # Refused before the copy: its record would break the contract, on every turn.
-        if save.number > SAVE_NUMBER_MAX:
-            raise BackupFailed(
-                f"the save folder holds _main.{save.number}.ok, numbered above any save's {SAVE_NUMBER_MAX}"
-            )
-        if save.written_ns < 0:
-            raise BackupFailed(f"the save's _main.{save.number}.ok was last modified before 1970, which no save is")
+        breach = save_breach(save.number, save.written_ns)
+        if breach is not None:
+            raise BackupFailed(breach)
         try:
             return _copy(place, save, now)
         except Gone:
             continue
     raise BackupFailed(failure)
+
+
+def save_breach(number: int, written_ns: int | None = None) -> str | None:
+    """Why a record of this save would break its contract on the save's number or, when given, the
+    time the game completed it; None when it would not."""
+    if number > SAVE_NUMBER_MAX:
+        return f"the save folder holds _main.{number}.ok, numbered above any save's {SAVE_NUMBER_MAX}"
+    if written_ns is not None and written_ns < 0:
+        return f"the save's _main.{number}.ok was last modified before 1970, which no save is"
+    return None
 
 
 def read_chunks(path: Path, number: int) -> tuple[list[str], int]:
