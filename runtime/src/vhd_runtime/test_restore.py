@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 from collections import namedtuple
 from pathlib import Path
@@ -111,7 +112,7 @@ def test_a_record_that_cannot_be_read_is_refused(place: Place) -> None:
 def test_a_backup_the_data_volume_has_no_room_for_is_refused(place: Place, monkeypatch: pytest.MonkeyPatch) -> None:
     name = backup_of(place)
     usage = namedtuple("usage", "total used free")
-    monkeypatch.setattr(shutil, "disk_usage", lambda path: usage(0, 0, restore.RESERVE))
+    monkeypatch.setattr(shutil, "disk_usage", lambda path: usage(0, 0, backups.RESERVE))
     with pytest.raises(RestoreFailed, match="must stay free"):
         restore.stage(place, name)
     assert not place.staged.exists()
@@ -155,7 +156,7 @@ def test_a_world_that_never_started_gets_the_backup_and_loses_it_on_a_swap_back(
     assert not place.save.exists()
 
 
-def test_the_done_record_outlives_the_intent(place: Place) -> None:
+def test_finishing_records_the_outcome_and_forgets_the_intent(place: Place) -> None:
     intent = restore.Intent(id="a" * 32, backup="20261118T194011Z", phase="swapped", before=7, had_save=True)
     restore.write_intent(place, intent)
     assert restore.read_intent(place) == intent
@@ -169,3 +170,43 @@ def test_a_record_of_another_shape_reads_as_none(place: Place) -> None:
     place.intent.write_text(json.dumps({"id": "a" * 32, "unknown": 1}))
     place.done.write_text("[]")
     assert restore.read_intent(place) is None and restore.read_done(place) is None
+
+
+def test_a_backup_file_that_is_a_link_is_refused_without_reading_through_it(place: Place) -> None:
+    name = backup_of(place)
+    secret = place.saves.parent / "secret"
+    secret.write_bytes(b"db2 of save 3")
+    (place.backups / name / "_main.3.db2").unlink()
+    (place.backups / name / "_main.3.db2").symlink_to(secret)
+    with pytest.raises(RestoreFailed, match="is a link"):
+        restore.stage(place, name)
+    assert not place.staged.exists()
+
+
+def test_a_backup_file_that_is_a_pipe_is_refused_without_waiting(place: Place) -> None:
+    name = backup_of(place)
+    (place.backups / name / "_main.3.db2").unlink()
+    os.mkfifo(place.backups / name / "_main.3.db2")
+    with pytest.raises(RestoreFailed, match="not a regular file"):
+        restore.stage(place, name)
+
+
+def test_a_backup_file_larger_than_its_record_says_is_not_copied_past_that(place: Place) -> None:
+    name = backup_of(place)
+    with (place.backups / name / "_main.3.db2").open("ab") as appender:
+        appender.write(b"x" * (2 << 20))
+    with pytest.raises(RestoreFailed, match="larger than its record says"):
+        restore.stage(place, name)
+    assert not place.staged.exists()
+
+
+def test_a_record_longer_than_any_save_needs_cannot_be_read(place: Place) -> None:
+    name = backup_of(place)
+    (place.backups / name / backups.RECORD).write_text(" " * (restore.RECORD_MAX_BYTES + 1) + "{}")
+    with pytest.raises(RestoreFailed, match="cannot be read"):
+        restore.stage(place, name)
+
+
+def test_an_intent_with_an_id_status_would_refuse_reads_as_none(place: Place) -> None:
+    restore.write_intent(place, restore.Intent(id="A" * 32, backup="20261118T194011Z", phase="swapped"))
+    assert restore.read_intent(place) is None
