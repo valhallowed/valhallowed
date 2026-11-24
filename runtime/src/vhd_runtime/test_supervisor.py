@@ -1,5 +1,7 @@
+import errno
 import itertools
 import json
+import os
 import shutil
 import signal
 import subprocess
@@ -12,10 +14,10 @@ from urllib.error import URLError
 
 import pytest
 
-from vhd_runtime import backups, restore, status, steam, supervisor
+from vhd_runtime import backups, generation, restore, status, steam, supervisor, transfer
 from vhd_runtime.generation import Reader, validator
 from vhd_runtime.supervisor import Clock, Paths, Supervisor
-from vhd_runtime.test_backups import write_save
+from vhd_runtime.test_backups import RECORD, write_save
 from vhd_runtime.test_steam import STEAMCMD, Download
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "contracts"
@@ -273,7 +275,9 @@ class World:
         """A backup of save number, taken hours ago from a copy of the world as it was then."""
         then = self.paths.data / "then" / "Meadowfold"
         write_save(then, number, [{"chunk": 258, "size": 64, "version": number, "objects": 100 + number}])
-        taken = backups.take(then, self.paths.backups, "Meadowfold", self.now() - timedelta(hours=hours_ago))
+        taken = backups.take(
+            backups.Place(then, self.paths.backups, "Meadowfold", RECORD), self.now() - timedelta(hours=hours_ago)
+        )
         assert taken is not None
         shutil.rmtree(then.parent)
         return taken.name
@@ -306,6 +310,23 @@ class World:
 @pytest.fixture
 def world(tmp_path: Path) -> World:
     return World(tmp_path)
+
+
+def test_a_runtime_without_its_backup_records_contract_stops_before_it_installs_or_restores(
+    world: World, tmp_path: Path
+) -> None:
+    contracts = tmp_path / "contracts"
+    shutil.copytree(CONTRACTS, contracts)
+    (contracts / restore.RECORD_CONTRACT).unlink()
+    paths = Paths(
+        generation=world.paths.generation,
+        data=world.paths.data,
+        contracts=contracts,
+        world_status=world.paths.world_status,
+        backups=world.paths.backups,
+    )
+    with pytest.raises(restore.RestoreFailed, match="cannot read the contract of a backup's record"):
+        Supervisor(paths=paths, reader=Reader(paths.generation, CONTRACTS))
 
 
 def test_a_loaded_world_runs_and_saves_on_stop(world: World) -> None:
@@ -862,9 +883,7 @@ def test_a_start_clears_cut_short_copies_keeps_what_the_settings_say_and_backs_u
     for hours_ago, save in ((3, 3), (2, 4), (1, 5)):
         world.game_saves(save)
         backups.take(
-            world.paths.saves / "worlds_local" / "Meadowfold",
-            world.paths.backups,
-            "Meadowfold",
+            backups.Place(world.paths.saves / "worlds_local" / "Meadowfold", world.paths.backups, "Meadowfold", RECORD),
             START - timedelta(hours=hours_ago),
         )
     (world.paths.backups / ".partial-20261118T195959Z").mkdir()
@@ -930,7 +949,8 @@ def test_a_failed_stop_backup_is_the_last_word(world: World) -> None:
 def test_a_backup_named_ahead_of_the_clock_delays_the_next_no_more_than_the_interval(world: World) -> None:
     world.game_saves(5)
     backups.take(
-        world.paths.saves / "worlds_local" / "Meadowfold", world.paths.backups, "Meadowfold", START + timedelta(hours=6)
+        backups.Place(world.paths.saves / "worlds_local" / "Meadowfold", world.paths.backups, "Meadowfold", RECORD),
+        START + timedelta(hours=6),
     )
     world.generation(1)
     sup = world.supervisor()
@@ -1050,6 +1070,34 @@ def restore_reasons(world: World) -> list[object]:
     return [cast(dict[str, object], r["restore"]).get("reason") for r in world.reports if "restore" in r]
 
 
+def test_a_restore_checks_its_backup_with_the_record_contract_read_at_the_start(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    world.game_saves(5)
+    world.remember("Meadowfold", 105)
+    name = world.backup_of(3)
+    world.generation(restore=name)
+    sup = world.supervisor()
+
+    def read_again(contracts: Path) -> object:
+        raise AssertionError("read the record's contract again")
+
+    load = generation.validator
+
+    def loaded_again(path: Path) -> object:
+        if path.name == restore.RECORD_CONTRACT:
+            raise AssertionError("loaded the record's contract again")
+        return load(path)
+
+    monkeypatch.setattr(restore, "record_contract", read_again)
+    monkeypatch.setattr(generation, "validator", loaded_again)
+    world.plugin_running(103)
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert world.restores() == ["restoring", "done"]
+
+
 def test_a_restore_swaps_the_backup_in_before_the_install_and_world_truth_passes_it(world: World) -> None:
     world.game_saves(5)
     world.remember("Meadowfold", 105)
@@ -1128,6 +1176,22 @@ def test_a_backup_that_is_gone_is_refused_and_the_world_starts_on_its_own_save(w
     assert len(world.launches) == 1
 
 
+def test_a_restore_refused_for_a_save_set_aside_names_where_it_is_in_the_data_volume(world: World) -> None:
+    world.game_saves(5)
+    name = world.backup_of(3)
+    place_of(world).aside.mkdir(parents=True)
+    world.generation(restore=name)
+    sup = world.supervisor()
+    world.plugin_running(105)
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert world.restores() == ["failed"]
+    assert restore_reasons(world)[-1] == (
+        "a save an earlier restore set aside is still in the world's data volume, at vhd/restore/aside"
+    )
+
+
 def test_a_world_that_never_started_loads_the_restored_save_at_its_first_start(world: World) -> None:
     name = world.backup_of(3)
     world.generation(restore=name)
@@ -1137,6 +1201,21 @@ def test_a_world_that_never_started_loads_the_restored_save_at_its_first_start(w
 
     assert sup.run() == 0
     assert world.save_number() == 3
+    assert world.restores() == ["restoring", "done"]
+
+
+def test_a_world_that_never_started_loads_an_imported_save_at_its_first_start(world: World) -> None:
+    mounts = transfer.Mounts(imported=world.paths.data / "import", backups=world.paths.backups, contracts=CONTRACTS)
+    write_save(mounts.imported / "Meadowfold", 41, [{"chunk": 258, "size": 64, "version": 41, "objects": 141}])
+    name = transfer.import_save(mounts, "Meadowfold", world.now)["backup"]
+    world.generation(restore=name)
+    sup = world.supervisor()
+    world.plugin_running(141)
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert world.save_number() == 41 and len(world.launches) == 1
+    assert world.states() == ["held", "installing", "loading", "running"]
     assert world.restores() == ["restoring", "done"]
 
 
@@ -1214,7 +1293,7 @@ def test_a_swap_a_crash_cut_short_is_finished_and_judged_at_the_next_start(world
     world.remember("Meadowfold", 105)
     name = world.backup_of(3)
     place = place_of(world)
-    restore.stage(place, name)
+    restore.stage(place, name, RECORD)
     place.save.rename(place.aside)
     restore.write_intent(place, restore.Intent(RESTORE_ID, name, "swapping", before=105, had_save=True, objects=103))
     world.generation(restore=name)
@@ -1232,7 +1311,7 @@ def test_a_swap_back_a_crash_cut_short_is_finished_at_the_next_start(world: Worl
     world.game_saves(5)
     name = world.backup_of(3)
     place = place_of(world)
-    restore.stage(place, name)
+    restore.stage(place, name, RECORD)
     restore.swap(place, had_save=True)
     restore.write_intent(
         place, restore.Intent(RESTORE_ID, name, "unswapping", before=105, had_save=True, objects=103, reason="empty")
@@ -1252,7 +1331,7 @@ def test_a_newer_restore_puts_back_the_save_of_one_still_unjudged_first(world: W
     world.game_saves(5)
     first, second = world.backup_of(3, hours_ago=3), world.backup_of(4)
     place = place_of(world)
-    restore.stage(place, first)
+    restore.stage(place, first, RECORD)
     restore.swap(place, had_save=True)
     restore.write_intent(place, restore.Intent("a" * 32, first, "swapped", before=105, had_save=True, objects=103))
     world.generation(restore=second)
@@ -1414,7 +1493,7 @@ def test_a_restore_the_generation_drops_before_world_truth_judges_it_is_swapped_
     world.game_saves(5)
     name = world.backup_of(3)
     place = place_of(world)
-    restore.stage(place, name)
+    restore.stage(place, name, RECORD)
     restore.swap(place, had_save=True)
     restore.write_intent(place, restore.Intent(RESTORE_ID, name, "swapped", before=105, had_save=True, objects=103))
     world.generation()
@@ -1516,3 +1595,209 @@ def test_a_world_still_loading_a_restore_a_newer_generation_drops_is_judged_firs
     assert len(world.launches) == 1 and world.process.signals == [signal.SIGINT]
     assert world.save_number() == 3 and world.restores() == ["restoring", "done"]
     assert world.reports[-1]["generation"] == 2
+
+
+OTHER_ID = "a" * 32
+
+
+def held_without_save(world: World) -> list[str]:
+    """The reasons reported for a world held because it has no save."""
+    return [str(r) for r in world.held_reasons() if str(r).startswith("the world has no save")]
+
+
+def test_a_failed_restore_on_a_world_with_no_save_holds_it_across_starts_and_makes_no_world(world: World) -> None:
+    world.generation(1, restore="20261118T100000Z")
+    sup = world.supervisor()
+    # The failed outcome makes the control plane drop the restore: a newer generation without it.
+    world.time.at(30, lambda: world.generation(2))
+    world.stop_at(5000, sup)
+
+    assert sup.run() == 0
+    assert world.time.now < 5000
+    assert world.launches == [] and world.steamcmd_runs == [] and "installing" not in world.states()
+    assert world.restores() == ["restoring", "failed"]
+    reasons = held_without_save(world)
+    assert reasons and reasons[-1].startswith(f"the world has no save and restore {RESTORE_ID} failed, so no new world")
+    assert "ask for another restore or an import, or remove the world's data volume" in reasons[-1]
+    assert "no longer exists" in reasons[-1]
+    # Reported on its interval while it waits.
+    assert len([r for r in world.reports if r["state"] == "held"]) >= 5
+
+    # Docker starts the container again on generation 2, which asks for no restore: still held.
+    world.reports = []
+    again = world.supervisor()
+    world.stop_at(world.time.now + 60, again)
+    assert again.run() == 0
+    assert world.launches == [] and world.states() == ["held"]
+    assert held_without_save(world) and world.restores() == ["failed"]
+    assert not (world.paths.saves / "worlds_local" / "Meadowfold").exists()
+
+
+def reported_backups(world: World) -> list[object]:
+    """The backups each report named."""
+    return [cast(dict[str, object], r.get("backups", {})).get("names") for r in world.reports]
+
+
+def test_a_world_held_without_a_save_lists_a_backup_an_import_keeps_meanwhile(world: World) -> None:
+    world.generation(1, restore="20261118T100000Z")
+    sup = world.supervisor()
+    mounts = transfer.Mounts(imported=world.paths.data / "import", backups=world.paths.backups, contracts=CONTRACTS)
+    write_save(mounts.imported / "Meadowfold", 41, [{"chunk": 258, "size": 64, "version": 41, "objects": 141}])
+    imported: list[str] = []
+    world.time.at(30, lambda: imported.append(transfer.import_save(mounts, "Meadowfold", world.now)["backup"]))
+    world.stop_at(30 + supervisor.BACKUP_CHECK_S + 2 * 5, sup)
+
+    assert sup.run() == 0
+    assert world.launches == [] and held_without_save(world)
+    listed = reported_backups(world)
+    assert [] in listed and imported and listed[-1] == imported
+
+
+def test_a_new_restore_releases_a_world_held_without_a_save(world: World) -> None:
+    world.generation(1, restore="20261118T100000Z")
+    sup = world.supervisor()
+    world.stop_at(60, sup)
+    assert sup.run() == 0
+    assert world.launches == [] and held_without_save(world)
+
+    world.reports = []
+    world.generation(2, restore=world.backup_of(3), restore_id=OTHER_ID)
+    again = world.supervisor()
+    world.plugin_running(103, start=int(world.time.now) + 30)
+    world.stop_at(world.time.now + 90, again)
+    assert again.run() == 0
+    assert len(world.launches) == 1 and world.save_number() == 3
+    assert world.restores() == ["restoring", "done"] and not held_without_save(world)
+
+
+def test_a_world_with_a_save_runs_on_it_after_a_failed_restore_across_starts(world: World) -> None:
+    world.game_saves(5)
+    world.generation(1, restore="20261118T100000Z")
+    sup = world.supervisor()
+    world.plugin_running(105)
+    world.stop_at(60, sup)
+    assert sup.run() == 0
+
+    world.process, world.reports = FakeProcess(), []
+    world.generation(2)
+    again = world.supervisor()
+    world.plugin_running(105, start=int(world.time.now) + 30)
+    world.stop_at(world.time.now + 60, again)
+    assert again.run() == 0
+    assert len(world.launches) == 2 and world.save_number() == 5
+    assert world.restores() == ["failed"] and not held_without_save(world)
+
+
+def test_a_rolled_back_restore_on_a_world_with_no_save_holds_it_at_the_next_start(world: World) -> None:
+    world.generation(1, restore=world.backup_of(3))
+    sup = world.supervisor()
+    world.time.at(30, lambda: world.plugin_reports(0))
+    world.stop_at(600, sup)
+    assert sup.run() == 0
+    assert world.restores() == ["restoring", "rolled-back"] and len(world.launches) == 1
+
+    world.process, world.reports = FakeProcess(), []
+    world.generation(2)
+    again = world.supervisor()
+    world.stop_at(world.time.now + 60, again)
+    assert again.run() == 0
+    assert len(world.launches) == 1 and world.states() == ["held"]
+    reasons = held_without_save(world)
+    assert reasons and reasons[-1].startswith(f"the world has no save and restore {RESTORE_ID} was rolled back")
+    assert "loaded with no objects" in reasons[-1]
+    # Status names the backups, so the server manager can ask for another restore.
+    assert cast(dict[str, object], world.reports[-1]["backups"])["names"]
+
+
+def test_the_reason_a_world_is_held_without_a_save_says_what_to_do_whole_and_cuts_only_the_why(
+    world: World,
+) -> None:
+    restore.finish(place_of(world), restore.Done(RESTORE_ID, "failed", "w" * supervisor.REASON_MAX))
+    world.generation()
+    sup = world.supervisor()
+    world.stop_at(30, sup)
+
+    assert sup.run() == 0
+    reasons = held_without_save(world)
+    assert reasons and len(reasons[-1]) == supervisor.REASON_MAX
+    assert reasons[-1].startswith(
+        f"the world has no save and restore {RESTORE_ID} failed, so no new world is made; ask for another restore or "
+        "an import, or remove the world's data volume to start a new world, which also removes its installed server, "
+        "so its next start downloads it again. Why: www"
+    )
+
+
+@pytest.mark.parametrize("record", ["{", "[]", json.dumps({"id": RESTORE_ID, "outcome": "unknown", "reason": None})])
+def test_a_world_with_no_save_whose_restore_record_cannot_be_read_is_held(world: World, record: str) -> None:
+    place_of(world).vhd.mkdir(parents=True)
+    place_of(world).done.write_text(record)
+    world.generation()
+    sup = world.supervisor()
+    world.stop_at(30, sup)
+
+    assert sup.run() == 0
+    assert world.launches == [] and world.states() == ["held"]
+    assert held_without_save(world)[-1].startswith(
+        "the world has no save and the record of its newest restore, restore-done.json in its data volume, "
+        "cannot be read, so no new world is made; ask for another restore or an import"
+    )
+
+
+def test_a_world_with_no_save_whose_data_volume_cannot_be_read_is_held(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    done = place_of(world).done
+    lstat = os.lstat
+
+    def unreadable(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+        if Path(path) == done:
+            raise OSError(errno.EIO, "Input/output error")
+        return lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "lstat", unreadable)
+    world.generation()
+    sup = world.supervisor()
+    world.stop_at(30, sup)
+
+    assert sup.run() == 0
+    assert world.launches == [] and world.states() == ["held"]
+    assert held_without_save(world)[-1].startswith(
+        "the world has no save and the record of its newest restore, restore-done.json in its data volume, "
+        "cannot be read, so no new world is made"
+    )
+
+
+def test_a_world_with_a_pre_1_0_save_is_not_held_after_a_failed_restore(world: World) -> None:
+    (world.paths.saves / "worlds_local").mkdir(parents=True)
+    (world.paths.saves / "worlds_local" / "Meadowfold.db").write_bytes(b"pre-1.0")
+    world.generation(restore="20261118T100000Z")
+    sup = world.supervisor()
+    world.plugin_running(40)
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert world.restores() == ["failed"]
+    assert len(world.launches) == 1 and not held_without_save(world)
+
+
+def test_a_world_whose_save_folder_is_a_file_is_held_after_a_failed_restore(world: World) -> None:
+    (world.paths.saves / "worlds_local").mkdir(parents=True)
+    (world.paths.saves / "worlds_local" / "Meadowfold").write_bytes(b"no save folder")
+    world.generation(restore="20261118T100000Z")
+    sup = world.supervisor()
+    world.stop_at(60, sup)
+
+    assert sup.run() == 0
+    assert world.restores()[-1] == "failed"
+    assert world.launches == [] and held_without_save(world)
+
+
+def test_a_new_world_with_no_restore_is_not_held(world: World) -> None:
+    world.generation()
+    sup = world.supervisor()
+    world.plugin_running(0)
+    world.stop_at(60, sup)
+    assert sup.run() == 0
+    # It has no record of a restore: a missing record holds nothing.
+    assert not place_of(world).done.exists()
+    assert len(world.launches) == 1 and not held_without_save(world)

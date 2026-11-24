@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from vhd_runtime.generation import (
     Reader,
     Restore,
     Updates,
+    validator,
 )
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "contracts"
@@ -144,6 +146,41 @@ def test_refuses_an_unknown_contract_version(tmp_path: Path) -> None:
     write(tmp_path, "generation.json", {**MINIMAL, "contract": 1})
     with pytest.raises(InvalidGeneration, match="contract"):
         Reader(tmp_path, CONTRACTS).read()
+
+
+def test_a_reader_whose_contract_refers_to_a_schema_the_image_lacks_fails_at_the_start(tmp_path: Path) -> None:
+    contracts = tmp_path / "contracts"
+    shutil.copytree(CONTRACTS, contracts)
+    refers = r"^game-runtime\.generation\.schema\.json refers to .*, which cannot be found$"
+    with pytest.raises(ValueError, match=refers):
+        Reader(tmp_path, contracts)
+
+
+def test_a_ref_inside_a_value_that_holds_data_is_data_not_a_reference(tmp_path: Path) -> None:
+    schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {"link": {"const": {"$ref": "missing.schema.json"}, "examples": [{"$ref": "gone.json"}]}},
+    }
+    path = tmp_path / "contracts" / "data.schema.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps(schema))
+    assert validator(path).is_valid({"link": {"$ref": "missing.schema.json"}})
+
+
+@pytest.mark.parametrize("keyword", ["properties", "$defs", "dependencies"])
+def test_a_schema_named_for_a_data_keyword_is_a_schema_whose_ref_is_checked(tmp_path: Path, keyword: str) -> None:
+    schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        keyword: {"default": {"$ref": "missing.schema.json"}},
+    }
+    path = tmp_path / "contracts" / "named.schema.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps(schema))
+    refers = r"^named\.schema\.json refers to missing\.schema\.json, which cannot be found$"
+    with pytest.raises(ValueError, match=refers):
+        validator(path)
 
 
 def test_refuses_a_save_name_the_manifest_schema_refuses(tmp_path: Path) -> None:

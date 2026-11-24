@@ -8,18 +8,23 @@ again from the newest complete save. A backup is copied into a partial folder, s
 into place once whole, so a folder named as a backup always holds one.
 
     <backups>/<taken>/              one backup, named for when it was taken, in UTC: 20261118T204012Z
-    <backups>/<taken>/backup.json   its record: the world, the save's number, when the game
-                                    completed it, its objects, when the backup was taken, and each
+    <backups>/<taken>/backup.json   its record (contracts/game-runtime.backup.schema.json): the
+                                    world, the save's number, when the game completed it, its
+                                    objects, when the backup was taken, where it came from, and each
                                     file's name, size and SHA-256, for a restore to check
     <backups>/<taken>/<file>        the save's files, named as in the world's save folder
     <backups>/.partial-<taken>/     a copy under way, or a backup being removed, or either cut short;
                                     removed at each start
+    <backups>/.import-<id>/         an import under way, in a container of its own, which holds a lock
+                                    on it, or one a kill cut short; removed at a start, and by the
+                                    next import, once IMPORT_STAGING_MAX_AGE_S old and no import holds it
 
 Every function here may block on the backups folder's disk, so the supervisor runs them off its
 loop, through tend.
 """
 
 import errno
+import fcntl
 import hashlib
 import io
 import json
@@ -32,14 +37,34 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from jsonschema import Draft202012Validator
+
+from vhd_runtime import generation
 from vhd_runtime.generation import Backups as Settings
 
 RECORD = "backup.json"
+# The record contract's bound on a save's number.
+SAVE_NUMBER_MAX = 4294967295
+# The last second a result can name a save's time in: the end of year 9999, Python's last date.
+WRITTEN_S_MAX = 253402300799
 PARTIAL = ".partial-"
+# An import under way, which vhd runs in a container of its own (vhd_runtime.transfer).
+IMPORT_STAGING = ".import-"
+# An import's staging folder unmodified for longer than this, which no import holds a lock on, is
+# one a kill cut short. The lock spares an import whose copy outlasts it; vhd stops an import well
+# within it all the same.
+IMPORT_STAGING_MAX_AGE_S = 3600
 NAME_FORMAT = "%Y%m%dT%H%M%SZ"
+# A time in UTC, to the second, as a record and an import's or an export's result write it.
+TAKEN_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 _NAME = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
+# What flock raises on a file system that cannot lock a folder, as some network mounts cannot.
+_NO_LOCKS = (errno.ENOLCK, errno.EOPNOTSUPP, errno.EBADF)
 # How many times a copy that lost a file to the next save starts again.
 ATTEMPTS = 3
+# How many times a backup is named again when another writer took its name first: an import, in
+# a container of its own, or the runtime's own turn.
+NAME_ATTEMPTS = 3
 # A .chunks file names one chunk in 11 bytes, and a world has a few thousand chunks at most.
 CHUNKS_MAX_BYTES = 1 << 20
 COPY_BLOCK = 1 << 20
@@ -51,7 +76,7 @@ RESERVE = 1 << 30
 # ahead would otherwise stay newest, and drag every later name after it.
 AHEAD = timedelta(days=1)
 
-_OK = re.compile(r"^_main\.([0-9]+)\.ok$")
+OK_FILE = re.compile(r"^_main\.([0-9]+)\.ok$")
 # The .chunks file, as the game writes it (Game facts): little-endian 42, the save's objects, the
 # chunks it names, then each chunk's index, size, version and objects.
 _HEADER = struct.Struct("<hii")
@@ -68,7 +93,15 @@ class BackupFailed(Exception):
 
 
 class Gone(Exception):
-    """A file of the save went while it was copied: the next save completed."""
+    """A file of the save went before its copy was checked, as when the next save completed."""
+
+
+class NoLocks(OSError):
+    """The folder's file system cannot lock a folder."""
+
+
+class Changed(Exception):
+    """A file changed since a scan found it, or while it was copied."""
 
 
 @dataclass(frozen=True)
@@ -94,12 +127,13 @@ class Backup:
 
 @dataclass(frozen=True)
 class Place:
-    """A world's backups: where its saves are, where its backups go, its save name, and the backup
-    a restore asks for, which no turn prunes."""
+    """A world's backups: where its saves are, where its backups go, its save name, the contract a
+    backup's record keeps, and the backup a restore asks for, which no turn prunes."""
 
     saves: Path
     backups: Path
     world: str
+    contract: Draft202012Validator
     spare: str | None = None
 
 
@@ -124,16 +158,18 @@ def world_folder(saves: Path, world: str) -> Path:
 def tend(place: Place, settings: Settings, now: datetime, last: Saved | None, *, starting: bool = False) -> Tended:
     """One turn, off the supervisor's loop: back up the world's newest complete save unless the
     newest backup holds it, then keep what the settings say, and the backup a restore asks for.
-    Starting, it first clears copies a stop cut short, and takes the save the newest backup holds
-    from its record, so a save the game stopped with that a stop never backed up is backed up now.
+    Starting, it first clears copies a stop cut short and the staging of imports a kill cut short, and takes the
+    save the newest backup holds from its record, so a save the game stopped with that a stop never
+    backed up is backed up now.
     Raises OSError only when the folder cannot be listed."""
     if starting:
         clear_partials(place.backups)
+        clear_import_staging(place.backups, now)
         held = names(place.backups, now)
-        last = last_saved(place.backups, held[0]) if held else None
+        last = last_saved(place.backups, held[0], place.contract) if held else None
     failure, take_failed = None, False
     try:
-        backup = take(place.saves, place.backups, place.world, now, last)
+        backup = take(place, now, last)
     except (BackupFailed, OSError) as error:
         backup, failure, take_failed = None, str(error), True
     newest = backup.saved if backup is not None else last
@@ -151,7 +187,7 @@ def newest_complete(folder: Path) -> Save | None:
     except FileNotFoundError:
         return None
     for entry in entries:
-        match = _OK.match(entry.name)
+        match = OK_FILE.match(entry.name)
         if match is None:
             continue
         try:
@@ -162,7 +198,7 @@ def newest_complete(folder: Path) -> Save | None:
         return None
     written_ns, number = max(written)
     main = tuple(f"_main.{number}.{kind}" for kind in ("chunks", "db2", "fwl2", "ok"))
-    chunks, objects = _chunks(folder / main[0], number)
+    chunks, objects = read_chunks(folder / main[0], number)
     for name in main:
         if not (folder / name).is_file():
             raise BackupFailed(f"save {number} lacks {name}")
@@ -172,36 +208,58 @@ def newest_complete(folder: Path) -> Save | None:
     return Save(number=number, written_ns=written_ns, objects=objects, files=(*sorted(chunks), *main))
 
 
-def take(folder: Path, backups: Path, world: str, now: datetime, last: Saved | None = None) -> Backup | None:
+def take(place: Place, now: datetime, last: Saved | None = None) -> Backup | None:
     """Back up the world's newest complete save: the new backup, or None when the world has not
     saved, or its newest save is the one the newest backup holds. A copy that loses a file to
     the next save, or finds the save not whole, starts again from the newest complete save.
-    Raises BackupFailed once it has tried ATTEMPTS times, or when the folder lacks the room, and
-    OSError when the save folder cannot be read."""
+    Raises BackupFailed once it has tried ATTEMPTS times, when the folder lacks the room, or when
+    the backup's record would break its contract (before any copy when the save's number or .ok
+    time already would, or no result could name that time), and OSError when the save folder
+    cannot be read."""
     failure = "the world saved again during each copy"
     for _ in range(ATTEMPTS):
         try:
-            save = newest_complete(folder)
+            save = newest_complete(place.saves)
         except BackupFailed as error:
             failure = str(error)
             continue
         if save is None or save.saved == last:
             return None
+        # Refused before the copy, which would fail the same way on every turn: its record would
+        # break the contract, or no result could name its time.
+        breach = save_breach(save.number, save.written_ns)
+        if breach is not None:
+            raise BackupFailed(breach)
         try:
-            return _copy(folder, save, backups, world, now)
+            return _copy(place, save, now)
         except Gone:
             continue
     raise BackupFailed(failure)
 
 
-def _chunks(path: Path, number: int) -> tuple[list[str], int]:
+def save_breach(number: int, written_ns: int | None = None) -> str | None:
+    """Why a record of this save would break its contract on the save's number or, when given, the
+    time the game completed it, or a result could not name that time; None when neither would."""
+    if number > SAVE_NUMBER_MAX:
+        return f"the save folder holds _main.{number}.ok, numbered above any save's {SAVE_NUMBER_MAX}"
+    if written_ns is not None and written_ns < 0:
+        return f"the save's _main.{number}.ok was last modified before 1970, which no save is"
+    if written_ns is not None and written_ns // 1_000_000_000 > WRITTEN_S_MAX:
+        return f"the save's _main.{number}.ok was last modified after 9999, which no save is"
+    return None
+
+
+def read_chunks(path: Path, number: int) -> tuple[list[str], int]:
     """The chunk files a save's .chunks file names, and the objects it counts. Fails closed on a
-    file in any other format, as a save parser outside its validated range must (Game facts)."""
+    file in any other format, as a save parser outside its validated range must (Game facts), and on
+    one that is no regular file."""
     try:
-        with path.open("rb") as reader:
+        with open_regular(path) as reader:
             data = reader.read(CHUNKS_MAX_BYTES + 1)
     except FileNotFoundError as error:
         raise BackupFailed(f"save {number} lacks _main.{number}.chunks") from error
+    except OSError as error:
+        raise BackupFailed(f"save {number}'s .chunks file cannot be read: {error.strerror or error}") from error
     if len(data) >= _HEADER.size:
         magic, objects, count = _HEADER.unpack_from(data)
         if magic == _MAGIC and objects >= 0 and count >= 0 and len(data) == _HEADER.size + count * _ENTRY.size:
@@ -213,44 +271,84 @@ def _chunks(path: Path, number: int) -> tuple[list[str], int]:
     raise BackupFailed(f"save {number}'s .chunks file is not in the format this runtime reads")
 
 
-def _copy(folder: Path, save: Save, backups: Path, world: str, now: datetime) -> Backup:
-    taken_at = _name_time(backups, now)
+def _copy(place: Place, save: Save, now: datetime) -> Backup:
+    folder, backups = place.saves, place.backups
+    taken_at = name_time(backups, now)
     name = taken_at.strftime(NAME_FORMAT)
     partial = backups / f"{PARTIAL}{name}"
     try:
         _room(folder, save, backups)
         shutil.rmtree(partial, ignore_errors=True)
         partial.mkdir()
-        files = [copy_file(folder / file, partial / file) for file in save.files]
-        record = {
-            "world": world,
+        files: list[dict[str, object]] = [copy_file(folder / file, partial / file) for file in save.files]
+        record: dict[str, object] = {
+            "world": place.world,
             "save": save.number,
             "written_ns": save.written_ns,
             "objects": save.objects,
-            "taken": taken_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "taken": taken_at.strftime(TAKEN_FORMAT),
+            "source": "runtime",
             "files": files,
         }
-        with (partial / RECORD).open("x") as writer:
-            writer.write(json.dumps(record, indent=2) + "\n")
-            writer.flush()
-            os.fsync(writer.fileno())
-        sync(partial)
-        partial.rename(backups / name)
-    except Gone:
+        named = name_backup(partial, backups, record, now, place.contract)
+    except (Gone, BackupFailed):
         shutil.rmtree(partial, ignore_errors=True)
         raise
     except OSError as error:
         shutil.rmtree(partial, ignore_errors=True)
-        raise BackupFailed(f"cannot write backup {name} into {backups}: {error.strerror or error}") from error
-    # The backup is whole and in place; a sync that fails now loses at most its name in a power cut.
-    try:
-        sync(backups)
-    except OSError:
-        pass
-    return Backup(name=name, saved=save.saved)
+        raise BackupFailed(
+            f"cannot write backup {name} into the world's backups folder: {error.strerror or error}"
+        ) from error
+    if named is None:
+        shutil.rmtree(partial, ignore_errors=True)
+        raise BackupFailed(f"imports took each name the runtime's backup tried, {NAME_ATTEMPTS} times")
+    return Backup(name=named, saved=save.saved)
 
 
-def _name_time(backups: Path, now: datetime) -> datetime:
+def name_backup(
+    folder: Path, backups: Path, record: dict[str, object], now: datetime, contract: Draft202012Validator
+) -> str | None:
+    """Write the record into the folder, then rename the folder into the backups as a backup named
+    for when it is taken, which the record says: the backup's name, or None when another writer
+    took each name it tried, NAME_ATTEMPTS times. Raises BackupFailed when the record breaks the
+    contract it is given, and OSError when it cannot be written or renamed."""
+    for _ in range(NAME_ATTEMPTS):
+        taken_at = name_time(backups, now)
+        name = taken_at.strftime(NAME_FORMAT)
+        record["taken"] = taken_at.strftime(TAKEN_FORMAT)
+        breach = generation.breach(contract, record)
+        if breach is not None:
+            raise BackupFailed(f"the backup's record breaks its contract {breach}")
+        _write_record(folder, record)
+        try:
+            folder.rename(backups / name)
+        except OSError as error:
+            # Another writer took the name meanwhile: the next is a second after it.
+            if error.errno in (errno.EEXIST, errno.ENOTEMPTY):
+                continue
+            raise
+        # The backup is whole and in place; a sync that fails now loses at most its name in a power cut.
+        try:
+            sync(backups)
+        except OSError:
+            pass
+        return name
+    return None
+
+
+def _write_record(folder: Path, record: dict[str, object]) -> None:
+    """Write the record whole and synced, replacing an earlier one, before its folder takes a
+    backup's name."""
+    temporary = folder / f".{RECORD}.tmp"
+    with temporary.open("w") as writer:
+        writer.write(json.dumps(record, indent=2) + "\n")
+        writer.flush()
+        os.fsync(writer.fileno())
+    temporary.replace(folder / RECORD)
+    sync(folder)
+
+
+def name_time(backups: Path, now: datetime) -> datetime:
     """When a new backup counts as taken: now, or a second after the newest, if the clock has gone
     back since that was taken. Names order backups, so a new one always comes newest."""
     held = names(backups, now)
@@ -268,32 +366,57 @@ def _room(folder: Path, save: Save, backups: Path) -> None:
     free = shutil.disk_usage(backups).free
     if free - needed < RESERVE:
         raise BackupFailed(
-            f"the backup folder {backups} has {free // MIB} MiB free; save {save.number} needs {needed // MIB} MiB, "
+            f"the world's backups folder has {free // MIB} MiB free; save {save.number} needs {needed // MIB} MiB, "
             f"and {RESERVE // MIB} MiB must stay free"
         )
 
 
-def copy_file(source: Path, target: Path, limit: int | None = None) -> dict[str, object]:
+def copy_file(
+    source: Path, target: Path, limit: int | None = None, *, unchanged: os.stat_result | None = None
+) -> dict[str, object]:
     """Copy one file of the save to disk, and say its size and SHA-256 for the record. With a limit,
     as for a file a backup's record lists, it copies only a regular file, never through a link,
-    and no more than limit bytes, raising OSError otherwise."""
+    and no more than limit bytes, raising OSError otherwise. Given the file as a scan found it, as
+    for a file no game writes, it raises Changed unless the file it opens, that file once copied,
+    and the file at its path once copied are each the one the scan found, unchanged: the same
+    device, inode, size, and modification and change times."""
     try:
         reader = open_regular(source) if limit is not None else source.open("rb")
     except FileNotFoundError as error:
         raise Gone(source.name) from error
     digest = hashlib.sha256()
     size = 0
+    expected = None if unchanged is None else _identity(unchanged)
     # An open file reads whole though the game removes it meanwhile.
     with reader, target.open("xb") as writer:
+        if expected is not None and _identity(os.fstat(reader.fileno())) != expected:
+            raise Changed(source.name)
         while block := reader.read(COPY_BLOCK):
             size += len(block)
             if limit is not None and size > limit:
                 raise OSError(errno.EFBIG, f"{source.name} is larger than its record says")
             digest.update(block)
             writer.write(block)
+        if expected is not None and expected != _identity(os.fstat(reader.fileno())):
+            raise Changed(source.name)
+        if expected is not None and expected != _identity(_at(source)):
+            raise Changed(source.name)
         writer.flush()
         os.fsync(writer.fileno())
     return {"name": target.name, "size": size, "sha256": digest.hexdigest()}
+
+
+def _identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
+    # The change time too: a write that puts the modification time back still moves it.
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+
+def _at(source: Path) -> os.stat_result:
+    """The file now at the path, which a rename may have replaced since it was opened."""
+    try:
+        return source.lstat()
+    except FileNotFoundError as error:
+        raise Gone(source.name) from error
 
 
 def open_regular(source: Path) -> io.BufferedReader:
@@ -357,16 +480,20 @@ def _ahead(backups: Path, now: datetime) -> str | None:
     ahead = sorted(entry.name for entry in backups.iterdir() if is_name(entry.name) and taken(entry.name) > now + AHEAD)
     if not ahead:
         return None
-    return f"{backups} holds {', '.join(ahead[:3])}, named for after now, which the runtime leaves alone as no backup"
+    return (
+        f"the world's backups folder holds {', '.join(ahead[:3])}, named for after now, which the runtime leaves "
+        "alone as no backup"
+    )
 
 
-def last_saved(backups: Path, name: str) -> Saved | None:
-    """The save a backup holds, from its record, or None if the record cannot be read."""
+def last_saved(backups: Path, name: str, contract: Draft202012Validator) -> Saved | None:
+    """The save a backup holds, from its record, or None if the record cannot be read or breaks its
+    contract."""
     try:
         record = json.loads((backups / name / RECORD).read_text())
     except (OSError, ValueError):
         return None
-    if not isinstance(record, dict):
+    if not isinstance(record, dict) or generation.breach(contract, record) is not None:
         return None
     save, written_ns = record.get("save"), record.get("written_ns")
     if type(save) is not int or type(written_ns) is not int:
@@ -399,7 +526,8 @@ def prune(
             (backups / name).rename(doomed)
             shutil.rmtree(doomed)
         except OSError as error:
-            failure = failure or f"cannot remove backup {name} from {backups}: {error.strerror or error}"
+            why = error.strerror or error
+            failure = failure or f"cannot remove backup {name} from the world's backups folder: {why}"
     return names(backups, now), failure
 
 
@@ -408,3 +536,65 @@ def clear_partials(backups: Path) -> None:
     for entry in backups.iterdir():
         if entry.name.startswith(PARTIAL):
             shutil.rmtree(entry, ignore_errors=True)
+
+
+def clear_import_staging(backups: Path, now: datetime) -> None:
+    """Remove the staging folders of imports a kill cut short: those unmodified for longer than
+    IMPORT_STAGING_MAX_AGE_S that no import holds a lock on, or, where the file system refuses any
+    lock, any whose contents are each that old too. Any other may be an import still under way.
+    Raises OSError only when the folder cannot be listed."""
+    oldest = now.timestamp() - IMPORT_STAGING_MAX_AGE_S
+    for entry in backups.iterdir():
+        if not entry.name.startswith(IMPORT_STAGING):
+            continue
+        held: int | None = None
+        try:
+            if entry.lstat().st_mtime >= oldest:
+                continue
+            held = lock_folder(entry)
+        except NoLocks:
+            # A lock that fails may fail only for now, as a network mount's can, while an import
+            # copies: a file it writes is newer than the limit.
+            if _changed_since(entry, oldest):
+                continue
+        except OSError:
+            # Gone, no folder, or held by an import under way.
+            continue
+        try:
+            shutil.rmtree(entry, ignore_errors=True)
+        finally:
+            if held is not None:
+                os.close(held)
+
+
+def _changed_since(folder: Path, since: float) -> bool:
+    """Whether anything in the folder, never through a link, was modified at or after since, or
+    cannot be read to say."""
+    try:
+        for root, dirs, files in os.walk(folder, onerror=_raise):
+            for name in (*dirs, *files):
+                if os.lstat(os.path.join(root, name)).st_mtime >= since:
+                    return True
+    except OSError:
+        return True
+    return False
+
+
+def _raise(error: OSError) -> None:
+    raise error
+
+
+def lock_folder(folder: Path) -> int:
+    """An exclusive lock on a folder, never through a link and without waiting for another holder:
+    the descriptor that holds it until it is closed. Raises BlockingIOError when another holds it,
+    NoLocks when the folder's file system cannot lock a folder, and OSError when the folder cannot
+    be opened."""
+    descriptor = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BaseException as error:
+        os.close(descriptor)
+        if isinstance(error, OSError) and error.errno in _NO_LOCKS:
+            raise NoLocks(error.errno, "its file system cannot lock a folder") from error
+        raise
+    return descriptor

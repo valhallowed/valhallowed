@@ -16,6 +16,8 @@ from pathlib import Path
 from types import FrameType
 from typing import Protocol
 
+from jsonschema import Draft202012Validator
+
 from vhd_runtime import backups, restore, server, status, steam
 from vhd_runtime.generation import Generation, IncompleteGeneration, InvalidGeneration, Reader, Restore
 
@@ -39,6 +41,11 @@ HELD_UNREPORTED = (
     "the plugin has not reported the loaded world, which held objects before; stopped before its first autosave"
 )
 UNVERIFIED_REASON = "the plugin has not reported the loaded world"
+# What the server manager can do for a world held with no save.
+HELD_UNSAVED_ASK = (
+    "ask for another restore or an import, or remove the world's data volume to start a new world, which also "
+    "removes its installed server, so its next start downloads it again"
+)
 # A failed install is retried after a wait that starts here and doubles up to the cap, each wait
 # jittered, so the worlds of one install do not all go back to Steam at once.
 INSTALL_RETRY_FIRST_S = 30
@@ -171,6 +178,12 @@ class Supervisor:
     _done_id: str | None = field(default=None, init=False)
     # The backup a restore asks for, which no turn of the backups prunes until the restore has it.
     _spare: str | None = field(default=None, init=False)
+    # The contract a backup's record keeps, read from the image at the start, as the reader reads
+    # the generation's.
+    _record: Draft202012Validator = field(init=False)
+
+    def __post_init__(self) -> None:
+        self._record = restore.record_contract(self.paths.contracts)
 
     def request_stop(self, signum: int, frame: FrameType | None) -> None:
         """Signal handler: stop at the next poll, saving the world first."""
@@ -182,6 +195,9 @@ class Supervisor:
             return 0
         reporter = status.Reporter(generation.status_url, self.post)
         self._restore(generation, reporter)
+        unsaved = self._unsaved(generation)
+        if unsaved is not None:
+            return self._hold_unsaved(generation, reporter, unsaved)
         build = self._install(generation, reporter)
         if build is None:
             return 0
@@ -212,6 +228,63 @@ class Supervisor:
             self.paths.server,
         )
         return self._watch(process, generation, reporter, save_existed, build)
+
+    def _unsaved(self, generation: Generation) -> str | None:
+        """Why the world is held rather than launched, if it is: it has no save, its newest restore
+        did not end done, and the generation asks for no restore the runtime has not done. The game
+        would make an empty world in place of the one the restore was for, and the restore's
+        outcome makes the control plane drop it, so this holds across starts until the server
+        manager asks for another restore or an import. A record of that restore that cannot be read,
+        or a data volume that cannot say whether it holds one, holds the world too, as the record may
+        be of a restore that did not end done."""
+        if server.save_exists(self.paths.saves, generation.world) or self._due(generation) is not None:
+            return None
+        place = self._place(generation.world)
+        done = restore.read_done(place)
+        if done is None and _may_exist(place.done):
+            return _reason(
+                f"the world has no save and the record of its newest restore, {place.done.name} in its data volume, "
+                f"cannot be read, so no new world is made; {HELD_UNSAVED_ASK}"
+            )
+        if done is None or done.outcome == "done":
+            return None
+        ended = "failed" if done.outcome == "failed" else "was rolled back"
+        # The instruction ahead of the why, so the bound on a reason cuts only the why.
+        return _reason(
+            f"the world has no save and restore {done.id} {ended}, so no new world is made; {HELD_UNSAVED_ASK}. "
+            f"Why: {done.reason or 'unknown'}"
+        )
+
+    def _hold_unsaved(self, generation: Generation, reporter: status.Reporter, why: str) -> int:
+        """Install and launch nothing, reporting the world held, until a stop or a newer generation,
+        which the next start acts on."""
+        _log.error("held: %s", why)
+        holding: status.RuntimeStatus = {
+            "contract": 1,
+            "generation": generation.number,
+            "world": generation.world,
+            "state": State.HELD,
+            "reason": why,
+        }
+        # A start's turn of the backups, so status names them for the next restore, then a turn each
+        # BACKUP_CHECK_S, or later after a failure: with no save it takes nothing, but lists a backup
+        # an import kept meanwhile.
+        self._tend(generation)
+        next_report = self.clock.now()
+        while not self._stop:
+            self._back_up(generation, running=False)
+            if self._tending is None and self.clock.now() >= self._next_backup:
+                self._tend(generation)
+            if self.clock.now() >= next_report:
+                self._report(reporter, holding.copy())
+                next_report = self.clock.now() + generation.status_interval_s
+            newer = self._read_generation()
+            if newer is not None and newer.number > generation.number:
+                _log.info("generation %d arrived while held; starting again to act on it", newer.number)
+                return 0
+            self.clock.sleep(POLL_S)
+        _log.info("stopping: stop requested while held")
+        return 0
 
     def _map_export_directory(self) -> None:
         """The directory the plugin writes the map export into, made on every start. The export is
@@ -431,7 +504,11 @@ class Supervisor:
     def _tend(self, generation: Generation) -> Future[backups.Tended]:
         """Start a turn of the world's backups off the loop, which keeps reporting and watching."""
         place = backups.Place(
-            backups.world_folder(self.paths.saves, generation.world), self.paths.backups, generation.world, self._spare
+            backups.world_folder(self.paths.saves, generation.world),
+            self.paths.backups,
+            generation.world,
+            self._record,
+            self._spare,
         )
         self._tending = self.executor.submit(
             backups.tend, place, generation.backups, self.wall(), self._backed_up, starting=self._starting
@@ -467,7 +544,7 @@ class Supervisor:
         try:
             tended = tending.result()
         except OSError as error:
-            self._backup_failed(f"cannot list the backup folder {self.paths.backups}: {error.strerror or error}")
+            self._backup_failed(f"cannot list the world's backups folder: {error.strerror or error}")
             self._next_backup = now + self._retry_s
             self._retry_s = min(self._retry_s * 2, generation.backups.every_s)
             return
@@ -599,7 +676,10 @@ class Supervisor:
                 f"the world has a pre-1.0 save, {place.legacy_save.name}, which no backup replaces"
             )
         if place.aside.exists():
-            raise restore.RestoreFailed(f"a save an earlier restore set aside is still at {place.aside}")
+            where = place.aside.relative_to(self.paths.data)
+            raise restore.RestoreFailed(
+                f"a save an earlier restore set aside is still in the world's data volume, at {where}"
+            )
         every = generation.status_interval_s
         self._spare = asked.backup
         turn = self._await(self._tend(generation), reporter, holding, every)
@@ -630,7 +710,7 @@ class Supervisor:
         )
         restore.write_intent(place, intent)
         # A refusal leaves nothing staged, and its done record replaces this intent.
-        staged = self.executor.submit(restore.stage, place, asked.backup)
+        staged = self.executor.submit(restore.stage, place, asked.backup, self._record)
         objects = self._await(staged, reporter, holding, every).result()
         intent = replace(intent, phase="swapping", objects=objects)
         restore.write_intent(place, intent)
@@ -788,6 +868,17 @@ def _status(
         report["objects"] = world.objects
         report["players"] = world.players
     return report
+
+
+def _may_exist(path: Path) -> bool:
+    """Whether a file is there, or may be, as one is on a volume that cannot be read."""
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        pass
+    return True
 
 
 def _reason(text: str) -> str:

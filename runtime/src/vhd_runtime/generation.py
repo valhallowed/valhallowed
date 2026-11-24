@@ -1,13 +1,14 @@
 """B1: this runtime's generation and scoped secrets, validated on every read."""
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
 from jsonschema import Draft202012Validator, ValidationError
 from referencing import Registry, Resource
+from referencing.exceptions import Unresolvable
 from referencing.jsonschema import DRAFT202012
 
 GENERATION_FILE = "generation.json"
@@ -189,15 +190,53 @@ def _stamp(*paths: Path) -> tuple[int, ...]:
     return tuple(stamp)
 
 
+# Keywords whose values are instances, never schemas, so a "$ref" key inside one is data.
+_DATA_KEYWORDS = frozenset({"const", "enum", "default", "examples"})
+# Keywords whose values map names to schemas: a property named "default" is a schema. With the
+# older dependencies keyword, which earlier drafts read as one; checking it too only fails closed.
+_SCHEMA_MAPS = frozenset(
+    {"properties", "patternProperties", "$defs", "definitions", "dependentSchemas", "dependencies"}
+)
+
+
 def validator(schema_path: Path) -> Draft202012Validator:
     """A validator for one contract. The control plane's schemas.Schemas does the same; the two
-    ship in separate images, so each carries its own."""
+    ship in separate images, so each carries its own. Raises ValueError when a $ref in the
+    contract itself names a schema it cannot find, before anything is validated against it; a $ref
+    inside a schema it names is not followed."""
     schema = json.loads(schema_path.read_text())
     # A contract refers to the manifest schema by relative path: the schema gets
     # its own file URI as base, and the registry holds every schema it may name,
     # so validation never reads a file it was not given.
     schema["$id"] = schema_path.resolve().as_uri()
-    return Draft202012Validator(schema, registry=_registry(schema_path.parent))
+    registry = _registry(schema_path.parent).with_resource(
+        schema["$id"], Resource.from_contents(schema, default_specification=DRAFT202012)
+    )
+    resolver = registry.resolver(base_uri=schema["$id"])
+    for reference in _references(schema):
+        try:
+            resolver.lookup(reference)
+        except Unresolvable as error:
+            raise ValueError(f"{schema_path.name} refers to {reference}, which cannot be found") from error
+    # A contract that is no valid schema fails here, not at the first validation.
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema, registry=registry)
+
+
+def _references(schema: object) -> Iterator[str]:
+    """Each $ref in a schema, leaving out the values of keywords that hold data, not schemas."""
+    if isinstance(schema, dict):
+        for key, value in schema.items():
+            if key == "$ref" and isinstance(value, str):
+                yield value
+            elif key in _SCHEMA_MAPS and isinstance(value, dict):
+                for each in value.values():
+                    yield from _references(each)
+            elif key not in _DATA_KEYWORDS:
+                yield from _references(value)
+    elif isinstance(schema, list):
+        for value in schema:
+            yield from _references(value)
 
 
 def _registry(contracts: Path) -> Registry[_Schema]:
@@ -223,6 +262,16 @@ def _load(path: Path, validator: Draft202012Validator, *, secret: bool = False) 
         where = "/".join(str(p) for p in first.absolute_path) or "(root)"
         raise InvalidGeneration(f"{path.name} at {where}: {_rule(first) if secret else first.message}")
     return document
+
+
+def breach(validator: Draft202012Validator, document: object) -> str | None:
+    """Where a document first breaks its contract and which rule, without its values, or None when
+    it keeps it."""
+    errors = sorted(validator.iter_errors(document), key=lambda e: list(e.absolute_path))
+    if not errors:
+        return None
+    where = "/".join(str(p) for p in errors[0].absolute_path) or "(root)"
+    return f"at {where}: {_rule(errors[0])}"
 
 
 def _rule(error: ValidationError) -> str:

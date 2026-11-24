@@ -20,7 +20,7 @@
       "$ref": "../schema/manifest.schema.json#/$defs/save_name"
     },
     "state": {
-      "description": "installing: downloading SteamCMD or the server, or waiting to retry a download that failed. loading: launched, the world not yet reported. running: the world loaded. unverified: launched, but the plugin has not reported a world that had nothing to lose: no save, or last seen empty. held: restoring a backup before the game starts; or stopped before its first autosave because the world loaded empty, or the plugin never reported it, although it held objects when last seen or, with nothing remembered, a save existed. The container stays up, except after a restored save that loaded empty is swapped back, when it starts again.",
+      "description": "installing: downloading SteamCMD or the server, or waiting to retry a download that failed. loading: launched, the world not yet reported. running: the world loaded. unverified: launched, but the plugin has not reported a world that had nothing to lose: no save, or last seen empty. held: restoring a backup before the game starts; before the install, for a world with no save whose newest restore did not end done, so no new world is made in its place, until another restore is asked for or the world's data volume is removed; or stopped before its first autosave because the world loaded empty, or the plugin never reported it, although it held objects when last seen or, with nothing remembered, a save existed. The container stays up, except after a restored save that loaded empty is swapped back, when it starts again.",
       "enum": ["installing", "loading", "running", "unverified", "held"]
     },
     "reason": {

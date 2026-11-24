@@ -24,7 +24,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal, cast, get_args
 
-from vhd_runtime import backups
+from jsonschema import Draft202012Validator
+
+from vhd_runtime import backups, generation
 
 Phase = Literal["staging", "swapping", "swapped", "judged", "unswapping"]
 # How a restore ends.
@@ -35,11 +37,12 @@ _INTENT_KEYS = {"id", "backup", "phase", "before", "had_save", "objects", "reaso
 _DONE_KEYS = {"id", "outcome", "reason"}
 
 # The files a 1.0+ save is made of (Game facts): the save's own four, and its chunks.
-_FILE = re.compile(r"_main\.[0-9]+\.(chunks|db2|fwl2|ok)|[0-9a-f]{2}_[0-9a-f]{2}__[0-9]+_[0-9]+\.chunk")
-_SHA256 = re.compile(r"[0-9a-f]{64}")
+SAVE_FILE = re.compile(r"_main\.[0-9]+\.(chunks|db2|fwl2|ok)|[0-9a-f]{2}_[0-9a-f]{2}__[0-9]+_[0-9]+\.chunk")
 _ID = re.compile(r"[0-9a-f]{32}")
 # A record lists a save's few thousand files at most; anything longer is no record of ours.
 RECORD_MAX_BYTES = 4 << 20
+# The contract a backup's record keeps, in the image's contracts folder.
+RECORD_CONTRACT = "game-runtime.backup.schema.json"
 
 
 class RestoreFailed(Exception):
@@ -104,6 +107,16 @@ class Done:
     reason: str | None = None
 
 
+@dataclass(frozen=True)
+class Record:
+    """What a backup's record says of its save: its number, when the game completed it, and each
+    of its files."""
+
+    number: int
+    written_ns: int
+    files: list[dict[str, Any]]
+
+
 def read_intent(place: Place) -> Intent | None:
     """The restore under way, or None. A record missing a key, or with a bad value, is none: only this
     runtime writes it."""
@@ -161,38 +174,26 @@ def clear_staged(place: Place) -> None:
     shutil.rmtree(place.staged, ignore_errors=True)
 
 
-def stage(place: Place, name: str) -> int:
-    """Copy the backup into the data volume and check it: its record names this world and only a
-    save's files, each file has the size and SHA-256 the record gives, and the copy is a complete
-    save in the format this runtime reads. Returns the objects the save holds. Raises RestoreFailed,
+def stage(place: Place, name: str, contract: Draft202012Validator) -> int:
+    """Copy the backup into the data volume and check it: its record keeps its contract and names
+    this world, each file has the size and SHA-256 the record gives, and the copy is a complete save
+    in the format this runtime reads. Returns the objects the save holds. Raises RestoreFailed,
     leaving nothing staged."""
     source = place.backups / name
     if not (source / backups.RECORD).is_file():
-        raise RestoreFailed(f"backup {name} no longer exists in {place.backups}")
-    number, files = _record(source, place.world, name)
+        raise RestoreFailed(f"backup {name} no longer exists in the world's backups folder")
+    record = read_record(source, place.world, name, contract)
     clear_staged(place)
     try:
         place.staged.mkdir(parents=True)
-        needed = sum(file["size"] for file in files)
+        needed = sum(file["size"] for file in record.files)
         free = shutil.disk_usage(place.staged).free
         if free - needed < backups.RESERVE:
             raise RestoreFailed(
                 f"the data volume has {free // backups.MIB} MiB free; backup {name} needs {needed // backups.MIB} MiB, "
                 f"and {backups.RESERVE // backups.MIB} MiB must stay free"
             )
-        for file in files:
-            try:
-                copied = backups.copy_file(source / file["name"], place.staged / file["name"], file["size"])
-            except backups.Gone as error:
-                raise RestoreFailed(f"backup {name} lacks {file['name']}, which its record lists") from error
-            if copied["size"] != file["size"] or copied["sha256"] != file["sha256"]:
-                raise RestoreFailed(f"backup {name}'s {file['name']} is not the file its record lists")
-        try:
-            save = backups.newest_complete(place.staged)
-        except backups.BackupFailed as error:
-            raise RestoreFailed(f"backup {name} is not a complete save: {error}") from error
-        if save is None or save.number != number or set(save.files) != {file["name"] for file in files}:
-            raise RestoreFailed(f"backup {name} does not hold the save its record names")
+        objects = copy_checked(source, place.staged, name, record.number, record.files)
         backups.sync(place.staged)
     except RestoreFailed:
         clear_staged(place)
@@ -200,6 +201,27 @@ def stage(place: Place, name: str) -> int:
     except OSError as error:
         clear_staged(place)
         raise RestoreFailed(f"cannot copy backup {name} into the data volume: {error.strerror or error}") from error
+    return objects
+
+
+def copy_checked(source: Path, target: Path, name: str, number: int, files: list[dict[str, Any]]) -> int:
+    """Copy the files a backup's record lists into target, and check them: each has the size and
+    SHA-256 the record gives, and together they are the complete save the record names. Returns the
+    objects the save holds. Raises RestoreFailed, or OSError when a file cannot be copied; either
+    leaves target for the caller to remove."""
+    for file in files:
+        try:
+            copied = backups.copy_file(source / file["name"], target / file["name"], file["size"])
+        except backups.Gone as error:
+            raise RestoreFailed(f"backup {name} lacks {file['name']}, which its record lists") from error
+        if copied["size"] != file["size"] or copied["sha256"] != file["sha256"]:
+            raise RestoreFailed(f"backup {name}'s {file['name']} is not the file its record lists")
+    try:
+        save = backups.newest_complete(target)
+    except backups.BackupFailed as error:
+        raise RestoreFailed(f"backup {name} is not a complete save: {error}") from error
+    if save is None or save.number != number or set(save.files) != {file["name"] for file in files}:
+        raise RestoreFailed(f"backup {name} does not hold the save its record names")
     return save.objects
 
 
@@ -234,31 +256,36 @@ def drop_aside(place: Place) -> None:
     shutil.rmtree(place.aside, ignore_errors=True)
 
 
-def _record(source: Path, world: str, name: str) -> tuple[int, list[dict[str, Any]]]:
-    """The save a backup's record names, and its files, once it names this world and lists only a
-    save's files, each once."""
+def record_contract(contracts: Path) -> Draft202012Validator:
+    """The contract a backup's record keeps, from the contracts folder. Raises RestoreFailed when it
+    cannot be read."""
+    try:
+        return generation.validator(contracts / RECORD_CONTRACT)
+    except Exception as error:
+        raise RestoreFailed(f"cannot read the contract of a backup's record: {error}") from error
+
+
+def read_record(source: Path, world: str, name: str, contract: Draft202012Validator) -> Record:
+    """The save a backup's record names, once the record keeps its contract, names this world and
+    lists each file once. Raises RestoreFailed."""
     record = _read(source / backups.RECORD)
-    files = record.get("files") if record is not None else None
-    number = record.get("save") if record is not None else None
-    if record is None or not isinstance(files, list) or type(number) is not int:
+    if record is None:
         raise RestoreFailed(f"backup {name}'s record cannot be read")
-    if record.get("world") != world:
+    breach = generation.breach(contract, record)
+    if breach is not None:
+        raise RestoreFailed(f"backup {name}'s record breaks its contract {breach}")
+    if record["world"] != world:
         raise RestoreFailed(f"backup {name} is not a backup of {world}")
+    files = cast(list[dict[str, Any]], record["files"])
     seen: set[str] = set()
     for file in files:
-        if (
-            not isinstance(file, dict)
-            or not isinstance(file.get("name"), str)
-            or not _FILE.fullmatch(file["name"])
-            or file["name"] in seen
-            or type(file.get("size")) is not int
-            or file["size"] < 0
-            or not isinstance(file.get("sha256"), str)
-            or not _SHA256.fullmatch(file["sha256"])
-        ):
+        # The contract's pattern also lets a name end in a newline, as Python's $ matches before one.
+        if not SAVE_FILE.fullmatch(file["name"]):
             raise RestoreFailed(f"backup {name}'s record lists a file that is no part of a save")
+        if file["name"] in seen:
+            raise RestoreFailed(f"backup {name}'s record lists {file['name']} twice")
         seen.add(file["name"])
-    return number, files
+    return Record(cast(int, record["save"]), cast(int, record["written_ns"]), files)
 
 
 def _is_id(value: object) -> bool:
