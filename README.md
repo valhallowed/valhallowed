@@ -57,8 +57,10 @@ replaces is kept until the restored one loads, and put back if it loads empty.
 before then replaces the restore.
 
 To bring a 1.0+ world in, add it to the manifest, put its save folder, named for
-its save name, alone in a folder of the install folder, readable by others and
-writable by you alone, such as `incoming/<save name>/`, and run:
+its save name, alone in a folder of the install folder, such as
+`incoming/<save name>/`, and run the command below. The save must be readable by
+others, and that folder and the install folder writable by you alone
+(`chmod -R o+rX,go-w incoming` and `chmod go-w .`), or the import is refused.
 
 ```bash
 docker compose run --rm vhd import <save name> incoming
