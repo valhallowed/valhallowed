@@ -707,6 +707,18 @@ def test_a_refused_export_removes_what_vhd_made(transfers: Transfers) -> None:
     assert [p.name for p in (transfers.install / "exports" / "Meadowfold").iterdir()] == ["earlier"]
 
 
+def test_an_export_stopped_while_it_makes_its_folder_removes_what_vhd_made(
+    transfers: Transfers, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def interrupt(path: object, uid: int, gid: int) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(os, "chown", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        transfers.export_backup()
+    assert not (transfers.install / "exports").exists()
+
+
 def test_an_export_refuses_an_exports_folder_that_is_a_link(transfers: Transfers, tmp_path: Path) -> None:
     (tmp_path / "elsewhere").mkdir()
     (transfers.install / "exports").symlink_to(tmp_path / "elsewhere")

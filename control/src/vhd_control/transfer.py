@@ -474,7 +474,7 @@ def _export_folder(
     except OSError as error:
         _remove(made)
         raise Refused(f"cannot make the export's folder in the install folder: {error.strerror or error}") from error
-    except Refused:
+    except BaseException:
         _remove(made)
         raise
     return target, made, (info.st_dev, info.st_ino)
