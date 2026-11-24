@@ -1047,7 +1047,7 @@ def test_the_largest_report_fits_the_status_listener() -> None:
         "world": "M" * 64,
         "state": "unverified",
         "reason": longest,
-        "game_build": "9" * 12,
+        "game_build": "9" * 20,
         "update": {"build": "9" * 20, "failure": longest},
         "objects": 2**31,
         "players": 2**31,
