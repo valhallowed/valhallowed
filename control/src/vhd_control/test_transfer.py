@@ -73,9 +73,9 @@ class TransferDocker(FakeDocker):
         self.who: str | DockerError | None = None
         self.asked_who: list[int] = []
         self.stopped: list[list[str]] = []
-        # The stop's steps that fail, and whether the container is still there when one does.
+        # The stop's steps that fail, and the container's state when one does: "" once it is gone.
         self.failing: set[str] = set()
-        self.there = True
+        self.there = "running"
         self.listed: list[list[str]] = []
         self.on_stop: Callable[[list[str]], None] = lambda args: None
         # The last lines of the action's standard error.
@@ -101,7 +101,7 @@ class TransferDocker(FakeDocker):
             return ""
         if args[:2] == ["container", "ls"]:
             self.listed.append(args)
-            return "0123456789ab\n" if self.there else ""
+            return f"{self.there}\n" if self.there else ""
         return super().output(args)
 
     def run(self, args: list[str], timeout_s: float) -> Ran:
@@ -486,14 +486,25 @@ def hang(args: list[str]) -> tuple[int, str]:
 def test_a_container_already_gone_is_no_failure_of_the_stop(transfers: Transfers) -> None:
     transfers.docker.act = hang
     transfers.docker.failing = {"stop", "rm"}
-    transfers.docker.there = False
+    transfers.docker.there = ""
     with pytest.raises(TransferRefused, match="so vhd stopped it; an import cut short after") as refused:
         transfers.import_save()
     assert "failed too" not in str(refused.value)
     assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]
     # Gone by Docker's own list of containers by that exact name, not by its words.
     name = transfers.docker.stopped[0][-1]
-    assert transfers.docker.listed[0] == ["container", "ls", "--all", "--quiet", "--filter", f"name=^{name}$"]
+    assert transfers.docker.listed[0] == [
+        "container", "ls", "--all", "--filter", f"name=^{name}$", "--format", "{{.State}}"
+    ]  # fmt: skip
+
+
+def test_a_container_docker_is_removing_already_is_no_failure_of_the_stop(transfers: Transfers) -> None:
+    transfers.docker.act = hang
+    transfers.docker.failing = {"rm"}
+    transfers.docker.there = "removing"
+    with pytest.raises(TransferRefused, match="so vhd stopped it") as refused:
+        transfers.import_save()
+    assert "failed too" not in str(refused.value)
 
 
 def test_a_failed_stop_still_removes_the_container_and_the_refusal_keeps_the_timeout(transfers: Transfers) -> None:

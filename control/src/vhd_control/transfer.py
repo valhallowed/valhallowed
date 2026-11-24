@@ -286,12 +286,15 @@ class Transfer:
         return failed
 
     def _there(self, name: str) -> bool:
-        """Whether the container exists, by its exact name; one Docker cannot say of counts as there."""
+        """Whether the container exists, by its exact name, other than as one Docker is removing
+        already, as --rm does once it stops; one Docker cannot say of counts as there."""
         try:
-            listed = self.docker.output(["container", "ls", "--all", "--quiet", "--filter", f"name=^{name}$"])
+            listed = self.docker.output(
+                ["container", "ls", "--all", "--filter", f"name=^{name}$", "--format", "{{.State}}"]
+            )
         except DockerError:
             return True
-        return bool(listed.strip())
+        return any(state != "removing" for state in listed.split())
 
     def _result(self, action: Action, world: str, status: int, output: str) -> dict[str, Any]:
         """The action's result, its last line of output, once it keeps its contract and says done
