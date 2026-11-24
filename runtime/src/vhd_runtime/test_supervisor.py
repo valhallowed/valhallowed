@@ -1972,6 +1972,11 @@ def test_the_app_info_cache_is_in_steamcmds_steam_folder_in_its_home_the_data_vo
     assert Paths().app_info_cache == Path("/data/Steam/appcache/appinfo.vdf")
 
 
+def missed(build: str, attempts: int, at: datetime) -> dict[str, object]:
+    """A record of a restart to update, as the runtime writes it."""
+    return {"build": build, "attempts": attempts, "at": at.strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+
 def test_a_restart_to_update_records_the_build_it_is_for(world: World) -> None:
     world.generation(1)
     world.public = NEWER
@@ -1979,31 +1984,51 @@ def test_a_restart_to_update_records_the_build_it_is_for(world: World) -> None:
     world.plugin_running(10)
 
     assert sup.run() == 0
-    assert json.loads(world.paths.update_record.read_text()) == {"build": NEWER}
+    taken = json.loads(world.paths.update_record.read_text())
+    assert taken == missed(NEWER, 1, START + timedelta(seconds=world.time.now // 1))
 
 
-def test_a_start_that_did_not_install_the_build_restarts_no_more_for_it_and_says_why(world: World) -> None:
+def test_a_build_the_last_restart_did_not_install_is_restarted_for_again_after_its_wait(world: World) -> None:
     world.paths.update_record.parent.mkdir(parents=True)
-    world.paths.update_record.write_text(json.dumps({"build": NEWER}))
-    world.generation(1)
+    world.paths.update_record.write_text(json.dumps(missed(NEWER, 1, START - timedelta(minutes=40))))
+    world.generation(1, update_every_s=300)
     world.public = NEWER
     sup = world.supervisor()
     world.plugin_running(10)
-    # A build after it is restarted for as any other.
-    world.time.at(1000, lambda: setattr(world, "public", "26300000"))
 
     assert sup.run() == 0
-    assert 1800 <= world.time.now < 1810
-    failed = (
-        f"the last restart to update did not install game build {NEWER}; the world takes it at its next start, "
-        "and restarts for it no more"
+    assert 1200 <= world.time.now < 1210
+    assert json.loads(world.paths.update_record.read_text())["attempts"] == 2
+    waits = (
+        f"the restart to update at 2026-11-18 19:20 UTC did not install game build {NEWER}; the world tries again "
+        "once empty after 2026-11-18 20:20 UTC"
     )
-    assert world.updates() == [None, {"build": NEWER, "failure": failed}, {"build": "26300000"}]
+    assert world.updates() == [None, {"build": NEWER, "failure": waits}]
+
+
+def test_each_restart_that_misses_the_build_doubles_the_wait_up_to_a_day() -> None:
+    waits = [
+        (supervisor.Missed(NEWER, attempts, START).next_at() - START).total_seconds() / 3600 for attempts in range(1, 8)
+    ]
+    assert waits == [1, 2, 4, 8, 16, 24, 24]
+
+
+def test_a_build_after_the_one_missed_is_restarted_for_at_once(world: World) -> None:
+    world.paths.update_record.parent.mkdir(parents=True)
+    world.paths.update_record.write_text(json.dumps(missed(NEWER, 3, START)))
+    world.generation(1)
+    world.public = "26300000"
+    sup = world.supervisor()
+    world.plugin_running(10)
+
+    assert sup.run() == 0
+    assert 900 <= world.time.now < 910
+    assert json.loads(world.paths.update_record.read_text())["attempts"] == 1
 
 
 def test_a_start_that_installed_the_build_forgets_the_record(world: World) -> None:
     world.paths.update_record.parent.mkdir(parents=True)
-    world.paths.update_record.write_text(json.dumps({"build": "25909431"}))
+    world.paths.update_record.write_text(json.dumps(missed("25909431", 1, START)))
     world.generation(1)
     sup = world.supervisor()
     world.plugin_running(10)
@@ -2015,7 +2040,7 @@ def test_a_start_that_installed_the_build_forgets_the_record(world: World) -> No
 
 def test_steam_going_back_to_the_installed_build_forgets_the_record(world: World) -> None:
     world.paths.update_record.parent.mkdir(parents=True)
-    world.paths.update_record.write_text(json.dumps({"build": NEWER}))
+    world.paths.update_record.write_text(json.dumps(missed(NEWER, 1, START)))
     world.generation(1, policy="at-start")
     sup = world.supervisor()
     world.plugin_running(10)
@@ -2023,6 +2048,22 @@ def test_steam_going_back_to_the_installed_build_forgets_the_record(world: World
 
     assert sup.run() == 0
     assert not world.paths.update_record.exists()
+
+
+def test_a_restart_to_update_that_cannot_be_recorded_is_not_made(world: World) -> None:
+    world.paths.update_record.mkdir(parents=True)
+    world.generation(1)
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.stop_at(1500, sup)
+
+    assert sup.run() == 0
+    assert world.time.now >= 1500
+    assert world.process.signals == [signal.SIGINT]
+    update = cast(dict[str, str], world.reports[-1]["update"])
+    assert update["build"] == NEWER
+    assert update["failure"].startswith("cannot record a restart to update in the data volume")
 
 
 def test_a_check_that_raises_unexpectedly_says_why_and_the_world_runs_on(world: World) -> None:

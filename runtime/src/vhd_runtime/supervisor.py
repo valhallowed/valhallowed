@@ -12,7 +12,7 @@ import time
 from collections.abc import Callable, Mapping
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from types import FrameType
@@ -62,6 +62,14 @@ BACKUP_RETRY_S = 60
 # The runtime status contract's bound on the backups it names: what pruning keeps at most, the counts'
 # 100 each, the backup a restore asks for and the newest import.
 BACKUP_NAMES_MAX = 202
+# After a restart to update whose start did not install its build, the next restart for that build waits
+# this long, doubling after each that misses it again, up to the cap: a download that keeps failing never
+# restarts an empty world every check, and one that failed once, as when a release overloads Steam, is
+# tried again the same day.
+UPDATE_RETRY_FIRST_S = 3600
+UPDATE_RETRY_MAX_S = 86400
+# How the record of a restart to update writes its time.
+RECORD_TIME = "%Y-%m-%dT%H:%M:%SZ"
 
 _log = logging.getLogger(__name__)
 
@@ -125,6 +133,21 @@ class Paths:
     def last_objects(self) -> Path:
         """The object count the runtime last saw its world hold, kept in the data volume."""
         return self.vhd / "last-objects.json"
+
+
+@dataclass(frozen=True)
+class Missed:
+    """A restart to update whose start did not install its build: that build, how many restarts have
+    tried it, and when the last began."""
+
+    build: str
+    attempts: int
+    at: datetime
+
+    def next_at(self) -> datetime:
+        """When the next restart for the build may begin."""
+        wait = UPDATE_RETRY_FIRST_S * 2 ** min(self.attempts - 1, 10)
+        return self.at + timedelta(seconds=min(wait, UPDATE_RETRY_MAX_S))
 
 
 class Process(Protocol):
@@ -196,15 +219,16 @@ class Supervisor:
     # The backup a restore asks for, which no turn of the backups prunes until the restore has it.
     _spare: str | None = field(default=None, init=False)
     # The check of Steam's public game build under way off the loop; when the newest began, on the loop's
-    # clock; the public build checks found, when other than the installed one; and why the newest failed.
+    # clock; the public build checks found, when other than the installed one; and why the newest check
+    # failed, or why the world has not restarted for the build it found.
     _checking: Future[str] | None = field(default=None, init=False)
     _checked_at: float = field(default=0.0, init=False)
     _update_build: str | None = field(default=None, init=False)
     _update_failure: str | None = field(default=None, init=False)
-    # The build the last restart to update was for, when this start's install did not reach it: no
-    # restart is made for it again, so a download that keeps failing never restarts an empty world
-    # every interval.
-    _unreached: str | None = field(default=None, init=False)
+    # The restart to update this start's install did not reach, which the next for its build waits on; and
+    # why a restart to update cannot be recorded, which then waits for the next start in this run.
+    _missed: Missed | None = field(default=None, init=False)
+    _unrecorded: str | None = field(default=None, init=False)
     # Set once the watch of the game ends, so a check under way ends its SteamCMD rather than hold up the exit.
     _watched: bool = field(default=False, init=False)
     # The contract a backup's record keeps, read from the image at the start, as the reader reads
@@ -380,7 +404,7 @@ class Supervisor:
         launched = self.clock.now()
         # The start's install has just updated the server, so the first check waits a whole interval.
         self._checked_at = launched
-        self._unreached = self._update_unreached(build)
+        self._missed = self._read_missed(build)
         state, reason = State.LOADING, None
         world: status.WorldStatus | None = None
         next_report = launched
@@ -478,65 +502,100 @@ class Supervisor:
         except steam.Stopped:
             return
         except steam.CheckFailed as error:
-            self._update_failed(str(error))
+            self._set_update_failure(str(error))
             return
         except Exception as error:
-            self._update_failed(f"the check stopped on an unexpected error: {type(error).__name__}: {error}")
+            self._set_update_failure(f"the check stopped on an unexpected error: {type(error).__name__}: {error}")
             return
-        self._update_failure = None
         found = None if public == build else public
         if found is not None and found != self._update_build:
             when = "once no players are online" if generation.updates.policy == "when-empty" else "at its next start"
             _log.info("game build %s is out, build %s is installed; the world updates %s", found, build, when)
         self._update_build = found
-        if found is None and self._unreached is not None:
-            # Steam went back to the installed build: a later restart for the other one may succeed.
+        if found is None and self._missed is not None:
+            # Steam went back to the installed build: a restart for the other one need not wait.
             with contextlib.suppress(OSError):
                 self.paths.update_record.unlink(missing_ok=True)
-            self._unreached = None
-        elif found is not None and found == self._unreached:
-            self._update_failed(
-                f"the last restart to update did not install game build {found}; the world takes it at its next "
-                "start, and restarts for it no more"
-            )
+            self._missed = None
+        self._set_update_failure(self._why_waiting(found, generation))
 
-    def _update_failed(self, why: str) -> None:
-        why = _reason(why)
-        if why != self._update_failure:
-            _log.error("the check for another game build failed: %s", why)
+    def _why_waiting(self, found: str | None, generation: Generation) -> str | None:
+        """Why the world has not restarted for the build a check found, beyond its players and policy."""
+        if found is None:
+            return None
+        if self._unrecorded is not None:
+            return self._unrecorded
+        missed = self._missed
+        if missed is None or missed.build != found:
+            return None
+        later = (
+            f"tries again once empty after {missed.next_at():%Y-%m-%d %H:%M} UTC"
+            if generation.updates.policy == "when-empty"
+            else "takes it at its next start"
+        )
+        began = f"{missed.at:%Y-%m-%d %H:%M} UTC"
+        return f"the restart to update at {began} did not install game build {found}; the world {later}"
+
+    def _set_update_failure(self, why: str | None) -> None:
+        why = None if why is None else _reason(why)
+        if why is not None and why != self._update_failure:
+            _log.warning("game update: %s", why)
         self._update_failure = why
 
-    def _update_unreached(self, build: str) -> str | None:
-        """The build the last restart to update was for, if this start's install did not reach it. A
-        record that cannot be read names none, which costs at most one more restart."""
+    def _read_missed(self, build: str) -> Missed | None:
+        """The restart to update this start's install did not reach, from its record; a record of the build
+        installed is done with, and removed. A record that cannot be read names none, which costs at most
+        one restart sooner than the wait."""
         record = self.paths.update_record
         try:
-            wanted = json.loads(record.read_text()).get("build")
-        except (OSError, ValueError, AttributeError):
+            document = json.loads(record.read_text())
+        except (OSError, ValueError):
             return None
+        if not isinstance(document, dict):
+            return None
+        wanted, attempts, at = document.get("build"), document.get("attempts"), document.get("at")
         if wanted == build:
             with contextlib.suppress(OSError):
                 record.unlink(missing_ok=True)
             return None
-        return wanted if isinstance(wanted, str) else None
+        if not isinstance(wanted, str) or type(attempts) is not int or attempts < 1 or not isinstance(at, str):
+            return None
+        try:
+            began = datetime.strptime(at, RECORD_TIME).replace(tzinfo=UTC)
+        except ValueError:
+            return None
+        return Missed(wanted, attempts, began)
 
     def _restart_to_update(self, state: State, generation: Generation, world: status.WorldStatus | None) -> bool:
         """Whether to restart now for the build a check found: under the when-empty policy, by the final
-        players check, for a current report of no players, and not for a build the last restart to update
-        did not install. The build is recorded first, so the next start can tell whether it got it."""
+        players check, for a current report of no players, and for a build an earlier restart did not
+        install, once its wait has passed. The restart is recorded first, so the next start can tell
+        whether it got the build; one that cannot be recorded is not made."""
         wanted = self._update_build
-        if wanted is None or wanted == self._unreached or generation.updates.policy != "when-empty":
+        if wanted is None or generation.updates.policy != "when-empty" or self._unrecorded is not None:
             return False
         if not _empty(state, world):
             return False
+        now = self.wall()
+        attempts = 1
+        missed = self._missed
+        if missed is not None and missed.build == wanted:
+            if now < missed.next_at():
+                return False
+            attempts = missed.attempts + 1
         record = self.paths.update_record
         try:
             record.parent.mkdir(parents=True, exist_ok=True)
             temporary = record.with_suffix(".tmp")
-            temporary.write_text(json.dumps({"build": wanted}))
+            temporary.write_text(json.dumps({"build": wanted, "attempts": attempts, "at": now.strftime(RECORD_TIME)}))
             temporary.replace(record)
         except OSError as error:
-            _log.warning("cannot record the build this restart updates to: %s", error)
+            self._unrecorded = (
+                "cannot record a restart to update in the data volume, so the world updates only at its next start: "
+                f"{error.strerror or error}"
+            )
+            self._set_update_failure(self._unrecorded)
+            return False
         return True
 
     def _restart_now(
