@@ -37,11 +37,7 @@ cli=(docker compose -p "$project" -f "$install/compose.yaml")
 label="label=com.docker.compose.project=$project"
 trap '"$root/scripts/accept-teardown.sh" "$project" "$install"' EXIT
 
-cp "$compose_file" "$install/compose.yaml"
-printf 'schema = 1\n\n[world.%s]\nport = %d\n\n[web_map]\nport = %d\n' \
-  "$world_name" "$world_port" "$web_map_port" > "$install/manifest.toml"
-chmod 755 "$install"
-chmod 644 "$install"/*
+"$root/scripts/accept-install.sh" "$compose_file" "$install" "$world_name" "$world_port" "$web_map_port"
 
 "${cli[@]}" run --rm --pull "$pull" vhd apply
 applied=$SECONDS

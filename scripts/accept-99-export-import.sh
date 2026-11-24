@@ -37,12 +37,8 @@ echo "accept: vhd export copied $ACCEPT_WORLD_NAME's newest backup, $objects obj
 install=$(mktemp -d)
 trap '"$root/scripts/accept-teardown.sh" "$project" "$install"' EXIT
 imported=(docker compose -p "$project" -f "$install/compose.yaml")
-cp "$ACCEPT_INSTALL/compose.yaml" "$install/compose.yaml"
-printf 'schema = 1\n\n[world.%s]\nport = %d\n\n[web_map]\nport = %d\n' \
-  "$ACCEPT_WORLD_NAME" "$world_port" "$web_map_port" > "$install/manifest.toml"
+"$root/scripts/accept-install.sh" "$ACCEPT_INSTALL/compose.yaml" "$install" "$ACCEPT_WORLD_NAME" "$world_port" "$web_map_port"
 cp -R "$from/worlds_local" "$install/worlds_local"
-chmod 755 "$install"
-chmod 644 "$install/compose.yaml" "$install/manifest.toml"
 chmod -R u+rwX,go+rX,go-w "$install/worlds_local"
 
 if ! said=$(timeout 300 "${imported[@]}" run --rm vhd import "$ACCEPT_WORLD_NAME" worlds_local 2>&1) ||
