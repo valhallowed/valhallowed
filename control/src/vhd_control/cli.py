@@ -160,21 +160,7 @@ def show_status(status: dict[str, Any], out: TextIO, now: datetime | None = None
         )
         print(f"generation {override['generation']} restarted {named}, as the server manager confirmed", file=out)
     for name, world in sorted(status["worlds"].items()):
-        line = f"{name}: {world['state']}"
-        report = world.get("report", {})
-        if "players" in report:
-            line += f", {report['players']} player(s)"
-        if "reason" in report:
-            # A runtime faces players; its words reach a terminal only as printable text.
-            line += f" ({printable(report['reason'])})"
-        if "backups" in report:
-            line += _backups(report["backups"], now)
-        line += _restore(world.get("restore"), report.get("restore"))
-        if world.get("removed"):
-            line += "; removed from the manifest, waits for vhd apply"
-        elif "pending" in world:
-            line += f"; generation {world['pending']['generation']} waits for {world['pending']['waits_for']}"
-        print(line, file=out)
+        print(_world(name, world, now), file=out)
     for name, service in sorted(status["services"].items()):
         line = f"{name} service: {service['state']}"
         report = service.get("report", {})
@@ -185,6 +171,28 @@ def show_status(status: dict[str, Any], out: TextIO, now: datetime | None = None
         if "pending" in service:
             line += f"; generation {service['pending']['generation']} waits for {service['pending']['waits_for']}"
         print(line, file=out)
+
+
+def _world(name: str, world: dict[str, Any], now: datetime) -> str:
+    """A world's status line."""
+    line = f"{name}: {world['state']}"
+    report = world.get("report", {})
+    if "players" in report:
+        line += f", {report['players']} player(s)"
+    if "game_build" in report:
+        line += f", game build {report['game_build']}"
+    if "reason" in report:
+        # A runtime faces players; its words reach a terminal only as printable text.
+        line += f" ({printable(report['reason'])})"
+    if "backups" in report:
+        line += _backups(report["backups"], now)
+    line += _restore(world.get("restore"), report.get("restore"))
+    line += _update(report.get("update", {}))
+    if world.get("removed"):
+        line += "; removed from the manifest, waits for vhd apply"
+    elif "pending" in world:
+        line += f"; generation {world['pending']['generation']} waits for {world['pending']['waits_for']}"
+    return line
 
 
 def _backups(backups: dict[str, Any], now: datetime) -> str:
@@ -213,6 +221,17 @@ def _restore(kept: dict[str, str] | None, acted: dict[str, str] | None) -> str:
         text += f"; restore {outcome}"
         if "reason" in acted:
             text += f" ({printable(acted['reason'])})"
+    return text
+
+
+def _update(update: dict[str, str]) -> str:
+    """What a world's runtime found checking Steam's public game build, for its status line: a build
+    that waits, and why the newest check failed."""
+    text = ""
+    if "build" in update:
+        text += f"; game build {update['build']} waits for the world's next start"
+    if "failure" in update:
+        text += f"; the newest check for a game build failed ({printable(update['failure'])})"
     return text
 
 
