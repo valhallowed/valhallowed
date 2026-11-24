@@ -68,3 +68,12 @@ def test_a_one_off_that_outlasts_its_timeout_is_killed() -> None:
     with pytest.raises(DockerTimeout, match=r"did not finish within 0\.2 s"):
         Cli(io.StringIO()).run(["-c", "exec sleep 30"], 0.2)
     assert time.monotonic() - started < 10
+
+
+@pytest.mark.usefixtures("shell")
+def test_a_one_off_killed_while_a_process_it_left_holds_its_pipes_still_ends(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(docker, "READ_AFTER_S", 0.5)
+    started = time.monotonic()
+    with pytest.raises(DockerTimeout):
+        Cli(io.StringIO()).run(["-c", "sleep 8 & exec sleep 30"], 0.2)
+    assert time.monotonic() - started < 4

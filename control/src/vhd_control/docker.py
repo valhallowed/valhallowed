@@ -20,6 +20,9 @@ STREAM_TIMEOUT_S = 1800
 # read at most this long.
 ERROR_LINES = 5
 LINE_MAX = 1 << 16
+# How long vhd reads a one-off's output once its command has ended: a process the command left may
+# hold its pipes open for as long as it runs.
+READ_AFTER_S = 5
 
 
 class DockerError(Exception):
@@ -83,29 +86,36 @@ class Cli:
         err = self._err or sys.stderr
         output: list[str] = []
         errors: deque[str] = deque(maxlen=ERROR_LINES)
-        with subprocess.Popen(  # noqa: S603 - docker, with arguments vhd built
+        process = subprocess.Popen(  # noqa: S603 - docker, with arguments vhd built
             [DOCKER, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace"
-        ) as process:
-            stdout, stderr = process.stdout, process.stderr
-            if stdout is None or stderr is None:
-                raise DockerError("docker gave vhd no pipes to read")
-            readers = [
-                threading.Thread(target=_read, args=(stdout, output.append)),
-                threading.Thread(target=_relay, args=(stderr, err, errors)),
-            ]
+        )
+        stdout, stderr = process.stdout, process.stderr
+        if stdout is None or stderr is None:
+            process.kill()
+            process.wait()
+            raise DockerError("docker gave vhd no pipes to read")
+        readers = [
+            threading.Thread(target=_read, args=(stdout, output.append), daemon=True),
+            threading.Thread(target=_relay, args=(stderr, err, errors), daemon=True),
+        ]
+        for reader in readers:
+            reader.start()
+        try:
+            status = process.wait(timeout=timeout_s)
+        except subprocess.TimeoutExpired as error:
+            process.kill()
+            raise DockerTimeout(f"docker {' '.join(args)} did not finish within {timeout_s:g} s") from error
+        except BaseException:
+            process.kill()
+            raise
+        finally:
             for reader in readers:
-                reader.start()
-            try:
-                status = process.wait(timeout=timeout_s)
-            except subprocess.TimeoutExpired as error:
-                process.kill()
-                raise DockerTimeout(f"docker {' '.join(args)} did not finish within {timeout_s:g} s") from error
-            except BaseException:
-                process.kill()
-                raise
-            finally:
-                for reader in readers:
-                    reader.join()
+                reader.join(READ_AFTER_S)
+            # Closing a pipe waits for a read of it to end, so one a reader still reads stays open.
+            if not any(reader.is_alive() for reader in readers):
+                stdout.close()
+                stderr.close()
+            process.wait()
         return Ran(status, "".join(output), tuple(errors))
 
 
