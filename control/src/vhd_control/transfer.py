@@ -35,6 +35,8 @@ from pathlib import Path, PurePosixPath
 from types import FrameType
 from typing import Any, Literal, NoReturn, TextIO
 
+from jsonschema import Draft202012Validator
+
 from vhd_control import layout, manifest
 from vhd_control.apply import LOCKED_DOWN_FLAGS, inspect_host, make_backup_folders, only_run, pull_missing
 from vhd_control.docker import DockerError, DockerTimeout, OneOff
@@ -154,12 +156,16 @@ class Transfer:
 
     def export_backup(self, world: str, backup: str | None) -> None:
         """Copy one of the world's backups, the newest unless one is named, into a folder of its own in
-        the install folder, in the layout the game reads, and give it to the install folder's owner."""
-        settings = manifest.load(self.install, self.schemas)
-        _in_manifest(settings, world)
+        the install folder, in the layout the game reads, and give it to the install folder's owner.
+        Any world with a save name may have backups, one the manifest dropped among them: they stay
+        where the world's container mounted them, which the manifest names only until vhd apply has
+        created one."""
+        if not self._fits("schema/manifest.schema.json", ("$defs", "save_name"), world):
+            raise Refused(f"{world} is no save name: 1 to 64 letters, digits, spaces, hyphens and underscores")
         host = inspect_host(self.docker, self.hostname, self.install, "export")
-        backups = backups_folder(settings.backups.path, host)
         with _stopped_as_interrupted(), only_run(self.generations):
+            mounted = Store(self.generations).load().backups_applied
+            backups = backups_folder(mounted or manifest.load(self.install, self.schemas).backups.path, host)
             user = self._user(host)
             target, made = _export_folder(self.install, world, host.owner, user)
             try:
@@ -184,6 +190,13 @@ class Transfer:
             "the game reads.",
             file=self.out,
         )
+
+    def _fits(self, document: str, at: tuple[str, ...], value: str) -> bool:
+        """Whether value meets the schema at that place in a document the release ships."""
+        schema: Any = self.schemas.document(document)
+        for key in at:
+            schema = schema[key]
+        return Draft202012Validator(schema).is_valid(value)
 
     def _user(self, host: Host) -> _User:
         """The game runtime image's own user, as the image says, so its Dockerfile alone names the uid.

@@ -15,6 +15,7 @@ from vhd_control import cli, layout
 from vhd_control.apply import MAKE_BACKUP_FOLDERS, Refused
 from vhd_control.daemon import Daemon
 from vhd_control.docker import DockerError, DockerTimeout, Ran
+from vhd_control.naming import child_id
 from vhd_control.reconcile import Restore
 from vhd_control.status import StatusBook
 from vhd_control.store import Store
@@ -574,6 +575,29 @@ def test_an_export_that_outlasts_its_timeout_is_stopped_and_leaves_nothing(trans
     with pytest.raises(TransferRefused, match=f"vhd export did not finish within {TIMEOUT_S} s, so vhd stopped it$"):
         transfers.export_backup()
     assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]
+    assert not (transfers.install / "exports").exists()
+
+
+def test_an_export_takes_a_world_the_manifest_dropped_from_where_its_container_mounted_its_backups(
+    transfers: Transfers,
+) -> None:
+    store = Store(transfers.volume)
+    with store.locked():
+        state = store.load()
+        state.backups_applied = "/mnt/old-disk/backups"
+        store.save(state)
+    transfers.export_backup(world="Hollowmere")
+
+    [(args, _)] = transfers.docker.runs
+    assert mounts(args)["/backups"]["source"] == f"/mnt/old-disk/backups/{child_id('Hollowmere')}"
+    assert args[-2:] == ["export", "Hollowmere"]
+
+
+@pytest.mark.parametrize("world", ["../Meadowfold", "-x", "", "Meadow/fold"])
+def test_an_export_refuses_what_is_no_save_name_before_anything_runs(transfers: Transfers, world: str) -> None:
+    with pytest.raises(TransferRefused, match="is no save name"):
+        transfers.export_backup(world=world)
+    assert transfers.docker.runs == []
     assert not (transfers.install / "exports").exists()
 
 
