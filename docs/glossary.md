@@ -129,7 +129,8 @@ warning in status, never a silent failure. A port already taken shows at
 **Import** — An operator action that takes a 1.0+ save the server manager put
 in the install folder, validates it, keeps it as a backup of its world and
 restores it. `vhd import` runs the game runtime's image to validate and keep
-it, sandboxed, and asks for the restore as the control API does.
+it, sandboxed, and writes the same restore record the control API's restore
+writes, without waiting for the world's runtime to report the backup.
 
 **Ingress** — Where settings, secrets and operator actions enter VHD from
 outside. There is exactly one, and the control plane owns it.
@@ -179,10 +180,10 @@ order, tracked as a GitHub milestone. It lands in one or more pull requests.
 newest commit against the newest game build. A candidate needs a recent pass
 of it.
 
-**Operator action** — A one-off request through the control plane, such as
+**Operator action** — A one-off request to the control plane, such as
 restoring a backup, importing or exporting a world, or reading logs: through
-the control API, or, for an import or an export, through `vhd` with the
-server manager's access to Docker. Validated like the manifest.
+the control API, or, for an import or an export, through its CLI, `vhd`.
+Validated there, like the manifest.
 
 **Pending change** — A validated change waiting until it can apply: a
 game-server restart, a restore or an import while players are online, or a
