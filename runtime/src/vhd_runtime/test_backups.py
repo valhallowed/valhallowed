@@ -310,14 +310,16 @@ def test_prune_counts_no_import_whose_record_cannot_be_read_or_breaks_its_contra
     store = tmp_path / "backups"
     store.mkdir()
     times = [NOW - timedelta(hours=hours) for hours in (3, 2, 1, 0)]
-    backed_up(store, tmp_path, dict.fromkeys(times, "import"))
+    backed_up(store, tmp_path, dict(zip(times, ["import", "import", "import", "runtime"], strict=True)))
     name = [when.strftime(backups.NAME_FORMAT) for when in times]
+    # Newer than the one valid import: each would be kept in its place if it counted as one.
     (store / name[2] / backups.RECORD).write_text("{not json")
     broken = json.loads((store / name[1] / backups.RECORD).read_text())
-    broken["source"] = "elsewhere"
+    # It says import, but breaks its contract elsewhere.
+    broken["save"] = "seven"
     (store / name[1] / backups.RECORD).write_text(json.dumps(broken))
 
-    assert backups.prune(kept_in(store), keep=1, keep_daily=0, now=NOW) == ([name[3]], None)
+    assert backups.prune(kept_in(store), keep=1, keep_daily=0, now=NOW) == ([name[3], name[0]], None)
 
 
 def test_prune_keeps_the_newest_import_beside_the_backup_a_restore_asks_for(tmp_path: Path) -> None:
