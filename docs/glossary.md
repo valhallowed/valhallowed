@@ -183,7 +183,7 @@ of it.
 **Operator action** — A one-off request to the control plane, such as
 restoring a backup, importing or exporting a world, or reading logs: through
 the control API, or, for an import or an export, through its CLI, `vhd`.
-Validated there, like the manifest.
+Validated by the control plane, like the manifest.
 
 **Pending change** — A validated change waiting until it can apply: a
 game-server restart, a restore or an import while players are online, or a
