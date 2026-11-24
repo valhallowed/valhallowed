@@ -6,7 +6,7 @@ import json
 import os
 import re
 import signal
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -126,16 +126,11 @@ class TransferDocker(FakeDocker):
 class Transfers(Setup):
     def __init__(self, root: Path) -> None:
         super().__init__(root)
-        # Whatever the runner's umask: an import takes only a way its owner alone can change.
-        self.install.chmod(0o755)
         self.docker: TransferDocker = TransferDocker(self.install)
         (self.install / "backups" / MEADOWFOLD).mkdir(parents=True)
         save = self.install / "incoming" / "Meadowfold"
         save.mkdir(parents=True)
-        for folder in (save.parent, save):
-            folder.chmod(0o755)
         (save / "_main.41.ok").write_text("ok")
-        (save / "_main.41.ok").chmod(0o644)
 
     def transfer(self) -> Transfer:
         return Transfer(
@@ -155,6 +150,17 @@ class Transfers(Setup):
 
     def restores(self) -> dict[str, Restore]:
         return Store(self.volume).load().restores
+
+
+@pytest.fixture(autouse=True)
+def owner_alone_writes() -> Iterator[None]:
+    """Whatever the runner's umask, every folder a test makes is writable by its owner alone, as an
+    import takes: a umask of 002, common on a desktop, would have it refused."""
+    before = os.umask(0o022)
+    try:
+        yield
+    finally:
+        os.umask(before)
 
 
 @pytest.fixture
