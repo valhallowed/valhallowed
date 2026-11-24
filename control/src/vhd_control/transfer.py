@@ -108,6 +108,9 @@ class Transfer:
         host = inspect_host(self.docker, self.hostname, self.install, "import")
         source = posixpath.join(host.install, *parts)
         backups = backups_folder(settings.backups.path, host)
+        # Compared as written, links unresolved: a link on the way is refused already, and so is a
+        # part a world's runtime could write, such as its own backups folder (_folder). This says why
+        # for a path that names the backups folder outright.
         if posixpath.commonpath([source, backups]) == backups:
             raise Refused(
                 f"{path} is in the backups folder, which the worlds' runtimes write; move the save into a folder "
@@ -364,20 +367,29 @@ def _relative(path: str) -> tuple[str, ...]:
 
 def _folder(install: Path, parts: tuple[str, ...], path: str) -> Path:
     """The folder in vhd's view of the install folder, once no part of the way to it is a link,
-    since Docker's mount would follow one wherever it points."""
+    since Docker's mount would follow one wherever it points, and each part is a folder only the
+    install folder's owner or root can change. vhd checks the way before Docker mounts it, not at
+    once; that holds because no one else can put a link in its place meanwhile."""
+    owner = install.stat().st_uid
     folder = install
     for part in parts:
         folder /= part
         try:
-            mode = folder.lstat().st_mode
+            info = folder.lstat()
         except FileNotFoundError:
             raise Refused(f"the install folder holds no {path}") from None
         except OSError as error:
             raise Refused(f"cannot read {path} in the install folder: {error.strerror or error}") from error
-        if stat.S_ISLNK(mode):
-            raise Refused(f"{folder.relative_to(install)} in the install folder is a link; name the folder itself")
-        if not stat.S_ISDIR(mode):
-            raise Refused(f"{folder.relative_to(install)} in the install folder is no folder")
+        shown = folder.relative_to(install)
+        if stat.S_ISLNK(info.st_mode):
+            raise Refused(f"{shown} in the install folder is a link; name the folder itself")
+        if not stat.S_ISDIR(info.st_mode):
+            raise Refused(f"{shown} in the install folder is no folder")
+        if info.st_uid not in (owner, 0) or info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+            raise Refused(
+                f"{shown} in the install folder can be changed by others than the install folder's owner; make "
+                f"it the owner's, writable by the owner alone, as: chmod go-w {shown}"
+            )
     return folder
 
 

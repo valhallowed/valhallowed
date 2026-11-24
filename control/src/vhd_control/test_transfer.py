@@ -20,7 +20,7 @@ from vhd_control.reconcile import Restore
 from vhd_control.status import StatusBook
 from vhd_control.store import Store
 from vhd_control.test_apply import IMAGES, FakeDocker, Setup
-from vhd_control.test_daemon import ASHWAKE, MEADOWFOLD, REPO, SCHEMAS
+from vhd_control.test_daemon import ASHWAKE, MEADOWFOLD, REPO, SCHEMAS, TWO_WORLDS
 from vhd_control.transfer import (
     IMPORT_FOLDER,
     MEMORY,
@@ -302,6 +302,47 @@ def test_an_import_refuses_a_folder_outside_or_unfit_before_anything_runs(
         transfers.import_save(path=path)
     assert transfers.docker.runs == []
     assert transfers.docker.prepared == []
+
+
+@pytest.mark.parametrize("mode", [0o775, 0o757, 0o777])
+def test_an_import_refuses_a_part_of_its_path_others_could_change_before_docker_mounts_it(
+    transfers: Transfers, mode: int
+) -> None:
+    (transfers.install / "incoming").chmod(mode)
+    with pytest.raises(
+        TransferRefused,
+        match=r"incoming in the install folder can be changed by others than the install folder's owner; .*"
+        r"chmod go-w incoming$",
+    ):
+        transfers.import_save()
+    assert transfers.docker.runs == []
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="giving a folder to another user takes root")
+def test_an_import_refuses_a_part_of_its_path_another_user_owns(transfers: Transfers) -> None:
+    os.chown(transfers.install / "incoming", 4242, 4242)
+    with pytest.raises(TransferRefused, match="incoming in the install folder can be changed by others"):
+        transfers.import_save()
+    os.chown(transfers.install / "incoming", 0, 0)
+    transfers.import_save()
+    assert len(transfers.docker.runs) == 1
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="giving a folder to another user takes root")
+def test_a_path_into_a_worlds_backups_folder_through_another_name_is_refused_by_its_owner(
+    transfers: Transfers,
+) -> None:
+    # The manifest names the backups folder through a link, so the path, compared as written,
+    # lies outside it; the world's own folder there is its runtime's, so the import is refused.
+    (transfers.install / "manifest.toml").write_text(TWO_WORLDS + '\n[backups]\npath = "store"\n')
+    real = transfers.install / "real" / MEADOWFOLD
+    real.mkdir(parents=True)
+    (transfers.install / "store").symlink_to(transfers.install / "real")
+    (real / "incoming").mkdir()
+    os.chown(real, 10001, 10001)
+    with pytest.raises(TransferRefused, match=f"real/{MEADOWFOLD} in the install folder can be changed by others"):
+        transfers.import_save(path=f"real/{MEADOWFOLD}/incoming")
+    assert transfers.docker.runs == []
 
 
 def test_an_import_refuses_a_link_at_any_part_of_its_path(transfers: Transfers) -> None:
