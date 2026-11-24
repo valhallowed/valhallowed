@@ -113,10 +113,9 @@ def test_status_names_each_worlds_game_build_one_that_waits_and_why_a_check_fail
     assert out.getvalue().splitlines() == [
         "generation 4",
         "Ashwake: running, 1 player(s), game build 25909431",
-        "Frostmere: running, 1 player(s), game build 25909431; the newest check for a game build failed"
-        " (FAILED (No Connection)?[2J)",
+        "Frostmere: running, 1 player(s), game build 25909431; game update: FAILED (No Connection)?[2J",
         "Meadowfold: running, 1 player(s), game build 25909431; game build 26266951 waits for an empty world or the"
-        " next start, as the update policy says; the newest check for a game build failed (FAILED (No Connection))",
+        " next start, as the update policy says; game update: FAILED (No Connection)",
     ]
 
 

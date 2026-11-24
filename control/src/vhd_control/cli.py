@@ -226,12 +226,12 @@ def _restore(kept: dict[str, str] | None, acted: dict[str, str] | None) -> str:
 
 def _update(update: dict[str, str]) -> str:
     """What a world's runtime found checking Steam's public game build, for its status line: a build
-    that waits, and why the newest check failed."""
+    that waits, and why the newest check failed or the world has not restarted for it."""
     text = ""
     if "build" in update:
         text += f"; game build {update['build']} waits for an empty world or the next start, as the update policy says"
     if "failure" in update:
-        text += f"; the newest check for a game build failed ({printable(update['failure'])})"
+        text += f"; game update: {printable(update['failure'])}"
     return text
 
 
