@@ -25,11 +25,15 @@ import os
 import posixpath
 import secrets
 import shutil
+import signal
 import stat
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, Literal, TextIO
+from types import FrameType
+from typing import Any, Literal, NoReturn, TextIO
 
 from vhd_control import layout, manifest
 from vhd_control.apply import LOCKED_DOWN_FLAGS, inspect_host, make_backup_folders, only_run, pull_missing
@@ -58,6 +62,8 @@ STOP_GRACE_S = 60
 # A copy in 1 MiB blocks and a contract check need little of either.
 MEMORY = "512m"
 PIDS = 64
+# What stops vhd itself: a Ctrl-C, or the SIGTERM tini forwards when Docker stops vhd's container.
+STOP_SIGNALS = {signal.SIGINT, signal.SIGTERM}
 # What the image's own user is, as the image says: its uid, its primary gid, and every gid it holds.
 WHO = "id -u && id -g && id -G"
 
@@ -103,7 +109,7 @@ class Transfer:
             )
         cid = child_id(world)
         store = Store(self.generations, host.owner)
-        with only_run(self.generations):
+        with _stopped_as_interrupted(), only_run(self.generations):
             user = self._user(host)
             try:
                 unreadable = _unreadable(folder, user)
@@ -153,7 +159,7 @@ class Transfer:
         _in_manifest(settings, world)
         host = inspect_host(self.docker, self.hostname, self.install, "export")
         backups = backups_folder(settings.backups.path, host)
-        with only_run(self.generations):
+        with _stopped_as_interrupted(), only_run(self.generations):
             user = self._user(host)
             target, made = _export_folder(self.install, world, host.owner, user)
             try:
@@ -230,12 +236,17 @@ class Transfer:
         Each step is tried whatever the one before did, and one that failed counts only while the
         container is still there. Returns how each such step failed."""
         failed: list[str] = []
-        for args in (["stop", "--timeout", str(STOP_GRACE_S), name], ["rm", "--force", name]):
-            try:
-                self.docker.output(args)
-            except DockerError as error:
-                if self._there(name):
-                    failed.append(str(error))
+        # Held until both steps are tried: a second Ctrl-C must not leave the container behind.
+        held = signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
+        try:
+            for args in (["stop", "--timeout", str(STOP_GRACE_S), name], ["rm", "--force", name]):
+                try:
+                    self.docker.output(args)
+                except DockerError as error:
+                    if self._there(name):
+                        failed.append(str(error))
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, held)
         return failed
 
     def _there(self, name: str) -> bool:
@@ -267,6 +278,22 @@ class Transfer:
         if status != 0:
             raise Refused(f"the game runtime image said vhd {action} was done, but exited with {status}")
         return dict(result)
+
+
+@contextmanager
+def _stopped_as_interrupted() -> Iterator[None]:
+    """A SIGTERM stops vhd as a Ctrl-C does, so what stops vhd stops the action's container too and
+    removes what vhd made, rather than end vhd where it stands."""
+    previous = signal.signal(signal.SIGTERM, _interrupt)
+    try:
+        yield
+    finally:
+        if previous is not None:
+            signal.signal(signal.SIGTERM, previous)
+
+
+def _interrupt(signum: int, frame: FrameType | None) -> NoReturn:
+    raise KeyboardInterrupt
 
 
 def _in_manifest(settings: Settings, world: str) -> None:

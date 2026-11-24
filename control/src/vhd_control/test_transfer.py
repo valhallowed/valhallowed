@@ -5,6 +5,7 @@ import itertools
 import json
 import os
 import re
+import signal
 from collections.abc import Callable
 from pathlib import Path
 
@@ -72,6 +73,7 @@ class TransferDocker(FakeDocker):
         self.failing: set[str] = set()
         self.there = True
         self.listed: list[list[str]] = []
+        self.on_stop: Callable[[list[str]], None] = lambda args: None
         # What the action's container does with its arguments: its exit status and output.
         self.act: Callable[[list[str]], tuple[int, str]] = self.done
 
@@ -81,6 +83,7 @@ class TransferDocker(FakeDocker):
             return f"{uid}\n{gid}\n{gid}\n"
         if args[0] in ("stop", "rm"):
             self.stopped.append(args)
+            self.on_stop(args)
             if args[0] in self.failing:
                 raise DockerError(f"docker {args[0]}: the daemon did not answer")
             return ""
@@ -443,6 +446,29 @@ def test_an_interrupted_import_stops_its_container_too(transfers: Transfers) -> 
         transfers.import_save()
     assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]
     assert transfers.restores() == {}
+
+
+def test_a_vhd_stopped_by_sigterm_stops_its_actions_container_and_removes_what_it_made(transfers: Transfers) -> None:
+    before = signal.getsignal(signal.SIGTERM)
+
+    def terminated(args: list[str]) -> tuple[int, str]:
+        os.kill(os.getpid(), signal.SIGTERM)
+        return transfers.docker.done(args)
+
+    transfers.docker.act = terminated
+    with pytest.raises(KeyboardInterrupt):
+        transfers.export_backup()
+    assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]
+    assert not (transfers.install / "exports").exists()
+    assert signal.getsignal(signal.SIGTERM) == before
+
+
+def test_a_second_ctrl_c_while_the_container_stops_still_removes_it(transfers: Transfers) -> None:
+    transfers.docker.act = hang
+    transfers.docker.on_stop = lambda args: os.kill(os.getpid(), signal.SIGINT) if args[0] == "stop" else None
+    with pytest.raises(KeyboardInterrupt):
+        transfers.import_save()
+    assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]
 
 
 def test_the_timeout_is_well_within_the_age_after_which_an_imports_leftovers_are_removed() -> None:
