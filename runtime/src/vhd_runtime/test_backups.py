@@ -236,6 +236,11 @@ def test_a_chunks_file_that_is_no_regular_file_fails_closed_without_waiting(
     assert list(store.iterdir()) == []
 
 
+def kept_in(store: Path, spare: str | None = None) -> Place:
+    """The backups in store, as pruning reads them."""
+    return Place(store.parent / "world", store, "Meadowfold", RECORD, spare)
+
+
 def held(store: Path, *times: datetime) -> None:
     for when in times:
         backup = store / when.strftime(backups.NAME_FORMAT)
@@ -251,7 +256,7 @@ def test_prune_keeps_the_newest_and_the_newest_of_each_day(tmp_path: Path) -> No
     held(store, *times)
     (store / "notes.txt").write_text("the server manager's own")
 
-    left, failure = backups.prune(store, keep=2, keep_daily=3, now=NOW)
+    left, failure = backups.prune(kept_in(store), keep=2, keep_daily=3, now=NOW)
 
     assert failure is None
     assert left == ["20261118T180000Z", "20261118T120000Z", "20261117T180000Z", "20261116T180000Z"]
@@ -263,15 +268,116 @@ def test_prune_never_removes_the_newest(tmp_path: Path) -> None:
     store = tmp_path / "backups"
     store.mkdir()
     held(store, NOW - timedelta(hours=1), NOW)
-    assert backups.prune(store, keep=1, keep_daily=0, now=NOW) == ([NOW_NAME], None)
+    assert backups.prune(kept_in(store), keep=1, keep_daily=0, now=NOW) == ([NOW_NAME], None)
 
 
 def test_prune_spares_the_backup_a_restore_asks_for(tmp_path: Path) -> None:
     store = tmp_path / "backups"
     store.mkdir()
     held(store, NOW - timedelta(hours=2), NOW - timedelta(hours=1), NOW)
-    left, _ = backups.prune(store, keep=1, keep_daily=0, now=NOW, spare="20261118T184012Z")
+    left, _ = backups.prune(kept_in(store, "20261118T184012Z"), keep=1, keep_daily=0, now=NOW)
     assert left == [NOW_NAME, "20261118T184012Z"]
+
+
+def backed_up(store: Path, tmp_path: Path, sources: dict[datetime, str | None]) -> None:
+    """A backup of one save taken at each time, its record's source as given: None leaves none, as
+    a record from before the source was written."""
+    folder = tmp_path / "world"
+    write_save(folder, 7, [{"chunk": 1, "size": 64, "version": 1, "objects": 5}])
+    for when, source in sources.items():
+        backup = take(Place(folder, store, "Meadowfold", RECORD), when)
+        assert backup is not None
+        path = store / backup.name / backups.RECORD
+        record = json.loads(path.read_text())
+        del record["source"]
+        if source is not None:
+            record["source"] = source
+        RECORD.validate(record)
+        path.write_text(json.dumps(record))
+
+
+def test_prune_keeps_the_newest_import_until_a_later_one_exists(tmp_path: Path) -> None:
+    store = tmp_path / "backups"
+    store.mkdir()
+    times = [NOW - timedelta(hours=hours) for hours in (4, 3, 2, 1, 0)]
+    backed_up(store, tmp_path, dict(zip(times, ["import", "runtime", "import", None, "runtime"], strict=True)))
+    name = [when.strftime(backups.NAME_FORMAT) for when in times]
+
+    assert backups.prune(kept_in(store), keep=1, keep_daily=0, now=NOW) == ([name[4], name[2]], None)
+
+
+def test_prune_counts_no_import_whose_record_cannot_be_read_or_breaks_its_contract(tmp_path: Path) -> None:
+    store = tmp_path / "backups"
+    store.mkdir()
+    times = [NOW - timedelta(hours=hours) for hours in (3, 2, 1, 0)]
+    backed_up(store, tmp_path, dict(zip(times, ["import", "import", "import", "runtime"], strict=True)))
+    name = [when.strftime(backups.NAME_FORMAT) for when in times]
+    # Newer than the one valid import: each would be kept in its place if it counted as one.
+    (store / name[2] / backups.RECORD).write_text("{not json")
+    broken = json.loads((store / name[1] / backups.RECORD).read_text())
+    # It says import, but breaks its contract elsewhere.
+    broken["save"] = "seven"
+    (store / name[1] / backups.RECORD).write_text(json.dumps(broken))
+
+    assert backups.prune(kept_in(store), keep=1, keep_daily=0, now=NOW) == ([name[3], name[0]], None)
+
+
+def test_prune_reads_each_record_once_and_forgets_the_backups_it_no_longer_holds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = tmp_path / "backups"
+    store.mkdir()
+    times = [NOW - timedelta(hours=hours) for hours in (2, 1, 0)]
+    backed_up(store, tmp_path, dict.fromkeys(times, "runtime"))
+    name = [when.strftime(backups.NAME_FORMAT) for when in times]
+    read: list[str] = []
+    imported = backups._imported
+
+    def counting(backup: Path, contract: Any) -> bool | None:
+        read.append(backup.name)
+        return imported(backup, contract)
+
+    monkeypatch.setattr(backups, "_imported", counting)
+    assert backups.prune(kept_in(store), keep=3, keep_daily=0, now=NOW) == ([name[2], name[1], name[0]], None)
+    assert backups.prune(kept_in(store), keep=2, keep_daily=0, now=NOW) == ([name[2], name[1]], None)
+    assert read == [name[2], name[1], name[0]]
+    backups.prune(kept_in(store), keep=2, keep_daily=0, now=NOW)
+    assert set(backups._IMPORTS[store]) == {name[2], name[1]}
+
+
+def test_prune_reads_a_record_again_while_it_cannot_be_read_at_all(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = tmp_path / "backups"
+    store.mkdir()
+    times = [NOW - timedelta(hours=hours) for hours in (2, 1, 0)]
+    backed_up(store, tmp_path, dict(zip(times, ["import", "import", "runtime"], strict=True)))
+    name = [when.strftime(backups.NAME_FORMAT) for when in times]
+    read_text = Path.read_text
+
+    def failing(path: Path, *args: Any, **kwargs: Any) -> str:
+        if path == store / name[1] / backups.RECORD:
+            raise OSError(5, "Input/output error")
+        return read_text(path, *args, **kwargs)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(Path, "read_text", failing)
+        backups.prune(kept_in(store), keep=3, keep_daily=0, now=NOW)
+    assert name[1] not in backups._IMPORTS[store]
+    # Read now, it is the newest import, and the older one prunes.
+    assert backups.prune(kept_in(store), keep=1, keep_daily=0, now=NOW) == ([name[2], name[1]], None)
+
+
+def test_prune_keeps_the_newest_import_beside_the_backup_a_restore_asks_for(tmp_path: Path) -> None:
+    store = tmp_path / "backups"
+    store.mkdir()
+    times = [NOW - timedelta(hours=hours) for hours in (3, 2, 1, 0)]
+    backed_up(store, tmp_path, dict(zip(times, ["runtime", "import", "runtime", "runtime"], strict=True)))
+    name = [when.strftime(backups.NAME_FORMAT) for when in times]
+
+    left, _ = backups.prune(kept_in(store, name[0]), keep=1, keep_daily=0, now=NOW)
+
+    assert left == [name[3], name[1], name[0]]
 
 
 def test_a_folder_without_its_record_is_no_backup(tmp_path: Path) -> None:
@@ -279,7 +385,7 @@ def test_a_folder_without_its_record_is_no_backup(tmp_path: Path) -> None:
     store.mkdir()
     (store / NOW_NAME).mkdir()
     assert backups.names(store, NOW) == []
-    assert backups.prune(store, keep=1, keep_daily=0, now=NOW) == ([], None)
+    assert backups.prune(kept_in(store), keep=1, keep_daily=0, now=NOW) == ([], None)
     assert (store / NOW_NAME).exists()
 
 
@@ -541,7 +647,7 @@ def test_a_backup_that_cannot_be_removed_stays_listed_and_says_why(tmp_path: Pat
     blocked.mkdir()
     (blocked / "file").write_text("in the way")
 
-    left, failure = backups.prune(store, keep=1, keep_daily=0, now=NOW)
+    left, failure = backups.prune(kept_in(store), keep=1, keep_daily=0, now=NOW)
     assert left == [NOW_NAME, old.strftime(backups.NAME_FORMAT)]
     assert failure == (
         f"cannot remove backup {old.strftime(backups.NAME_FORMAT)} from the world's backups folder: Directory not empty"
@@ -557,7 +663,7 @@ def test_a_removal_cut_short_leaves_no_backup_behind(tmp_path: Path, monkeypatch
         raise OSError(5, "Input/output error")
 
     monkeypatch.setattr(shutil, "rmtree", cut_short)
-    left, failure = backups.prune(store, keep=1, keep_daily=0, now=NOW)
+    left, failure = backups.prune(kept_in(store), keep=1, keep_daily=0, now=NOW)
     assert left == [NOW_NAME]
     assert failure is not None and "Input/output error" in failure
 
@@ -670,6 +776,6 @@ def test_names_and_pruning_leave_an_imports_staging_alone(tmp_path: Path) -> Non
     held(store, NOW - timedelta(days=2), NOW - timedelta(days=1), NOW)
     under_way = staging(store, 0)
     assert backups.names(store, NOW) == [NOW_NAME, "20261117T204012Z", "20261116T204012Z"]
-    assert backups.prune(store, keep=1, keep_daily=0, now=NOW) == ([NOW_NAME], None)
+    assert backups.prune(kept_in(store), keep=1, keep_daily=0, now=NOW) == ([NOW_NAME], None)
     backups.clear_partials(store)
     assert sorted(p.name for p in store.iterdir()) == sorted([NOW_NAME, under_way.name])

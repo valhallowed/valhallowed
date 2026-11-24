@@ -536,6 +536,14 @@ def test_vhd_must_run_through_compose_from_the_install_folder(setup: Setup) -> N
         setup.apply()
 
 
+def test_an_install_folder_whose_path_holds_a_colon_is_refused_before_anything_runs(setup: Setup) -> None:
+    setup.docker.mounts["/install"] = "/srv/vhd:2"
+    with pytest.raises(Refused, match="holds a ':'"):
+        setup.apply()
+    assert setup.docker.prepared == []
+    assert setup.docker.streamed == []
+
+
 def test_a_port_change_compose_cannot_apply_is_rolled_back(setup: Setup) -> None:
     setup.apply()
     setup.docker.running = [MEADOWFOLD, ASHWAKE]
@@ -767,7 +775,7 @@ def test_a_runtime_waiting_for_an_empty_world_still_needs_confirmation_after_a_l
 def test_a_second_apply_while_one_runs_is_refused(setup: Setup) -> None:
     with (setup.volume / ".apply.lock").open("a") as held:
         fcntl.flock(held, fcntl.LOCK_EX)
-        with pytest.raises(Refused, match="another vhd apply is running"):
+        with pytest.raises(Refused, match="another vhd apply, vhd import or vhd export is running"):
             setup.apply()
 
 

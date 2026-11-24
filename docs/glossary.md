@@ -68,7 +68,8 @@ reports on: a game runtime or a data-layer service. Compose runs it (G13).
 
 **CLI** — `vhd`, the control plane's command-line client, run from the control
 plane's image. `vhd apply` brings an install's containers in line with its
-current generation. It runs as a one-shot container that only the server
+current generation, and `vhd import` and `vhd export` move a world's save in
+and out of its backups. Each runs as a one-shot container that only the server
 manager starts, with the Docker socket for that run only (G13).
 
 **Command** — A request to change the game. Created only by the broker,
@@ -94,7 +95,9 @@ built-in service. Every default works with no setup.
 the manifest, secrets and defaults. Children read only this.
 
 **Export** — An operator action that copies one of a world's backups, the
-newest by default, into the install folder in the layout the game reads.
+newest by default, into a folder of its own in the install folder, in the
+layout the game reads, owned by the install folder's owner. `vhd export` runs
+the game runtime's image to copy it, sandboxed.
 
 **Exposure profile** — The set of ports and addresses an install opens beyond
 the host: LAN, public direct, public with TLS, or game only. Every port in a
@@ -125,7 +128,9 @@ warning in status, never a silent failure. A port already taken shows at
 
 **Import** — An operator action that takes a 1.0+ save the server manager put
 in the install folder, validates it, keeps it as a backup of its world and
-restores it.
+restores it. `vhd import` runs the game runtime's image to validate and keep
+it, sandboxed, and writes the same restore record the control API's restore
+writes, without waiting for the world's runtime to report the backup.
 
 **Ingress** — Where settings, secrets and operator actions enter VHD from
 outside. There is exactly one, and the control plane owns it.
@@ -175,9 +180,10 @@ order, tracked as a GitHub milestone. It lands in one or more pull requests.
 newest commit against the newest game build. A candidate needs a recent pass
 of it.
 
-**Operator action** — A one-off request through the control API, such as
-restoring a backup, importing a world or reading logs. Validated like the
-manifest.
+**Operator action** — A one-off request to the control plane, such as
+restoring a backup, importing or exporting a world, or reading logs: through
+the control API, or, for an import or an export, through its CLI, `vhd`.
+Validated by the control plane, like the manifest.
 
 **Pending change** — A validated change waiting until it can apply: a
 game-server restart, a restore or an import while players are online, or a

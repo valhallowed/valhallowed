@@ -76,6 +76,10 @@ RESERVE = 1 << 30
 # ahead would otherwise stay newest, and drag every later name after it.
 AHEAD = timedelta(days=1)
 
+# Whether each backup's record says an import took it, by backups folder and backup name, as pruning
+# last found it (_newest_import).
+_IMPORTS: dict[Path, dict[str, bool]] = {}
+
 OK_FILE = re.compile(r"^_main\.([0-9]+)\.ok$")
 # The .chunks file, as the game writes it (Game facts): little-endian 42, the save's objects, the
 # chunks it names, then each chunk's index, size, version and objects.
@@ -157,7 +161,8 @@ def world_folder(saves: Path, world: str) -> Path:
 
 def tend(place: Place, settings: Settings, now: datetime, last: Saved | None, *, starting: bool = False) -> Tended:
     """One turn, off the supervisor's loop: back up the world's newest complete save unless the
-    newest backup holds it, then keep what the settings say, and the backup a restore asks for.
+    newest backup holds it, then keep what the settings say, the newest import and the backup a restore
+    asks for.
     Starting, it first clears copies a stop cut short and the staging of imports a kill cut short, and takes the
     save the newest backup holds from its record, so a save the game stopped with that a stop never
     backed up is backed up now.
@@ -173,7 +178,7 @@ def tend(place: Place, settings: Settings, now: datetime, last: Saved | None, *,
     except (BackupFailed, OSError) as error:
         backup, failure, take_failed = None, str(error), True
     newest = backup.saved if backup is not None else last
-    kept, pruned = prune(place.backups, settings.keep, settings.keep_daily, now, place.spare)
+    kept, pruned = prune(place, settings.keep, settings.keep_daily, now)
     return Tended(backup, kept, newest, failure or pruned or _ahead(place.backups, now), take_failed)
 
 
@@ -489,11 +494,8 @@ def _ahead(backups: Path, now: datetime) -> str | None:
 def last_saved(backups: Path, name: str, contract: Draft202012Validator) -> Saved | None:
     """The save a backup holds, from its record, or None if the record cannot be read or breaks its
     contract."""
-    try:
-        record = json.loads((backups / name / RECORD).read_text())
-    except (OSError, ValueError):
-        return None
-    if not isinstance(record, dict) or generation.breach(contract, record) is not None:
+    record = _record(backups, name, contract)
+    if record is None:
         return None
     save, written_ns = record.get("save"), record.get("written_ns")
     if type(save) is not int or type(written_ns) is not int:
@@ -501,18 +503,23 @@ def last_saved(backups: Path, name: str, contract: Draft202012Validator) -> Save
     return save, written_ns
 
 
-def prune(
-    backups: Path, keep: int, keep_daily: int, now: datetime, spare: str | None = None
-) -> tuple[list[str], str | None]:
+def prune(place: Place, keep: int, keep_daily: int, now: datetime) -> tuple[list[str], str | None]:
     """Remove the backups the settings no longer keep, oldest first: the newest keep stay, and the
     newest of each of the newest keep_daily days, in UTC, that hold one; the newest backup is
-    always among them, and so is spare, the backup a restore asks for. Each is renamed out of the
+    always among them, and so are the place's spare, the backup a restore asks for, and the newest
+    backup an import took. vhd asks for that import's restore as it keeps it, and the restore may
+    wait unhanded behind another change to the world for as long as that change waits; once a
+    later import exists, the older one prunes like any other backup. Each is renamed out of the
     backups first, so one cut short is never left as a backup. Returns the backups left, newest
     first, and why one could not be removed."""
+    backups = place.backups
     held = names(backups, now)
     kept = set(held[:keep])
-    if spare in held:
-        kept.add(spare)
+    if place.spare in held:
+        kept.add(place.spare)
+    imported = _newest_import(backups, held, place.contract)
+    if imported is not None:
+        kept.add(imported)
     days: dict[str, str] = {}
     for name in held:
         days.setdefault(name[:8], name)
@@ -529,6 +536,52 @@ def prune(
             why = error.strerror or error
             failure = failure or f"cannot remove backup {name} from the world's backups folder: {why}"
     return names(backups, now), failure
+
+
+def _record(backups: Path, name: str, contract: Draft202012Validator) -> dict[str, object] | None:
+    """A backup's record, or None if it cannot be read or breaks its contract."""
+    try:
+        return _checked(json.loads((backups / name / RECORD).read_text()), contract)
+    except (OSError, ValueError):
+        return None
+
+
+def _checked(record: object, contract: Draft202012Validator) -> dict[str, object] | None:
+    if not isinstance(record, dict) or generation.breach(contract, record) is not None:
+        return None
+    return record
+
+
+def _newest_import(backups: Path, held: list[str], contract: Draft202012Validator) -> str | None:
+    """The newest of the held backups whose record says an import took it. A record never changes
+    once its backup is named, so each verdict is kept for the process, for the names still held
+    alone, and a record is read again only while it cannot be read at all."""
+    listed = set(held)
+    known = {name: verdict for name, verdict in _IMPORTS.get(backups, {}).items() if name in listed}
+    _IMPORTS[backups] = known
+    for name in held:
+        if name not in known:
+            verdict = _imported(backups / name, contract)
+            if verdict is None:
+                continue
+            known[name] = verdict
+        if known[name]:
+            return name
+    return None
+
+
+def _imported(backup: Path, contract: Draft202012Validator) -> bool | None:
+    """Whether a backup's record says an import took it: False for a record that is no JSON or breaks
+    its contract, which says nothing, and None for one that cannot be read now."""
+    try:
+        text = (backup / RECORD).read_text()
+    except OSError:
+        return None
+    try:
+        record = _checked(json.loads(text), contract)
+    except ValueError:
+        return False
+    return record is not None and record.get("source") == "import"
 
 
 def clear_partials(backups: Path) -> None:

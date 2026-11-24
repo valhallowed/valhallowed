@@ -1,0 +1,929 @@
+import csv
+import fcntl
+import io
+import itertools
+import json
+import os
+import re
+import signal
+from collections.abc import Callable, Iterator
+from pathlib import Path
+
+import pytest
+
+from vhd_control import cli, layout
+from vhd_control.apply import MAKE_BACKUP_FOLDERS, Refused
+from vhd_control.daemon import Daemon
+from vhd_control.docker import DockerError, DockerTimeout, Ran
+from vhd_control.naming import child_id
+from vhd_control.reconcile import Restore
+from vhd_control.status import StatusBook
+from vhd_control.store import Store
+from vhd_control.test_apply import IMAGES, FakeDocker, Setup
+from vhd_control.test_daemon import ASHWAKE, MEADOWFOLD, REPO, SCHEMAS, TWO_WORLDS
+from vhd_control.transfer import (
+    IMPORT_FOLDER,
+    MEMORY,
+    PIDS,
+    STOP_GRACE_S,
+    TIMEOUT_S,
+    WHO,
+    Transfer,
+)
+from vhd_control.transfer import Refused as TransferRefused
+
+BACKUP = "20261124T101500Z"
+SAVE = {"number": 41, "objects": 1234, "written": "2026-11-18T19:40:11Z"}
+HOST_INSTALL = "/srv/vhd"
+
+
+def done(action: str, world: str = "Meadowfold", backup: str = BACKUP) -> str:
+    result = {"contract": 1, "action": action, "world": world, "outcome": "done", "backup": backup, "save": SAVE}
+    return json.dumps(result) + "\n"
+
+
+def refused(action: str, reason: str, world: str = "Meadowfold") -> str:
+    return json.dumps({"contract": 1, "action": action, "world": world, "outcome": "refused", "reason": reason}) + "\n"
+
+
+def mounts(args: list[str]) -> dict[str, dict[str, str]]:
+    """Each --mount, by its target: its fields, readonly as "true"."""
+    found: dict[str, dict[str, str]] = {}
+    for flag, value in itertools.pairwise(args):
+        if flag != "--mount":
+            continue
+        fields: dict[str, str] = {}
+        for field in next(csv.reader([value])):
+            key, _, setting = field.partition("=")
+            fields[key] = setting or "true"
+        found[fields["target"]] = fields
+    return found
+
+
+class TransferDocker(FakeDocker):
+    """FakeDocker, with the one-off containers vhd import and vhd export run."""
+
+    def __init__(self, install: Path) -> None:
+        super().__init__()
+        self.install = install
+        # The game runtime image's user: by default whoever runs the tests, so ownership can change.
+        self.user = (os.getuid(), os.getgid())
+        self.runs: list[tuple[list[str], float]] = []
+        # What the image says its user is, in place of self.user's ids: text, or a failure.
+        self.who: str | DockerError | None = None
+        self.asked_who: list[int] = []
+        self.stopped: list[list[str]] = []
+        # The stop's steps that fail, and the container's state when one does: "" once it is gone.
+        self.failing: set[str] = set()
+        self.there = "running"
+        self.listed: list[list[str]] = []
+        self.on_stop: Callable[[list[str]], None] = lambda args: None
+        # The last lines of the action's standard error.
+        self.errors: tuple[str, ...] = ()
+        # What the action's container does with its arguments: its exit status and output.
+        self.act: Callable[[list[str]], tuple[int, str]] = self.done
+
+    def output(self, args: list[str]) -> str:
+        if args[0] == "run" and WHO in args:
+            # How many commands had streamed, pulls among them, when the image was asked its user.
+            self.asked_who.append(len(self.streamed))
+            if isinstance(self.who, DockerError):
+                raise self.who
+            if self.who is not None:
+                return self.who
+            uid, gid = self.user
+            return f"{uid}\n{gid}\n{gid}\n"
+        if args[0] in ("stop", "rm"):
+            self.stopped.append(args)
+            self.on_stop(args)
+            if args[0] in self.failing:
+                raise DockerError(f"docker {args[0]}: the daemon did not answer")
+            return ""
+        if args[:2] == ["container", "ls"]:
+            self.listed.append(args)
+            return f"{self.there}\n" if self.there else ""
+        return super().output(args)
+
+    def run(self, args: list[str], timeout_s: float) -> Ran:
+        self.runs.append((args, timeout_s))
+        status, output = self.act(args)
+        return Ran(status, output, self.errors)
+
+    def own_view(self, host_path: str) -> Path:
+        """Where a host path under the install folder is in the tests' own view of it."""
+        assert host_path.startswith(HOST_INSTALL + "/")
+        return self.install / host_path.removeprefix(HOST_INSTALL + "/")
+
+    def done(self, args: list[str]) -> tuple[int, str]:
+        action, world = args[-2:] if args[-2] in ("import", "export") else args[-3:-1]
+        if action == "export":
+            saves = self.own_view(mounts(args)["/export"]["source"]) / "worlds_local" / world
+            saves.mkdir(parents=True)
+            (saves / "_main.41.ok").write_text("ok")
+        return 0, done(action, world)
+
+
+class Transfers(Setup):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.docker: TransferDocker = TransferDocker(self.install)
+        (self.install / "backups" / MEADOWFOLD).mkdir(parents=True)
+        save = self.install / "incoming" / "Meadowfold"
+        save.mkdir(parents=True)
+        (save / "_main.41.ok").write_text("ok")
+
+    def transfer(self) -> Transfer:
+        return Transfer(
+            install=self.install,
+            generations=self.volume,
+            schemas=SCHEMAS,
+            docker=self.docker,
+            hostname="c0ffee",
+            out=self.out,
+        )
+
+    def import_save(self, world: str = "Meadowfold", path: str = "incoming") -> None:
+        self.transfer().import_save(world, path)
+
+    def export_backup(self, world: str = "Meadowfold", backup: str | None = None) -> None:
+        self.transfer().export_backup(world, backup)
+
+    def restores(self) -> dict[str, Restore]:
+        return Store(self.volume).load().restores
+
+
+@pytest.fixture(autouse=True)
+def owner_alone_writes() -> Iterator[None]:
+    """Whatever the runner's umask, every folder a test makes is writable by its owner alone, as an
+    import takes: a umask of 002, common on a desktop, would have it refused."""
+    before = os.umask(0o022)
+    try:
+        yield
+    finally:
+        os.umask(before)
+
+
+@pytest.fixture
+def transfers(tmp_path: Path) -> Transfers:
+    return Transfers(tmp_path)
+
+
+def test_an_import_runs_the_runtime_image_sandboxed_with_the_save_read_only(transfers: Transfers) -> None:
+    transfers.import_save()
+
+    [(args, timeout)] = transfers.docker.runs
+    assert timeout == TIMEOUT_S
+    name = args[args.index("--name") + 1]
+    assert re.fullmatch(r"valhallowed-import-[0-9a-f]{16}", name)
+    assert args[:2] == ["run", "--rm"]
+    for flag in (
+        ["--pull", "never"],
+        ["--network", "none"],
+        ["--read-only"],
+        ["--cap-drop=ALL"],
+        ["--security-opt=no-new-privileges:true"],
+        ["--memory", MEMORY],
+        ["--pids-limit", str(PIDS)],
+    ):
+        assert any(args[i : i + len(flag)] == flag for i in range(len(args))), flag
+    # The image's own user, and nothing that could widen the sandbox.
+    for widening in ("--user", "--privileged", "--cap-add", "--volume", "--tmpfs", "--entrypoint"):
+        assert not any(arg.startswith(widening) for arg in args), widening
+    assert mounts(args) == {
+        str(IMPORT_FOLDER): {
+            "type": "bind",
+            "source": f"{HOST_INSTALL}/incoming",
+            "target": "/import",
+            "readonly": "true",
+        },
+        "/backups": {"type": "bind", "source": f"{HOST_INSTALL}/backups/{MEADOWFOLD}", "target": "/backups"},
+    }
+    assert args[-3:] == [IMAGES["game-runtime"], "import", "Meadowfold"]
+
+
+def test_an_import_makes_only_its_worlds_backups_folder_first(transfers: Transfers) -> None:
+    transfers.import_save()
+    [made] = [args for args in transfers.docker.prepared if MAKE_BACKUP_FOLDERS in args]
+    assert made[-2:] == ["sh", MEADOWFOLD]
+    assert made[made.index("--volume") + 1] == f"{HOST_INSTALL}/backups:{layout.BACKUPS}"
+
+
+def test_a_backups_folder_that_cannot_be_made_refuses_the_import_before_it_runs(transfers: Transfers) -> None:
+    transfers.docker.fail_backups = True
+    with pytest.raises(TransferRefused, match="could not make Meadowfold's folder in /srv/vhd/backups"):
+        transfers.import_save()
+    assert transfers.docker.runs == []
+
+
+def test_an_import_asks_for_the_restore_of_its_backup(transfers: Transfers) -> None:
+    transfers.apply()
+    transfers.import_save()
+
+    restore = transfers.restores()[MEADOWFOLD]
+    assert restore.backup == BACKUP
+    assert re.fullmatch(r"[0-9a-f]{32}", restore.id)
+    assert ASHWAKE not in transfers.restores()
+    out = transfers.out.getvalue()
+    assert (
+        f"vhd import: Meadowfold's save 41 (1234 objects, completed 2026-11-18T19:40:11Z) is kept as backup {BACKUP}, "
+        f"and restore {restore.id} of it is asked for. The world's runtime restores it once no players are online"
+    ) in out
+
+
+def test_a_world_before_its_first_apply_loads_the_import_in_its_first_generation(transfers: Transfers) -> None:
+    transfers.import_save()
+    assert "The world has no container yet: vhd apply starts it" in transfers.out.getvalue()
+    assert Store(transfers.volume).load().generation is None
+
+    transfers.apply()
+
+    restore = transfers.restores()[MEADOWFOLD]
+    assert transfers.document(MEADOWFOLD)["generation"] == 1
+    assert transfers.document(MEADOWFOLD)["restore"] == {"id": restore.id, "backup": BACKUP}
+    assert "restore" not in transfers.document(ASHWAKE)
+
+
+def daemon_over(transfers: Transfers, state: str = "running", **report: object) -> tuple[Daemon, StatusBook]:
+    book = StatusBook()
+    book.record({"contract": 1, "generation": 1, "world": "Meadowfold", "state": state, **report})
+    return Daemon(transfers.install, Store(transfers.volume), SCHEMAS, book), book
+
+
+def test_the_running_control_plane_hands_the_imports_restore_at_its_next_pass(transfers: Transfers) -> None:
+    transfers.apply()
+    control, _ = daemon_over(transfers, players=2)
+    control.step()
+    transfers.import_save()
+
+    control.step()
+
+    restore = transfers.restores()[MEADOWFOLD]
+    assert transfers.document(MEADOWFOLD)["restore"] == {"id": restore.id, "backup": BACKUP}
+
+
+def test_a_held_world_takes_the_imports_restore(transfers: Transfers) -> None:
+    transfers.apply()
+    transfers.docker.running = [MEADOWFOLD, ASHWAKE]
+    held = {"contract": 1, "generation": 1, "world": "Meadowfold", "state": "held", "reason": "no save to load"}
+    assert transfers.worlds is not None
+    transfers.worlds["Meadowfold"] = {"published": 1, "state": "held", "report": held, "report_age_s": 1}
+    transfers.import_save()
+    restore = {"id": transfers.restores()[MEADOWFOLD].id, "backup": BACKUP}
+
+    control, _ = daemon_over(transfers, state="held", reason="no save to load")
+    control.step()
+    assert transfers.document(MEADOWFOLD)["restore"] == restore
+
+    # vhd apply too, without --disconnect-players: a held world has no players.
+    transfers.apply()
+    assert transfers.document(MEADOWFOLD)["restore"] == restore
+    assert "disconnect_players" not in transfers.document(MEADOWFOLD)
+
+
+def test_an_import_holds_vhd_applys_lock(transfers: Transfers) -> None:
+    with (transfers.volume / ".apply.lock").open("a") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        with pytest.raises(Refused, match="another vhd apply, vhd import or vhd export is running"):
+            transfers.import_save()
+    assert transfers.docker.runs == []
+
+    seen: list[bool] = []
+
+    def try_lock(args: list[str]) -> tuple[int, str]:
+        with (transfers.volume / ".apply.lock").open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                seen.append(True)
+        return 0, done("import")
+
+    transfers.docker.act = try_lock
+    transfers.import_save()
+    assert seen == [True]
+
+
+@pytest.mark.parametrize(
+    ("path", "reason"),
+    [
+        ("/srv/vhd/incoming", "is an absolute path"),
+        ("incoming/../incoming", "holds \\.\\."),
+        ("", "not the folder itself"),
+        (".", "not the folder itself"),
+        ("elsewhere", "the install folder holds no elsewhere"),
+        ("manifest.toml", "manifest.toml in the install folder is no folder"),
+        ("backups/old", "is in the backups folder"),
+    ],
+)
+def test_an_import_refuses_a_folder_outside_or_unfit_before_anything_runs(
+    transfers: Transfers, path: str, reason: str
+) -> None:
+    (transfers.install / "backups" / "old").mkdir(parents=True)
+    with pytest.raises(TransferRefused, match=reason):
+        transfers.import_save(path=path)
+    assert transfers.docker.runs == []
+    assert transfers.docker.prepared == []
+
+
+@pytest.mark.parametrize("mode", [0o775, 0o757, 0o777])
+def test_an_import_refuses_an_install_folder_others_could_change_before_docker_mounts_it(
+    transfers: Transfers, mode: int
+) -> None:
+    # Whoever may write the install folder may put a link in place of the path's first part.
+    transfers.install.chmod(mode)
+    with pytest.raises(
+        TransferRefused,
+        match=r"^the install folder can be changed by others than its owner; .*: chmod go-w \.$",
+    ):
+        transfers.import_save()
+    assert transfers.docker.runs == []
+
+
+@pytest.mark.parametrize("mode", [0o775, 0o757, 0o777])
+def test_an_import_refuses_a_part_of_its_path_others_could_change_before_docker_mounts_it(
+    transfers: Transfers, mode: int
+) -> None:
+    (transfers.install / "incoming").chmod(mode)
+    with pytest.raises(
+        TransferRefused,
+        match=r"incoming in the install folder can be changed by others than the install folder's owner; .*"
+        r"chmod go-w incoming$",
+    ):
+        transfers.import_save()
+    assert transfers.docker.runs == []
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="giving a folder to another user takes root")
+def test_an_import_refuses_a_part_of_its_path_another_user_owns(transfers: Transfers) -> None:
+    os.chown(transfers.install / "incoming", 4242, 4242)
+    with pytest.raises(TransferRefused, match="incoming in the install folder can be changed by others"):
+        transfers.import_save()
+    os.chown(transfers.install / "incoming", 0, 0)
+    transfers.import_save()
+    assert len(transfers.docker.runs) == 1
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="giving a folder to another user takes root")
+def test_a_path_into_a_worlds_backups_folder_through_another_name_is_refused_by_its_owner(
+    transfers: Transfers,
+) -> None:
+    # The manifest names the backups folder through a link, so the path, compared as written,
+    # lies outside it; the world's own folder there is its runtime's, so the import is refused.
+    (transfers.install / "manifest.toml").write_text(TWO_WORLDS + '\n[backups]\npath = "store"\n')
+    real = transfers.install / "real" / MEADOWFOLD
+    real.mkdir(parents=True)
+    (transfers.install / "store").symlink_to(transfers.install / "real")
+    (real / "incoming").mkdir()
+    os.chown(real, 10001, 10001)
+    with pytest.raises(TransferRefused, match=f"real/{MEADOWFOLD} in the install folder can be changed by others"):
+        transfers.import_save(path=f"real/{MEADOWFOLD}/incoming")
+    assert transfers.docker.runs == []
+
+
+def test_an_import_refuses_a_link_at_any_part_of_its_path(transfers: Transfers) -> None:
+    (transfers.install / "linked").symlink_to(transfers.install / "incoming")
+    (transfers.install / "deeper").mkdir()
+    (transfers.install / "deeper" / "save").symlink_to(transfers.install / "incoming")
+    for path in ("linked", "deeper/save", "linked/Meadowfold"):
+        with pytest.raises(TransferRefused, match="is a link"):
+            transfers.import_save(path=path)
+    assert transfers.docker.runs == []
+
+
+def test_an_import_refuses_a_world_the_manifest_does_not_have(transfers: Transfers) -> None:
+    with pytest.raises(TransferRefused, match="the manifest has no world Hollowmere"):
+        transfers.import_save(world="Hollowmere")
+    assert transfers.docker.runs == []
+
+
+def test_an_import_refuses_a_save_the_runtimes_user_cannot_read_and_says_how_to_fix_it(transfers: Transfers) -> None:
+    owner = (transfers.install / "incoming").stat()
+    # Another user, in another group: only the bits for others count.
+    transfers.docker.user = (owner.st_uid + 4242, owner.st_gid + 4242)
+    ok = transfers.install / "incoming" / "Meadowfold" / "_main.41.ok"
+    ok.chmod(0o640)
+    with pytest.raises(
+        TransferRefused,
+        match=r"cannot read incoming/Meadowfold/_main\.41\.ok; make the folder and everything in it readable by "
+        r"others, as: chmod -R o\+rX incoming",
+    ):
+        transfers.import_save()
+    assert transfers.docker.runs == []
+
+    ok.chmod(0o644)
+    (transfers.install / "incoming" / "Meadowfold").chmod(0o750)
+    with pytest.raises(TransferRefused, match="cannot read incoming/Meadowfold;"):
+        transfers.import_save()
+
+    (transfers.install / "incoming" / "Meadowfold").chmod(0o755)
+    transfers.import_save()
+    assert len(transfers.docker.runs) == 1
+
+
+def test_a_save_readable_by_the_runtimes_group_is_read(transfers: Transfers) -> None:
+    owner = (transfers.install / "incoming").stat()
+    transfers.docker.user = (owner.st_uid + 4242, owner.st_gid)
+    for each in (transfers.install / "incoming", transfers.install / "incoming" / "Meadowfold"):
+        each.chmod(0o750)
+    (transfers.install / "incoming" / "Meadowfold" / "_main.41.ok").chmod(0o640)
+    transfers.import_save()
+    assert len(transfers.docker.runs) == 1
+
+
+def test_a_path_any_character_may_hold_reaches_docker_whole(transfers: Transfers) -> None:
+    odd = transfers.install / 'in,co"ming'
+    (transfers.install / "incoming").rename(odd)
+    transfers.import_save(path='in,co"ming')
+    [(args, _)] = transfers.docker.runs
+    assert mounts(args)["/import"]["source"] == f'{HOST_INSTALL}/in,co"ming'
+
+
+@pytest.mark.parametrize(
+    ("status", "output", "reason", "kept"),
+    [
+        (
+            1,
+            refused("import", "the save folder holds no complete save: no _main.<n>.ok"),
+            "^the save folder holds no",
+            False,
+        ),
+        (0, refused("import", "a reason\u0085with a control"), "a reason\u0085with a control", False),
+        (1, "", "gave vhd import no result, and exited with 1", True),
+        (1, "not json\n", "a result that is no JSON", True),
+        (
+            0,
+            json.dumps({"contract": 1, "action": "import", "world": "Meadowfold", "outcome": "done"}),
+            "breaks its contract",
+            True,
+        ),
+        (0, done("import", world="Ashwake"), "is for import of Ashwake", True),
+        (0, done("export"), "is for export of Meadowfold", True),
+        (1, done("import"), "said vhd import was done, but exited with 1", True),
+    ],
+)
+def test_an_import_whose_result_is_no_done_asks_for_no_restore(
+    transfers: Transfers, status: int, output: str, reason: str, kept: bool
+) -> None:
+    transfers.docker.act = lambda args: (status, output)
+    with pytest.raises(TransferRefused, match=reason) as refusal:
+        transfers.import_save()
+    assert transfers.restores() == {}
+    # Output that breaks the contract, or none, may come from an import that kept its backup (B13).
+    warned = "an import cut short after it named its backup may have kept it, which vhd backups then lists"
+    assert str(refusal.value).endswith(warned) == kept
+
+
+def test_an_import_that_outlasts_its_timeout_is_stopped_with_its_container(transfers: Transfers) -> None:
+    def hang(args: list[str]) -> tuple[int, str]:
+        raise DockerTimeout("docker run did not finish")
+
+    transfers.docker.act = hang
+    with pytest.raises(TransferRefused, match=f"did not finish within {TIMEOUT_S} s, so vhd stopped it; an import"):
+        transfers.import_save()
+    [(args, _)] = transfers.docker.runs
+    name = args[args.index("--name") + 1]
+    assert transfers.docker.stopped == [["stop", "--timeout", str(STOP_GRACE_S), name], ["rm", "--force", name]]
+    assert transfers.restores() == {}
+
+
+def hang(args: list[str]) -> tuple[int, str]:
+    raise DockerTimeout("docker run did not finish")
+
+
+def test_a_container_already_gone_is_no_failure_of_the_stop(transfers: Transfers) -> None:
+    transfers.docker.act = hang
+    transfers.docker.failing = {"stop", "rm"}
+    transfers.docker.there = ""
+    with pytest.raises(TransferRefused, match="so vhd stopped it; an import cut short after") as refused:
+        transfers.import_save()
+    assert "failed too" not in str(refused.value)
+    assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]
+    # Gone by Docker's own list of containers by that exact name, not by its words.
+    name = transfers.docker.stopped[0][-1]
+    assert transfers.docker.listed[0] == [
+        "container", "ls", "--all", "--filter", f"name=^{name}$", "--format", "{{.State}}"
+    ]  # fmt: skip
+
+
+def test_a_container_docker_is_removing_already_is_no_failure_of_the_stop(transfers: Transfers) -> None:
+    transfers.docker.act = hang
+    transfers.docker.failing = {"rm"}
+    transfers.docker.there = "removing"
+    with pytest.raises(TransferRefused, match="so vhd stopped it") as refused:
+        transfers.import_save()
+    assert "failed too" not in str(refused.value)
+
+
+def test_a_failed_stop_still_removes_the_container_and_the_refusal_keeps_the_timeout(transfers: Transfers) -> None:
+    transfers.docker.act = hang
+    transfers.docker.failing = {"stop"}
+    with pytest.raises(
+        TransferRefused,
+        match=f"did not finish within {TIMEOUT_S} s, so vhd stopped it; .*; stopping its container failed too: "
+        "docker stop: the daemon did not answer$",
+    ):
+        transfers.import_save()
+    assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]
+
+
+def test_an_interrupted_import_whose_stop_fails_is_still_an_interrupt(transfers: Transfers) -> None:
+    def interrupt(args: list[str]) -> tuple[int, str]:
+        raise KeyboardInterrupt
+
+    transfers.docker.act = interrupt
+    transfers.docker.failing = {"stop", "rm"}
+    with pytest.raises(KeyboardInterrupt):
+        transfers.import_save()
+    assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]
+
+
+def test_an_interrupted_import_stops_its_container_too(transfers: Transfers) -> None:
+    def interrupt(args: list[str]) -> tuple[int, str]:
+        raise KeyboardInterrupt
+
+    transfers.docker.act = interrupt
+    with pytest.raises(KeyboardInterrupt):
+        transfers.import_save()
+    assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]
+    assert transfers.restores() == {}
+    assert transfers.out.getvalue() == (
+        "vhd import of Meadowfold was stopped; an import cut short after it named its backup may have kept it, "
+        "which vhd backups then lists.\n"
+    )
+
+
+def test_an_import_stopped_before_it_asks_for_its_restore_names_the_backup_it_kept(
+    transfers: Transfers, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def interrupt(self: Store, state: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(Store, "save", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        transfers.import_save()
+    said = transfers.out.getvalue()
+    assert f"is kept as backup {BACKUP}, but vhd did not finish asking for its restore" in said
+
+
+def test_a_vhd_stopped_by_sigterm_stops_its_actions_container_and_removes_what_it_made(transfers: Transfers) -> None:
+    before = signal.getsignal(signal.SIGTERM)
+
+    def terminated(args: list[str]) -> tuple[int, str]:
+        os.kill(os.getpid(), signal.SIGTERM)
+        return transfers.docker.done(args)
+
+    transfers.docker.act = terminated
+    with pytest.raises(KeyboardInterrupt):
+        transfers.export_backup()
+    assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]
+    assert not (transfers.install / "exports").exists()
+    assert signal.getsignal(signal.SIGTERM) == before
+
+
+def test_a_second_ctrl_c_while_the_container_stops_still_removes_it(transfers: Transfers) -> None:
+    transfers.docker.act = hang
+    transfers.docker.on_stop = lambda args: os.kill(os.getpid(), signal.SIGINT) if args[0] == "stop" else None
+    with pytest.raises(KeyboardInterrupt):
+        transfers.import_save()
+    assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]
+
+
+def test_the_timeout_is_well_within_the_age_after_which_an_imports_leftovers_are_removed() -> None:
+    backups = (REPO / "runtime/src/vhd_runtime/backups.py").read_text()
+    match = re.search(r"^IMPORT_STAGING_MAX_AGE_S = (\d+)$", backups, re.MULTILINE)
+    assert match is not None
+    assert TIMEOUT_S <= int(match[1]) // 2
+
+
+def test_an_export_copies_the_newest_backup_into_a_folder_of_its_own_for_the_install_folders_owner(
+    transfers: Transfers,
+) -> None:
+    transfers.export_backup()
+
+    [(args, timeout)] = transfers.docker.runs
+    assert timeout == TIMEOUT_S
+    assert args[-3:] == [IMAGES["game-runtime"], "export", "Meadowfold"]
+    assert (
+        "--read-only" in args and ["--network", "none"] == args[args.index("--network") : args.index("--network") + 2]
+    )
+    found = mounts(args)
+    assert found["/backups"] == {
+        "type": "bind",
+        "source": f"{HOST_INSTALL}/backups/{MEADOWFOLD}",
+        "target": "/backups",
+        "readonly": "true",
+    }
+    target = transfers.docker.own_view(found["/export"]["source"])
+    assert "readonly" not in found["/export"]
+    assert target.parent == transfers.install / "exports" / "Meadowfold"
+    assert re.fullmatch(r"[0-9]{8}T[0-9]{6}Z", target.name)
+    assert (target / "worlds_local" / "Meadowfold" / "_main.41.ok").exists()
+    shown = f"exports/Meadowfold/{target.name}/worlds_local/Meadowfold"
+    assert f"vhd export: Meadowfold's backup {BACKUP}, save 41 (1234 objects" in transfers.out.getvalue()
+    assert f"is in {shown}, in the layout the game reads" in transfers.out.getvalue()
+    # No world's backups folder is made for an export: one that is missing holds no backup.
+    assert not any(MAKE_BACKUP_FOLDERS in args for args in transfers.docker.prepared)
+
+
+def test_an_export_names_the_backup_it_was_asked_for_and_two_never_share_a_folder(transfers: Transfers) -> None:
+    transfers.export_backup(backup=BACKUP)
+    transfers.export_backup(backup=BACKUP)
+    [(first, _), (second, _)] = transfers.docker.runs
+    assert first[-4:] == [IMAGES["game-runtime"], "export", "Meadowfold", BACKUP]
+    assert mounts(first)["/export"]["source"] != mounts(second)["/export"]["source"]
+    assert len(list((transfers.install / "exports" / "Meadowfold").iterdir())) == 2
+
+
+@pytest.fixture
+def chowns(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, int, int]]:
+    """Each change of owner vhd makes, by the name or descriptor it names, made in no file."""
+    made: list[tuple[str, int, int]] = []
+
+    def chown(path: object, uid: int, gid: int, **kwargs: object) -> None:
+        made.append((os.path.basename(str(path)), uid, gid))
+
+    def fchown(descriptor: int, uid: int, gid: int) -> None:
+        made.append((os.path.basename(os.readlink(f"/proc/self/fd/{descriptor}")), uid, gid))
+
+    for name in ("chown", "lchown"):
+        monkeypatch.setattr(os, name, chown)
+    monkeypatch.setattr(os, "fchown", fchown)
+    return made
+
+
+def test_an_export_folder_swapped_for_a_link_gives_nothing_away(
+    transfers: Transfers, tmp_path: Path, chowns: list[tuple[str, int, int]]
+) -> None:
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "secret").write_text("not the export's")
+
+    def swap(args: list[str]) -> tuple[int, str]:
+        ran = transfers.docker.done(args)
+        target = transfers.docker.own_view(mounts(args)["/export"]["source"])
+        target.rename(target.with_name("moved"))
+        target.symlink_to(elsewhere)
+        return ran
+
+    transfers.docker.act = swap
+    with pytest.raises(TransferRefused, match="vhd could not give it to the install folder's owner"):
+        transfers.export_backup()
+    assert not any(name in ("elsewhere", "secret") for name, _, _ in chowns)
+
+
+def test_an_export_folder_swapped_for_another_folder_gives_nothing_away(
+    transfers: Transfers, chowns: list[tuple[str, int, int]]
+) -> None:
+    before: list[int] = []
+
+    def swap(args: list[str]) -> tuple[int, str]:
+        ran = transfers.docker.done(args)
+        target = transfers.docker.own_view(mounts(args)["/export"]["source"])
+        target.rename(target.with_name("moved"))
+        target.mkdir()
+        before.append(len(chowns))
+        return ran
+
+    transfers.docker.act = swap
+    with pytest.raises(TransferRefused, match="the export's folder, was replaced while the export ran"):
+        transfers.export_backup()
+    assert [len(chowns)] == before
+
+
+def test_the_export_folder_is_the_runtime_users_while_the_container_writes_it_then_the_install_folders_owners(
+    transfers: Transfers, chowns: list[tuple[str, int, int]]
+) -> None:
+    owner = transfers.install.stat()
+    owned = (owner.st_uid, owner.st_gid)
+    runtime = transfers.docker.user = (owner.st_uid + 4242, owner.st_gid + 4343)
+    seen: list[list[tuple[str, int, int]]] = []
+
+    def look(args: list[str]) -> tuple[int, str]:
+        seen.append(list(chowns))
+        return transfers.docker.done(args)
+
+    transfers.docker.act = look
+    transfers.export_backup()
+
+    [(args, _)] = transfers.docker.runs
+    target = transfers.docker.own_view(mounts(args)["/export"]["source"]).name
+    assert seen == [[("exports", *owned), ("Meadowfold", *owned), (target, *runtime)]]
+    assert chowns[3:] == [
+        ("worlds_local", *owned),
+        ("Meadowfold", *owned),
+        ("_main.41.ok", *owned),
+        (target, *owned),
+    ]
+
+
+def test_an_export_stopped_while_vhd_gives_it_away_is_given_whole_then_stops(
+    transfers: Transfers, chowns: list[tuple[str, int, int]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The chowns fixture's recorder, which takes what os.chown takes.
+    given: Callable[..., None] = os.chown
+
+    def chown(path: object, uid: int, gid: int, **kwargs: object) -> None:
+        # Only the walk passes a descriptor: the first of what the export wrote.
+        if kwargs:
+            os.kill(os.getpid(), signal.SIGTERM)
+        given(path, uid, gid, **kwargs)
+
+    monkeypatch.setattr(os, "chown", chown)
+    with pytest.raises(KeyboardInterrupt):
+        transfers.export_backup()
+    # The export's folder's three, then everything in it and the folder itself.
+    assert [name for name, _, _ in chowns[3:-1]] == ["worlds_local", "Meadowfold", "_main.41.ok"]
+    assert chowns[-1][0] == chowns[2][0]
+    # Kept, and said where.
+    assert "vhd export: Meadowfold's backup" in transfers.out.getvalue()
+    assert (transfers.install / "exports" / "Meadowfold" / chowns[2][0]).is_dir()
+
+
+def test_a_refused_export_removes_what_vhd_made(transfers: Transfers) -> None:
+    transfers.docker.act = lambda args: (
+        1,
+        refused("export", "the world's backups folder holds no backup of Meadowfold"),
+    )
+    with pytest.raises(TransferRefused, match="holds no backup of Meadowfold"):
+        transfers.export_backup()
+    assert not (transfers.install / "exports").exists()
+
+    (transfers.install / "exports" / "Meadowfold" / "earlier").mkdir(parents=True)
+    with pytest.raises(TransferRefused):
+        transfers.export_backup()
+    assert [p.name for p in (transfers.install / "exports" / "Meadowfold").iterdir()] == ["earlier"]
+
+
+def test_an_export_stopped_while_it_makes_its_folder_removes_what_vhd_made(
+    transfers: Transfers, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def interrupt(path: object, uid: int, gid: int) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(os, "chown", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        transfers.export_backup()
+    assert not (transfers.install / "exports").exists()
+
+
+def test_an_export_refuses_an_exports_folder_that_is_a_link(transfers: Transfers, tmp_path: Path) -> None:
+    (tmp_path / "elsewhere").mkdir()
+    (transfers.install / "exports").symlink_to(tmp_path / "elsewhere")
+    with pytest.raises(TransferRefused, match="exports in the install folder is no folder"):
+        transfers.export_backup()
+    assert transfers.docker.runs == []
+    assert list((tmp_path / "elsewhere").iterdir()) == []
+
+
+def test_an_export_that_outlasts_its_timeout_is_stopped_and_leaves_nothing(transfers: Transfers) -> None:
+    def hang(args: list[str]) -> tuple[int, str]:
+        raise DockerTimeout("docker run did not finish")
+
+    transfers.docker.act = hang
+    with pytest.raises(TransferRefused, match=f"vhd export did not finish within {TIMEOUT_S} s, so vhd stopped it$"):
+        transfers.export_backup()
+    assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]
+    assert not (transfers.install / "exports").exists()
+
+
+def test_an_export_takes_a_world_the_manifest_dropped_from_where_its_container_mounted_its_backups(
+    transfers: Transfers,
+) -> None:
+    store = Store(transfers.volume)
+    with store.locked():
+        state = store.load()
+        state.backups_applied = "/mnt/old-disk/backups"
+        store.save(state)
+    transfers.export_backup(world="Hollowmere")
+
+    [(args, _)] = transfers.docker.runs
+    assert mounts(args)["/backups"]["source"] == f"/mnt/old-disk/backups/{child_id('Hollowmere')}"
+    assert args[-2:] == ["export", "Hollowmere"]
+
+
+@pytest.mark.parametrize("world", ["../Meadowfold", "-x", "", "Meadow/fold", "Meadowfold\n"])
+def test_an_export_refuses_what_is_no_save_name_before_anything_runs(transfers: Transfers, world: str) -> None:
+    with pytest.raises(TransferRefused, match="is no save name"):
+        transfers.export_backup(world=world)
+    assert transfers.docker.runs == []
+    assert not (transfers.install / "exports").exists()
+
+
+def test_an_export_of_a_world_with_no_backups_folder_yet_is_refused_before_anything_runs(
+    transfers: Transfers,
+) -> None:
+    (transfers.install / "backups" / MEADOWFOLD).rmdir()
+    with pytest.raises(
+        TransferRefused, match=f"no backup of Meadowfold yet: the install folder holds no backups/{MEADOWFOLD}$"
+    ):
+        transfers.export_backup()
+    assert transfers.docker.runs == []
+    assert not (transfers.install / "exports").exists()
+
+
+def test_a_container_docker_cannot_run_is_refused_with_dockers_reason_and_an_imports_maybe_kept_backup(
+    transfers: Transfers,
+) -> None:
+    transfers.docker.errors = ("docker: Error response from daemon: invalid mount config for type bind",)
+    transfers.docker.act = lambda args: (125, "")
+    with pytest.raises(TransferRefused) as refused:
+        transfers.import_save()
+    assert str(refused.value) == (
+        "Docker could not run the game runtime image for vhd import: "
+        "docker: Error response from daemon: invalid mount config for type bind"
+        "; an import cut short after it named its backup may have kept it, which vhd backups then lists"
+    )
+    with pytest.raises(TransferRefused, match=r"for vhd export: docker: Error response from daemon: [^;]*$"):
+        transfers.export_backup()
+    assert not (transfers.install / "exports").exists()
+
+
+def test_an_import_whose_result_cannot_be_read_whole_is_refused_as_maybe_kept(transfers: Transfers) -> None:
+    def held(args: list[str]) -> tuple[int, str]:
+        raise DockerError("docker run ended, but a process it left holds its output open")
+
+    transfers.docker.act = held
+    with pytest.raises(TransferRefused, match=r"holds its output open; an import cut short .* may have kept it"):
+        transfers.import_save()
+    assert transfers.restores() == {}
+    assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]
+
+
+@pytest.mark.parametrize("backup", ["latest", "../20261124T101500Z", "-h", "20261124T101500Z\n"])
+def test_an_export_refuses_what_is_no_backups_name_before_anything_runs(transfers: Transfers, backup: str) -> None:
+    with pytest.raises(TransferRefused, match="is no backup's name; vhd backups Meadowfold lists them"):
+        transfers.export_backup(backup=backup)
+    assert transfers.docker.runs == []
+
+
+def test_an_export_whose_result_names_another_backup_than_the_one_asked_for_is_refused(transfers: Transfers) -> None:
+    transfers.docker.act = lambda args: (0, done("export", backup="20261124T091500Z"))
+    with pytest.raises(
+        TransferRefused, match=f"asked for backup {BACKUP}, and the game runtime image copied 20261124T091500Z"
+    ):
+        transfers.export_backup(backup=BACKUP)
+    assert not (transfers.install / "exports").exists()
+
+
+@pytest.mark.parametrize("command", ["import", "export"])
+def test_the_game_runtime_image_is_pulled_first_when_the_host_lacks_it(transfers: Transfers, command: str) -> None:
+    transfers.docker.missing = {IMAGES["game-runtime"]}
+    transfers.import_save() if command == "import" else transfers.export_backup()
+    assert transfers.docker.streamed == [["pull", IMAGES["game-runtime"]]]
+    # Pulled before the image is first asked anything.
+    assert transfers.docker.asked_who == [1]
+
+
+@pytest.mark.parametrize(
+    ("who", "reason"),
+    [
+        (DockerError("docker run: Unable to find image"), "Unable to find image"),
+        ("vhd\nvhd\nvhd\n", "invalid literal"),
+        ("10001\n10001\n", "not enough values"),
+        ("", "not enough values"),
+    ],
+)
+@pytest.mark.parametrize("command", ["import", "export"])
+def test_an_image_whose_user_cannot_be_told_is_refused_before_anything_is_made(
+    transfers: Transfers, command: str, who: str | DockerError, reason: str
+) -> None:
+    transfers.docker.who = who
+    with pytest.raises(TransferRefused, match=f"cannot tell which user the game runtime image runs as .*{reason}"):
+        transfers.import_save() if command == "import" else transfers.export_backup()
+    assert transfers.docker.runs == []
+    assert not any(MAKE_BACKUP_FOLDERS in args for args in transfers.docker.prepared)
+    assert not (transfers.install / "exports").exists()
+
+
+def test_an_export_holds_vhd_applys_lock(transfers: Transfers) -> None:
+    with (transfers.volume / ".apply.lock").open("a") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        with pytest.raises(Refused, match="another vhd apply, vhd import or vhd export is running"):
+            transfers.export_backup()
+    assert transfers.docker.runs == []
+
+
+def test_a_refused_import_fails_the_command_with_its_reason_as_printable_text(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def refuse(self: Transfer, world: str, path: str) -> None:
+        raise TransferRefused("the save holds _main.41.ok\u0085, which is no file of a save")
+
+    monkeypatch.setattr(layout, "SCHEMAS", REPO)
+    monkeypatch.setattr(Transfer, "import_save", refuse)
+    out = io.StringIO()
+    assert cli.main(["import", "Meadowfold", "incoming"], out) == 1
+    assert out.getvalue() == ""
+    assert "vhd import: the save holds _main.41.ok?, which is no file of a save" in capsys.readouterr().err
+
+
+def test_export_takes_the_backup_as_optional(monkeypatch: pytest.MonkeyPatch) -> None:
+    asked: list[tuple[str, str | None]] = []
+
+    def export(self: Transfer, world: str, backup: str | None) -> None:
+        asked.append((world, backup))
+
+    monkeypatch.setattr(layout, "SCHEMAS", REPO)
+    monkeypatch.setattr(Transfer, "export_backup", export)
+    assert cli.main(["export", "Meadowfold"], io.StringIO()) == 0
+    assert cli.main(["export", "Meadowfold", BACKUP], io.StringIO()) == 0
+    assert asked == [("Meadowfold", None), ("Meadowfold", BACKUP)]

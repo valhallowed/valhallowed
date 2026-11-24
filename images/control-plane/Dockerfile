@@ -1,6 +1,7 @@
 # The control plane and vhd, its CLI: the Python package on the snapshot Debian
-# of images/debian, with the docker CLI and its Compose plugin. Only vhd apply
-# runs them, as the one container with Docker's socket, for its run alone (G13).
+# of images/debian, with the docker CLI and its Compose plugin. Only vhd runs
+# them, as the one container with Docker's socket, for its run alone (G13), in
+# vhd apply, vhd import and vhd export.
 # vhd apply runs this Compose, not the host's, so every install renders and
 # starts the same way.
 

@@ -52,9 +52,9 @@
       "required": ["names"],
       "properties": {
         "names": {
-          "description": "The backups in the folder, newest first, each named for when it was taken, in UTC, so the first says the newest one's age. At most 200, which the manifest's backups.keep and keep_daily, 100 each, keep a folder within; until the next backup prunes it, as after either is lowered, only the newest 200 are named.",
+          "description": "The backups in the folder, newest first, each named for when it was taken, in UTC, so the first says the newest one's age. At most 202, which pruning keeps a folder within: the manifest's backups.keep and keep_daily, 100 each, the backup a restore asks for, and the world's newest import; until the next backup prunes it, as after either count is lowered, only the newest 202 are named.",
           "type": "array",
-          "maxItems": 200,
+          "maxItems": 202,
           "items": { "type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z$" }
         },
         "failure": {
