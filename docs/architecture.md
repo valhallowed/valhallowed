@@ -446,7 +446,7 @@ boundary, and every boundary follows one standard. Each contract lives in
 
 | # | Boundary | Crosses | Contract | On failure |
 |---|---|---|---|---|
-| I0 | Ingress | Manifest, secrets, operator actions into the control plane | Manifest schema, secrets schema; the control API, or for an import or an export its CLI, `vhd`, which validates an import's save through the game runtime's image, run sandboxed (B13) | Reject whole; the last good generation keeps running |
+| I0 | Ingress | Manifest, secrets, operator actions into the control plane | Manifest schema, secrets schema; the control API, or for an import or an export its CLI, `vhd`, which validates an import's save through the game runtime's image, run sandboxed (G6, B13) | Reject whole; the last good generation keeps running |
 | B1 | Control plane → children | Effective configuration and scoped secrets; status back | Generation schema | The child keeps its last good generation |
 | B2 | Plugin → intake | Telemetry events | Event schema | Fail soft |
 | B3 | Broker ↔ plugin | Commands and their outcomes | Command verbs, limits, idempotency key | Fail closed |
