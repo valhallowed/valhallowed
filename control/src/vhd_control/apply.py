@@ -424,6 +424,11 @@ def inspect_host(docker: Docker, hostname: str, install: Path, command: str) -> 
     project = container["Config"]["Labels"].get(PROJECT_LABEL)
     if str(layout.INSTALL) not in mounts or layout.DOCKER_SOCKET not in mounts or project is None:
         raise Refused(f"run vhd from the install folder, as: docker compose run --rm vhd {command}")
+    if ":" in mounts[str(layout.INSTALL)]:
+        # --volume reserves the colon, and the backups folder is mounted with it (make_backup_folders).
+        raise Refused(
+            "the install folder's path holds a ':', which Docker cannot mount; move the install to a path without one"
+        )
     config = json.loads(docker.output(["compose", "-f", str(install / "compose.yaml"), "config", "--format", "json"]))
     images = dict(config.get("x-vhd", {}).get("images", {}))
     missing = [name for name in IMAGES if name not in images]
@@ -449,7 +454,8 @@ def make_backup_folders(docker: Docker, host: Host, folder: str, child_ids: Iter
     capabilities that takes, and gives each to the image's own user by name, so the uid is written
     in the Dockerfile alone. Docker makes the backups folder itself when it is missing, which is why
     this mount is --volume, not the --mount that refuses a missing source; the manifest schema keeps
-    the colon --volume reserves out of the folder's path. Safe to repeat. Raises DockerError."""
+    the colon --volume reserves out of the manifest's part of the folder's path, and inspect_host out
+    of the install folder's. Safe to repeat. Raises DockerError."""
     docker.output(
         [
             "run", "--rm", "--pull", "never", "--network", "none", "--user", "0", "--entrypoint", "sh",

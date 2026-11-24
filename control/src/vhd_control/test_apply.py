@@ -536,6 +536,14 @@ def test_vhd_must_run_through_compose_from_the_install_folder(setup: Setup) -> N
         setup.apply()
 
 
+def test_an_install_folder_whose_path_holds_a_colon_is_refused_before_anything_runs(setup: Setup) -> None:
+    setup.docker.mounts["/install"] = "/srv/vhd:2"
+    with pytest.raises(Refused, match="holds a ':'"):
+        setup.apply()
+    assert setup.docker.prepared == []
+    assert setup.docker.streamed == []
+
+
 def test_a_port_change_compose_cannot_apply_is_rolled_back(setup: Setup) -> None:
     setup.apply()
     setup.docker.running = [MEADOWFOLD, ASHWAKE]
