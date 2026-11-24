@@ -101,8 +101,10 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
 - **Applying a change.** The control plane publishes a generation; each child it
   affects reloads it in place, or exits and Docker restarts it. A change to the
   containers themselves waits as pending until the server manager runs
-  `vhd apply` (G13): a one-shot container that only the server manager starts,
-  and the only one that gets the Docker socket, for that run. It validates the
+  `vhd apply` (G13): a run of `vhd`, the one-shot container that only the
+  server manager starts and the only one that gets the Docker socket, for that
+  run. `vhd import` and `vhd export` are runs of it too, and hold the same lock
+  as `vhd apply`, so no two of them interleave. `vhd apply` validates the
   manifest, keeps a game-server restart pending while players are online unless
   the server manager confirms it, renders the install's compose file from the
   current generation and the release's `compose.yaml`, and has Compose recreate
@@ -146,15 +148,18 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   reaches it. It serves status (`GET /status`) and an operator action,
   a restore (`POST /restore`, `vhd restore`): validated against its contract,
   then against the install, which takes only a backup the world's runtime has
-  reported (`vhd backups` lists them). A refusal changes nothing. While the
-  control plane's volume stays busy, with `vhd apply` or the control plane's
-  own pass, an operator action is refused rather than kept waiting past its
-  request's time. Children report status to a separate listener on the
-  install network that accepts status and nothing else, and only from the
-  reporting child's own container: it trusts source addresses, which holds
-  because no child has the capability to forge one. The admin console will put
-  the control API on the host's loopback unless the manifest opens it, once its
-  authentication is settled (O14).
+  reported (`vhd backups` lists them). A refusal changes nothing. World import
+  and export run through the game runtime's image instead, which `vhd import`
+  and `vhd export` start with the server manager's access to Docker (§ Game
+  runtimes); an import asks for its restore by writing it into the control
+  plane's state, as the control API does. While the control plane's volume stays
+  busy, with `vhd apply` or the control plane's own pass, an operator action is
+  refused rather than kept waiting past its request's time. Children report
+  status to a separate listener on the install network that accepts status and
+  nothing else, and only from the reporting child's own container: it trusts
+  source addresses, which holds because no child has the capability to forge
+  one. The admin console will put the control API on the host's loopback unless
+  the manifest opens it, once its authentication is settled (O14).
 - **Failure domain.** Needed to start or change an install, not to keep it
   running. If it stops at steady state, children keep running on the last good
   generation.
@@ -223,7 +228,8 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   took, whose record says so: `vhd import` asks for its restore as it keeps it,
   and that restore may wait unhanded behind another change to the world for as
   long as that change waits. One per world, so it bounds what it keeps; once a
-  later import exists, the older one prunes like any other. How often and how many are
+  later import exists, the older one prunes like any other. How often and how
+  many are
   defaults the manifest can change, each count at most 100, so a status names at
   most 200 backups. Backups live in a `backups` folder in the install folder, a
   folder for each world that only its runtime mounts, and the one-off container
@@ -267,30 +273,52 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   recorded in the world's data volume before it is taken, so a restore cut short
   is carried forward or back at the next start, and a restore's id is done once.
   An import is a 1.0+ save that the server manager puts in the install folder:
-  `vhd import` runs the game runtime's image once to validate it, read-only, and
-  keep it as a backup of its world, which is then restored like any other, and
-  the runtime validates it again before it replaces anything. It takes a folder
-  named for the world's save name holding exactly one complete save and nothing
-  else, of regular files only, at most 4 GiB: more than one complete save is
-  refused, since the game picks the newest by modification time, which a copy
-  may have lost. It copies into a folder that the runtime's backup turns leave
-  alone, and names it as a backup only once whole; a start, and the next import,
-  remove one an import left more than an hour ago and no longer holds, so `vhd`
-  stops an import well within that. Its result (B13,
+  `vhd import <world> <path>` runs the game runtime's image once to validate it,
+  read-only, and keep it as a backup of its world, which is then restored like
+  any other, and the runtime validates it again before it replaces anything.
+  That run is the control plane's validation of the save (G6), so it runs
+  sandboxed in a one-off container: as the image's own user, with no
+  capability, no network, a read-only root, bounded memory and processes, the
+  save mounted read-only and only the world's own backups folder writable. The
+  path names the folder that holds the save folder, relative to the install
+  folder: an absolute path, a `..`, a link at any part of it, a folder in the
+  backups folder, which the runtimes write, and a save the image's user cannot
+  read are refused before anything runs. Checking the path and Docker's mount
+  of it need not be atomic: only the install folder's owner and root write the
+  install folder outside the backups folder, and whoever can swap in a link
+  between the two can already change the install itself, while the container
+  still reads only what the image's user may read, keeps nothing but a complete
+  save, and writes nowhere but that world's backups. It takes a folder named
+  for the world's save name holding exactly one complete save and nothing else,
+  of regular files only, at most 4 GiB: more than one complete save is refused,
+  since the game picks the newest by modification time, which a copy may have
+  lost. It copies into a folder that the runtime's backup turns leave alone, and
+  names it as a backup only once whole; a start, and the next import, remove one
+  an import left more than an hour ago and no longer holds, so `vhd` stops an
+  import, and an export, after 30 minutes, which a 4 GiB save outlasts only if
+  it copies slower than about 2.4 MB/s: it stops the container itself, not only
+  its own Docker client, and the action removes what it wrote. Its result (B13,
   `contracts/game-runtime.import-export.schema.json`) is the one line `vhd`
-  reads. A world that has never started loads an imported save at its first
-  start, so no empty world is made first, and a world with no save whose restore
-  did not end done, or whose newest restore's record cannot be read, is held
-  rather than started empty, across restarts, until another restore is asked for
-  or its data volume is removed, which also removes its installed server, so its
-  next start downloads it again. An export copies a backup, the newest by
-  default, into the install folder in the layout the game reads, after checking
-  it against its record. A restore or an import waits as a pending change while
-  its world has players online, like a game-server restart, unless the server
-  manager confirms it; a restore waits in its runtime (Restart gating is
-  shared), and `vhd apply` counts one its runtime has not acted on as a restart,
-  so an apply while it waits for an empty world asks for `--disconnect-players`,
-  which confirms it.
+  reads. Once an import is done, `vhd import` writes the restore of its backup
+  into the control plane's state, as the control API's restore does, so a held
+  world and a world before its first `vhd apply` take one too: the running
+  control plane hands it at its next pass, and a world with no container gets it
+  in its first generation. A world that has never started loads an imported save
+  at its first start, so no empty world is made first, and a world with no save
+  whose restore did not end done, or whose newest restore's record cannot be
+  read, is held rather than started empty, across restarts, until another
+  restore is asked for or its data volume is removed, which also removes its
+  installed server, so its next start downloads it again. An export,
+  `vhd export <world> [<backup>]`, copies a backup, the newest by default, into
+  a folder of its own in the install folder, `exports/<world>/<when>/`, in the
+  layout the game reads, after checking it against its record, in the same
+  sandbox with the world's backups read-only; `vhd` then gives what it wrote to
+  the install folder's owner, and removes it on a refusal. A restore or an
+  import waits as a pending change while its world has players online, like a
+  game-server restart, unless the server manager confirms it; a restore waits in
+  its runtime (Restart gating is shared), and `vhd apply` counts one its runtime
+  has not acted on as a restart, so an apply while it waits for an empty world
+  asks for `--disconnect-players`, which confirms it.
 - **Updates.** Under the default update policy, a runtime compares its
   installed game build with Steam's newest public build every 15 minutes, and
   restarts its world to update once no players are online, by its own final
@@ -407,7 +435,7 @@ boundary, and every boundary follows one standard. Each contract lives in
 
 | # | Boundary | Crosses | Contract | On failure |
 |---|---|---|---|---|
-| I0 | Ingress | Manifest, secrets, operator actions into the control plane | Manifest schema, secrets schema, control API | Reject whole; the last good generation keeps running |
+| I0 | Ingress | Manifest, secrets, operator actions into the control plane | Manifest schema, secrets schema, control API; an import's save, which `vhd import` validates through the game runtime's image, run sandboxed (G6, B13) | Reject whole; the last good generation keeps running |
 | B1 | Control plane → children | Effective configuration and scoped secrets; status back | Generation schema | The child keeps its last good generation |
 | B2 | Plugin → intake | Telemetry events | Event schema | Fail soft |
 | B3 | Broker ↔ plugin | Commands and their outcomes | Command verbs, limits, idempotency key | Fail closed |

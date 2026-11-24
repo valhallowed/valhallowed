@@ -56,6 +56,19 @@ replaces is kept until the restored one loads, and put back if it loads empty.
 `vhd status` shows the restore and how it ended. Asking for another backup
 before then replaces the restore.
 
+To bring a 1.0+ world in, add it to the manifest, put its save folder, named for
+its save name, alone in a folder of the install folder, readable by others, such
+as `incoming/<save name>/`, and run:
+
+```bash
+docker compose run --rm vhd import <save name> incoming
+```
+
+The save is checked, kept as a backup and restored like one; a world that has
+not started yet loads it at its first start, once `vhd apply` creates it.
+`vhd export <save name> [<backup>]` copies a backup, the newest by default, into
+a folder of its own in `exports/<save name>/`, in the layout the game reads.
+
 ## A held world
 
 `vhd status` shows a world as `held`, with the reason, when it fails world truth:
