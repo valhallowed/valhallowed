@@ -526,7 +526,7 @@ def _give(target: Path, made_as: tuple[int, int], owner: tuple[int, int]) -> Non
         for _, folders, files, folder in os.fwalk(".", dir_fd=top):
             for name in (*folders, *files):
                 os.chown(name, *owner, dir_fd=folder, follow_symlinks=False)
-        # Last, so the install folder's owner can change nothing in it while vhd walks it.
+        # Last, so the install folder's owner can change nothing at its top while vhd walks it.
         os.fchown(top, *owner)
     finally:
         os.close(top)
