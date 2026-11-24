@@ -132,7 +132,10 @@ class Transfers(Setup):
         (self.install / "backups" / MEADOWFOLD).mkdir(parents=True)
         save = self.install / "incoming" / "Meadowfold"
         save.mkdir(parents=True)
+        for folder in (save.parent, save):
+            folder.chmod(0o755)
         (save / "_main.41.ok").write_text("ok")
+        (save / "_main.41.ok").chmod(0o644)
 
     def transfer(self) -> Transfer:
         return Transfer(
