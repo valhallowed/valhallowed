@@ -9,7 +9,7 @@ leaves both the install and the next run's players check as they were.
 import fcntl
 import json
 import os
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,6 +38,10 @@ MAKE_BACKUP_FOLDERS = (
     f'set -e; for d; do f="{layout.BACKUPS}/$d"; test ! -L "$f"; mkdir -p "$f"; chown vhd:vhd "$f"; done'
 )
 IGNORE_ORPHANS = "COMPOSE_IGNORE_ORPHANS"
+# Compose's own keys for the limits every container VHD runs keeps, as docker run's flags.
+LOCKED_DOWN_FLAGS = tuple(
+    f"--{key.replace('_', '-')}={value}" for key, values in LOCKED_DOWN.items() for value in values
+)
 
 
 class Refused(Exception):
@@ -78,30 +82,16 @@ class Apply:
     def run(self, disconnect_players: bool) -> None:
         settings = manifest.load(self.install, self.schemas)
         self._check_engine()
-        host = self._host()
+        host = inspect_host(self.docker, self.hostname, self.install, "apply")
         # vhd runs as root; everything it writes belongs to whom the control plane runs as.
         self.store = Store(self.generations, host.owner)
-        with self._only_run():
+        with only_run(self.generations):
             self._apply(settings, host, disconnect_players)
-
-    @contextmanager
-    def _only_run(self) -> Iterator[None]:
-        """Hold vhd apply's own lock for the whole run, so two never interleave. Unlike the volume's
-        lock it is not waited for: a second vhd apply is refused at once."""
-        with (self.generations / APPLY_LOCK).open("a") as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError as error:
-                raise Refused("another vhd apply is running on this install; wait for it to finish") from error
-            try:
-                yield
-            finally:
-                fcntl.flock(lock, fcntl.LOCK_UN)
 
     def _apply(self, settings: Settings, host: Host, disconnect_players: bool) -> None:
         self._quiet_orphans(host.owner)
         # Before the players check, not after it: a pull can take minutes.
-        self._pull(host)
+        pull_missing(self.docker, host.images.values())
         running = self._running(host.project)
         previous = json.loads(self._applied.read_text()) if self._applied.exists() else None
         worlds = self._worlds()
@@ -159,8 +149,6 @@ class Apply:
         image's content into an empty named volume only then. The runtime's supervisor makes the
         same directory at each start (runtime/src/vhd_runtime/supervisor.py, Paths.map_export).
         The volume carries Compose's labels, so Compose takes it as its own. Safe to repeat."""
-        # Compose's own keys for the same limits, as docker run's flags.
-        locked_down = [f"--{key.replace('_', '-')}={value}" for key, values in LOCKED_DOWN.items() for value in values]
         for cid in sorted(generation.children):
             volume = f"{host.project}_{data_volume(cid)}"
             labels = [f"{PROJECT_LABEL}={host.project}", f"{VOLUME_LABEL}={data_volume(cid)}"]
@@ -169,7 +157,7 @@ class Apply:
                 self.docker.output(
                     [
                         "run", "--rm", "--pull", "never", "--network", "none", "--entrypoint", "mkdir",
-                        *locked_down,
+                        *LOCKED_DOWN_FLAGS,
                         "--volume", f"{volume}:/data",
                         host.images[GAME_RUNTIME_IMAGE], "-p", f"/data/{layout.MAP_EXPORT}",
                     ]
@@ -183,23 +171,10 @@ class Apply:
                 ) from error
 
     def _make_backup_folders(self, host: Host, generation: Generation) -> None:
-        """Make each world's folder in the install's backups folder, owned by the game runtime's
-        user, before Compose mounts it: Docker makes a missing bind source as root, where the runtime
-        could not write. One one-off container of the game runtime's image makes them all, as root
-        with only the capabilities that takes, and gives each to the image's own user by name, so
-        the uid is written in the Dockerfile alone. Docker makes the backups folder itself when it
-        is missing. Safe to repeat."""
-        folder = backups_folder(generation, host)
+        """Make each world's folder in the backups folder before Compose mounts it."""
+        folder = backups_folder(generation.backups, host)
         try:
-            self.docker.output(
-                [
-                    "run", "--rm", "--pull", "never", "--network", "none", "--user", "0", "--entrypoint", "sh",
-                    "--cap-drop=ALL", "--cap-add=CHOWN", "--cap-add=DAC_OVERRIDE",
-                    "--security-opt=no-new-privileges:true",
-                    "--volume", f"{folder}:{layout.BACKUPS}",
-                    host.images[GAME_RUNTIME_IMAGE], "-c", MAKE_BACKUP_FOLDERS, "sh", *sorted(generation.children),
-                ]
-            )  # fmt: skip
+            make_backup_folders(self.docker, host, folder, generation.children)
         except DockerError as error:
             raise Refused(
                 f"vhd apply could not make the worlds' backup folders in {folder} ({error}). Nothing was applied. "
@@ -225,14 +200,6 @@ class Apply:
     def _applied(self) -> Path:
         """The compose file Compose last ran successfully."""
         return self.install / layout.RENDERED
-
-    def _pull(self, host: Host) -> None:
-        """Every image the install runs, pulled when the host lacks it."""
-        for image in sorted(set(host.images.values())):
-            try:
-                self.docker.output(["image", "inspect", "--format", "{{.Id}}", image])
-            except DockerError:
-                self.docker.stream(["pull", image])
 
     def _up(self, host: Host, compose_file: Path) -> list[str]:
         return [
@@ -294,27 +261,6 @@ class Apply:
             raise Refused(f"Docker reported API version {version!r}, which vhd cannot read") from error
         if api < MIN_ENGINE_API:
             raise Refused(f"Docker Engine API {version} is older than VHD needs: install Docker Engine 26 or newer")
-
-    def _host(self) -> Host:
-        container = json.loads(self.docker.output(["inspect", self.hostname]))[0]
-        mounts = {m["Destination"]: m["Source"] for m in container["Mounts"]}
-        project = container["Config"]["Labels"].get(PROJECT_LABEL)
-        if str(layout.INSTALL) not in mounts or layout.DOCKER_SOCKET not in mounts or project is None:
-            raise Refused("run vhd from the install folder, as: docker compose run --rm vhd apply")
-        config = json.loads(
-            self.docker.output(["compose", "-f", str(self.install / "compose.yaml"), "config", "--format", "json"])
-        )
-        images = dict(config.get("x-vhd", {}).get("images", {}))
-        missing = [name for name in IMAGES if name not in images]
-        if missing:
-            raise Refused(f"the install's compose.yaml lists no {missing[0]} image; download it again from the release")
-        owner = self.install.stat()
-        return Host(
-            project=project,
-            install=mounts[str(layout.INSTALL)],
-            owner=(owner.st_uid, owner.st_gid),
-            images=images,
-        )
 
     def _running(self, project: str) -> set[str]:
         """The services of this install with a running container."""
@@ -450,6 +396,65 @@ class Apply:
         temporary.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
         os.chown(temporary, *owner)
         temporary.replace(path)
+
+
+@contextmanager
+def only_run(generations: Path) -> Iterator[None]:
+    """Hold vhd apply's own lock for the whole run, so two never interleave. Unlike the volume's
+    lock it is not waited for: a second vhd apply is refused at once."""
+    with (generations / APPLY_LOCK).open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise Refused("another vhd apply is running on this install; wait for it to finish") from error
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+def inspect_host(docker: Docker, hostname: str, install: Path, command: str) -> Host:
+    """What Docker says of the install vhd runs in: its project, the install folder's host path and
+    owner, and the release's images. Refuses a vhd not run through Compose from the install folder."""
+    container = json.loads(docker.output(["inspect", hostname]))[0]
+    mounts = {m["Destination"]: m["Source"] for m in container["Mounts"]}
+    project = container["Config"]["Labels"].get(PROJECT_LABEL)
+    if str(layout.INSTALL) not in mounts or layout.DOCKER_SOCKET not in mounts or project is None:
+        raise Refused(f"run vhd from the install folder, as: docker compose run --rm vhd {command}")
+    config = json.loads(docker.output(["compose", "-f", str(install / "compose.yaml"), "config", "--format", "json"]))
+    images = dict(config.get("x-vhd", {}).get("images", {}))
+    missing = [name for name in IMAGES if name not in images]
+    if missing:
+        raise Refused(f"the install's compose.yaml lists no {missing[0]} image; download it again from the release")
+    owner = install.stat()
+    return Host(project=project, install=mounts[str(layout.INSTALL)], owner=(owner.st_uid, owner.st_gid), images=images)
+
+
+def pull_missing(docker: Docker, images: Iterable[str]) -> None:
+    """Each image, pulled when the host lacks it."""
+    for image in sorted(set(images)):
+        try:
+            docker.output(["image", "inspect", "--format", "{{.Id}}", image])
+        except DockerError:
+            docker.stream(["pull", image])
+
+
+def make_backup_folders(docker: Docker, host: Host, folder: str, child_ids: Iterable[str]) -> None:
+    """Make each world's folder in the backups folder on the host, owned by the game runtime's user,
+    before Docker mounts it: Docker makes a missing bind source as root, where the runtime could not
+    write. One one-off container of the game runtime's image makes them all, as root with only the
+    capabilities that takes, and gives each to the image's own user by name, so the uid is written
+    in the Dockerfile alone. Docker makes the backups folder itself when it is missing. Safe to
+    repeat. Raises DockerError."""
+    docker.output(
+        [
+            "run", "--rm", "--pull", "never", "--network", "none", "--user", "0", "--entrypoint", "sh",
+            "--cap-drop=ALL", "--cap-add=CHOWN", "--cap-add=DAC_OVERRIDE",
+            "--security-opt=no-new-privileges:true",
+            "--volume", f"{folder}:{layout.BACKUPS}",
+            host.images[GAME_RUNTIME_IMAGE], "-c", MAKE_BACKUP_FOLDERS, "sh", *sorted(child_ids),
+        ]
+    )  # fmt: skip
 
 
 def _recreated(rendered: dict[str, Any], previous: dict[str, Any] | None) -> set[str]:

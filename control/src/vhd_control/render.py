@@ -32,10 +32,10 @@ def data_volume(child_id: str) -> str:
     return f"{child_id}-data"
 
 
-def backups_folder(generation: Generation, host: "Host") -> str:
-    """The backups folder on the host: the manifest's path, against the install folder unless it
-    is absolute."""
-    return posixpath.normpath(posixpath.join(host.install, generation.backups))
+def backups_folder(path: str, host: "Host") -> str:
+    """The backups folder on the host: the manifest's path, as a generation or the settings carry
+    it, against the install folder unless it is absolute."""
+    return posixpath.normpath(posixpath.join(host.install, path))
 
 
 @dataclass(frozen=True)
@@ -93,7 +93,7 @@ def render(generation: Generation, host: Host) -> dict[str, object]:
                 # Its own folder of the backups alone, so no world reaches another's.
                 {
                     "type": "bind",
-                    "source": posixpath.join(backups_folder(generation, host), cid),
+                    "source": posixpath.join(backups_folder(generation.backups, host), cid),
                     "target": str(layout.BACKUPS),
                 },
             ],
