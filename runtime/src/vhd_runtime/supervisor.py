@@ -57,8 +57,9 @@ REASON_MAX = 500
 # that interval, so a full disk is not filled again every minute.
 BACKUP_CHECK_S = 15
 BACKUP_RETRY_S = 60
-# The runtime status contract's bound on the backups it names.
-BACKUP_NAMES_MAX = 200
+# The runtime status contract's bound on the backups it names: what pruning keeps at most, the counts'
+# 100 each, the backup a restore asks for and the newest import.
+BACKUP_NAMES_MAX = 202
 
 _log = logging.getLogger(__name__)
 

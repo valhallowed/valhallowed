@@ -849,6 +849,15 @@ def test_a_running_world_backs_up_each_new_save_at_most_as_often_as_its_settings
     assert world.reports[-1]["backups"] == {"names": names}
 
 
+def test_a_report_names_every_backup_pruning_keeps_and_no_more_than_its_contract_takes() -> None:
+    names = json.loads((CONTRACTS / "game-runtime.status.schema.json").read_text())["properties"]["backups"]
+    manifest = json.loads((CONTRACTS.parent / "schema" / "manifest.schema.json").read_text())
+    counts = manifest["properties"]["backups"]["properties"]
+    # keep and keep_daily at their most, the backup a restore asks for, and the newest import.
+    kept = counts["keep"]["maximum"] + counts["keep_daily"]["maximum"] + 2
+    assert supervisor.BACKUP_NAMES_MAX == names["properties"]["names"]["maxItems"] == kept
+
+
 def test_a_clean_stop_backs_up_the_save_the_game_stopped_with(world: World) -> None:
     world.generation(1)
     sup = world.supervisor()
