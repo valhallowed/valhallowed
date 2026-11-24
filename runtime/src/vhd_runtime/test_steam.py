@@ -316,3 +316,12 @@ def test_a_stop_ends_a_query() -> None:
     with pytest.raises(steam.Stopped):
         steam.query([sys.executable, "-c", "import time; time.sleep(60)"], 120, lambda: True)
     assert time.monotonic() - started < steam.TERMINATE_TIMEOUT_S
+
+
+def test_an_installed_build_id_longer_than_the_contract_takes_is_no_install(tmp_path: Path) -> None:
+    manifest = tmp_path / "steamapps" / "appmanifest_896660.acf"
+    manifest.parent.mkdir()
+    manifest.write_text(MANIFEST.replace("{flags}", "4").replace("25909431", "9" * 21))
+    assert steam.server_build(tmp_path) is None
+    manifest.write_text(MANIFEST.replace("{flags}", "4").replace("25909431", "9" * 20))
+    assert steam.server_build(tmp_path) == "9" * 20
