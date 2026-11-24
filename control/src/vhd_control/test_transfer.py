@@ -807,7 +807,7 @@ def test_an_export_of_a_world_with_no_backups_folder_yet_is_refused_before_anyth
     assert not (transfers.install / "exports").exists()
 
 
-def test_a_container_docker_cannot_start_is_refused_with_dockers_reason_and_no_kept_backup(
+def test_a_container_docker_cannot_run_is_refused_with_dockers_reason_and_an_imports_maybe_kept_backup(
     transfers: Transfers,
 ) -> None:
     transfers.docker.errors = ("docker: Error response from daemon: invalid mount config for type bind",)
@@ -815,10 +815,11 @@ def test_a_container_docker_cannot_start_is_refused_with_dockers_reason_and_no_k
     with pytest.raises(TransferRefused) as refused:
         transfers.import_save()
     assert str(refused.value) == (
-        "Docker could not start the game runtime image for vhd import: "
+        "Docker could not run the game runtime image for vhd import: "
         "docker: Error response from daemon: invalid mount config for type bind"
+        "; an import cut short after it named its backup may have kept it, which vhd backups then lists"
     )
-    with pytest.raises(TransferRefused, match="for vhd export: docker: Error response"):
+    with pytest.raises(TransferRefused, match=r"for vhd export: docker: Error response from daemon: [^;]*$"):
         transfers.export_backup()
     assert not (transfers.install / "exports").exists()
 

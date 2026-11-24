@@ -67,7 +67,7 @@ MEMORY = "512m"
 PIDS = 64
 # Where a backup's name is defined: the restore a generation carries names one.
 BACKUP_NAME = ("contracts/game-runtime.generation.schema.json", ("properties", "restore", "properties", "backup"))
-# What docker run exits with when Docker itself fails, before the container runs.
+# What docker run exits with when Docker itself fails, which is mostly before the container runs.
 DOCKER_FAILED = 125
 # What stops vhd itself: a Ctrl-C, or the SIGTERM tini forwards when Docker stops vhd's container.
 STOP_SIGNALS = {signal.SIGINT, signal.SIGTERM}
@@ -271,9 +271,9 @@ class Transfer:
             self._stop(name)
             raise
         if ran.status == DOCKER_FAILED:
-            # The container never ran, so the action kept nothing.
+            # Mostly before the container ran, but Docker also fails this way after it started.
             why = "; ".join(ran.errors) or "it gave no reason"
-            raise Refused(f"Docker could not start the game runtime image for vhd {action}: {why}")
+            raise Refused(f"Docker could not run the game runtime image for vhd {action}: {why}{_kept(action)}")
         return self._result(action, world, ran.status, ran.output)
 
     def _stop(self, name: str) -> list[str]:
