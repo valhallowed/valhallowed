@@ -18,7 +18,6 @@ with no container yet gets it in its first generation, so its first start loads 
                                                 backup into, as worlds_local/<world>/
 """
 
-import contextlib
 import csv
 import io
 import json
@@ -61,8 +60,6 @@ MEMORY = "512m"
 PIDS = 64
 # What the image's own user is, as the image says: its uid, its primary gid, and every gid it holds.
 WHO = "id -u && id -g && id -G"
-# Docker's words for a container that is gone, or going, already.
-_GONE = ("No such container", "is already in progress")
 
 
 class Refused(Exception):
@@ -213,30 +210,41 @@ class Transfer:
         try:
             ran = self.docker.run(args, TIMEOUT_S)
         except DockerTimeout as error:
-            self._stop(name)
+            failed = self._stop(name)
             kept = (
                 "; an import stopped after it named its backup may have kept it, which vhd backups then lists"
                 if action == "import"
                 else ""
             )
-            raise Refused(f"vhd {action} did not finish within {TIMEOUT_S} s, so vhd stopped it{kept}") from error
+            left = f"; stopping its container failed too: {'; '.join(failed)}" if failed else ""
+            raise Refused(f"vhd {action} did not finish within {TIMEOUT_S} s, so vhd stopped it{kept}{left}") from error
         except BaseException:
             # Whatever stopped vhd, the container must not outlive it.
-            with contextlib.suppress(DockerError):
-                self._stop(name)
+            self._stop(name)
             raise
         return self._result(action, world, ran.status, ran.output)
 
-    def _stop(self, name: str) -> None:
+    def _stop(self, name: str) -> list[str]:
         """Stop the container: a SIGTERM, which the action answers by removing what it wrote and
         printing its refusal, and a kill after STOP_GRACE_S; then remove it, unless --rm already has.
-        One gone already is no failure."""
+        Each step is tried whatever the one before did, and one that failed counts only while the
+        container is still there. Returns how each such step failed."""
+        failed: list[str] = []
         for args in (["stop", "--timeout", str(STOP_GRACE_S), name], ["rm", "--force", name]):
             try:
                 self.docker.output(args)
             except DockerError as error:
-                if not any(gone in str(error) for gone in _GONE):
-                    raise
+                if self._there(name):
+                    failed.append(str(error))
+        return failed
+
+    def _there(self, name: str) -> bool:
+        """Whether the container exists, by its exact name; one Docker cannot say of counts as there."""
+        try:
+            listed = self.docker.output(["container", "ls", "--all", "--quiet", "--filter", f"name=^{name}$"])
+        except DockerError:
+            return True
+        return bool(listed.strip())
 
     def _result(self, action: Action, world: str, status: int, output: str) -> dict[str, Any]:
         """The action's result, its last line of output, once it keeps its contract and says done

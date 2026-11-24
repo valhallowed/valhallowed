@@ -68,7 +68,10 @@ class TransferDocker(FakeDocker):
         self.user = (os.getuid(), os.getgid())
         self.runs: list[tuple[list[str], float]] = []
         self.stopped: list[list[str]] = []
-        self.gone = False
+        # The stop's steps that fail, and whether the container is still there when one does.
+        self.failing: set[str] = set()
+        self.there = True
+        self.listed: list[list[str]] = []
         # What the action's container does with its arguments: its exit status and output.
         self.act: Callable[[list[str]], tuple[int, str]] = self.done
 
@@ -78,9 +81,12 @@ class TransferDocker(FakeDocker):
             return f"{uid}\n{gid}\n{gid}\n"
         if args[0] in ("stop", "rm"):
             self.stopped.append(args)
-            if self.gone:
-                raise DockerError(f"docker {args[0]}: Error response from daemon: No such container: {args[-1]}")
+            if args[0] in self.failing:
+                raise DockerError(f"docker {args[0]}: the daemon did not answer")
             return ""
+        if args[:2] == ["container", "ls"]:
+            self.listed.append(args)
+            return "0123456789ab\n" if self.there else ""
         return super().output(args)
 
     def run(self, args: list[str], timeout_s: float) -> Ran:
@@ -388,15 +394,44 @@ def test_an_import_that_outlasts_its_timeout_is_stopped_with_its_container(trans
     assert transfers.restores() == {}
 
 
-def test_a_container_already_gone_is_no_failure_of_the_stop(transfers: Transfers) -> None:
-    def hang(args: list[str]) -> tuple[int, str]:
-        raise DockerTimeout("docker run did not finish")
+def hang(args: list[str]) -> tuple[int, str]:
+    raise DockerTimeout("docker run did not finish")
 
+
+def test_a_container_already_gone_is_no_failure_of_the_stop(transfers: Transfers) -> None:
     transfers.docker.act = hang
-    transfers.docker.gone = True
-    with pytest.raises(TransferRefused, match="so vhd stopped it"):
+    transfers.docker.failing = {"stop", "rm"}
+    transfers.docker.there = False
+    with pytest.raises(TransferRefused, match="so vhd stopped it; an import stopped after") as refused:
         transfers.import_save()
-    assert len(transfers.docker.stopped) == 2
+    assert "failed too" not in str(refused.value)
+    assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]
+    # Gone by Docker's own list of containers by that exact name, not by its words.
+    name = transfers.docker.stopped[0][-1]
+    assert transfers.docker.listed[0] == ["container", "ls", "--all", "--quiet", "--filter", f"name=^{name}$"]
+
+
+def test_a_failed_stop_still_removes_the_container_and_the_refusal_keeps_the_timeout(transfers: Transfers) -> None:
+    transfers.docker.act = hang
+    transfers.docker.failing = {"stop"}
+    with pytest.raises(
+        TransferRefused,
+        match=f"did not finish within {TIMEOUT_S} s, so vhd stopped it; .*; stopping its container failed too: "
+        "docker stop: the daemon did not answer$",
+    ):
+        transfers.import_save()
+    assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]
+
+
+def test_an_interrupted_import_whose_stop_fails_is_still_an_interrupt(transfers: Transfers) -> None:
+    def interrupt(args: list[str]) -> tuple[int, str]:
+        raise KeyboardInterrupt
+
+    transfers.docker.act = interrupt
+    transfers.docker.failing = {"stop", "rm"}
+    with pytest.raises(KeyboardInterrupt):
+        transfers.import_save()
+    assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]
 
 
 def test_an_interrupted_import_stops_its_container_too(transfers: Transfers) -> None:
