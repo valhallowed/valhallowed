@@ -4,6 +4,7 @@ that run alone, never the control plane (G13)."""
 import subprocess
 import sys
 import threading
+import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -109,8 +110,9 @@ class Cli:
             process.kill()
             raise
         finally:
+            deadline = time.monotonic() + READ_AFTER_S
             for reader in readers:
-                reader.join(READ_AFTER_S)
+                reader.join(max(0.0, deadline - time.monotonic()))
             # Closing a pipe waits for a read of it to end, so one a reader still reads stays open.
             if not any(reader.is_alive() for reader in readers):
                 stdout.close()

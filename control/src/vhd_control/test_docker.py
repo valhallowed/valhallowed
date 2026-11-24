@@ -72,8 +72,9 @@ def test_a_one_off_that_outlasts_its_timeout_is_killed() -> None:
 
 @pytest.mark.usefixtures("shell")
 def test_a_one_off_killed_while_a_process_it_left_holds_its_pipes_still_ends(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(docker, "READ_AFTER_S", 0.5)
+    monkeypatch.setattr(docker, "READ_AFTER_S", 2)
     started = time.monotonic()
     with pytest.raises(DockerTimeout):
         Cli(io.StringIO()).run(["-c", "sleep 8 & exec sleep 30"], 0.2)
-    assert time.monotonic() - started < 4
+    # Both readers are held, and READ_AFTER_S bounds them together, not each in turn.
+    assert time.monotonic() - started < 3.5
