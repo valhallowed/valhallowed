@@ -229,7 +229,7 @@ def _update(update: dict[str, str]) -> str:
     that waits, and why the newest check failed."""
     text = ""
     if "build" in update:
-        text += f"; game build {update['build']} waits for the world's next start"
+        text += f"; game build {update['build']} waits for an empty world or the next start, as the update policy says"
     if "failure" in update:
         text += f"; the newest check for a game build failed ({printable(update['failure'])})"
     return text

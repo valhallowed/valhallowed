@@ -115,8 +115,8 @@ def test_status_names_each_worlds_game_build_one_that_waits_and_why_a_check_fail
         "Ashwake: running, 1 player(s), game build 25909431",
         "Frostmere: running, 1 player(s), game build 25909431; the newest check for a game build failed"
         " (FAILED (No Connection)?[2J)",
-        "Meadowfold: running, 1 player(s), game build 25909431; game build 26266951 waits for the world's next"
-        " start; the newest check for a game build failed (FAILED (No Connection))",
+        "Meadowfold: running, 1 player(s), game build 25909431; game build 26266951 waits for an empty world or the"
+        " next start, as the update policy says; the newest check for a game build failed (FAILED (No Connection))",
     ]
 
 
