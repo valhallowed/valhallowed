@@ -219,7 +219,11 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   back up; and before any action replaces the save. A copy that would leave the
   disk less than 1 GiB free is not started. It keeps the newest 24, and the
   newest backup of each of the newest 14 days (UTC) that have one, removes the
-  oldest first, and never removes the newest. How often and how many are
+  oldest first, and never removes the newest, nor the newest backup an import
+  took, whose record says so: `vhd import` asks for its restore as it keeps it,
+  and that restore may wait unhanded behind another change to the world for as
+  long as that change waits. One per world, so it bounds what it keeps; once a
+  later import exists, the older one prunes like any other. How often and how many are
   defaults the manifest can change, each count at most 100, so a status names at
   most 200 backups. Backups live in a `backups` folder in the install folder, a
   folder for each world that only its runtime mounts, and the one-off container
