@@ -685,10 +685,10 @@ def test_the_export_folder_is_the_runtime_users_while_the_container_writes_it_th
     target = transfers.docker.own_view(mounts(args)["/export"]["source"]).name
     assert seen == [[("exports", *owned), ("Meadowfold", *owned), (target, *runtime)]]
     assert chowns[3:] == [
-        (target, *owned),
         ("worlds_local", *owned),
         ("Meadowfold", *owned),
         ("_main.41.ok", *owned),
+        (target, *owned),
     ]
 
 
