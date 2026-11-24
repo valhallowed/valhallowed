@@ -494,7 +494,6 @@ def test_the_timeout_is_well_within_the_age_after_which_an_imports_leftovers_are
 def test_an_export_copies_the_newest_backup_into_a_folder_of_its_own_for_the_install_folders_owner(
     transfers: Transfers,
 ) -> None:
-    owner = transfers.install.stat()
     transfers.export_backup()
 
     [(args, timeout)] = transfers.docker.runs
@@ -514,8 +513,6 @@ def test_an_export_copies_the_newest_backup_into_a_folder_of_its_own_for_the_ins
     assert "readonly" not in found["/export"]
     assert target.parent == transfers.install / "exports" / "Meadowfold"
     assert re.fullmatch(r"[0-9]{8}T[0-9]{6}Z", target.name)
-    for path in (target, *target.rglob("*")):
-        assert (path.stat().st_uid, path.stat().st_gid) == (owner.st_uid, owner.st_gid)
     assert (target / "worlds_local" / "Meadowfold" / "_main.41.ok").exists()
     shown = f"exports/Meadowfold/{target.name}/worlds_local/Meadowfold"
     assert f"vhd export: Meadowfold's backup {BACKUP}, save 41 (1234 objects" in transfers.out.getvalue()
@@ -589,17 +586,30 @@ def test_an_export_folder_swapped_for_another_folder_gives_nothing_away(
     assert [len(chowns)] == before
 
 
-def test_the_export_folder_is_the_runtime_users_while_the_container_writes_it(transfers: Transfers) -> None:
-    owners: list[tuple[int, int]] = []
+def test_the_export_folder_is_the_runtime_users_while_the_container_writes_it_then_the_install_folders_owners(
+    transfers: Transfers, chowns: list[tuple[str, int, int]]
+) -> None:
+    owner = transfers.install.stat()
+    owned = (owner.st_uid, owner.st_gid)
+    runtime = transfers.docker.user = (owner.st_uid + 4242, owner.st_gid + 4343)
+    seen: list[list[tuple[str, int, int]]] = []
 
     def look(args: list[str]) -> tuple[int, str]:
-        info = transfers.docker.own_view(mounts(args)["/export"]["source"]).stat()
-        owners.append((info.st_uid, info.st_gid))
+        seen.append(list(chowns))
         return transfers.docker.done(args)
 
     transfers.docker.act = look
     transfers.export_backup()
-    assert owners == [transfers.docker.user]
+
+    [(args, _)] = transfers.docker.runs
+    target = transfers.docker.own_view(mounts(args)["/export"]["source"]).name
+    assert seen == [[("exports", *owned), ("Meadowfold", *owned), (target, *runtime)]]
+    assert chowns[3:] == [
+        (target, *owned),
+        ("worlds_local", *owned),
+        ("Meadowfold", *owned),
+        ("_main.41.ok", *owned),
+    ]
 
 
 def test_a_refused_export_removes_what_vhd_made(transfers: Transfers) -> None:
