@@ -225,10 +225,12 @@ class Supervisor:
     _checked_at: float = field(default=0.0, init=False)
     _update_build: str | None = field(default=None, init=False)
     _update_failure: str | None = field(default=None, init=False)
-    # The restart to update this start's install did not reach, which the next for its build waits on; and
-    # why a restart to update cannot be recorded, which then waits for the next start in this run.
+    # The restart to update this start's install did not reach, which the next for its build waits on; why
+    # a restart to update could not be recorded, which status keeps saying until a record is written; and
+    # whether a check since asks for the write to be tried again.
     _missed: Missed | None = field(default=None, init=False)
     _unrecorded: str | None = field(default=None, init=False)
+    _record_again: bool = field(default=False, init=False)
     # Set once the watch of the game ends, so a check under way ends its SteamCMD rather than hold up the exit.
     _watched: bool = field(default=False, init=False)
     # The contract a backup's record keeps, read from the image at the start, as the reader reads
@@ -509,7 +511,7 @@ class Supervisor:
             return
         found = None if public == build else public
         # A record that could not be written is tried again at the next empty moment.
-        self._unrecorded = None
+        self._record_again = True
         if found is not None and found != self._update_build:
             when = "once no players are online" if generation.updates.policy == "when-empty" else "at its next start"
             _log.info("game build %s is out, build %s is installed; the world updates %s", found, build, when)
@@ -575,9 +577,9 @@ class Supervisor:
         install, once its wait has passed. The restart is recorded first, so the next start can tell
         whether it got the build; one that cannot be recorded is not made."""
         wanted = self._update_build
-        if wanted is None or generation.updates.policy != "when-empty" or self._unrecorded is not None:
+        if wanted is None or generation.updates.policy != "when-empty" or not _empty(state, world):
             return False
-        if not _empty(state, world):
+        if self._unrecorded is not None and not self._record_again:
             return False
         now = self.wall()
         attempts = 1
@@ -588,6 +590,7 @@ class Supervisor:
             attempts = missed.attempts + 1
         record = self.paths.update_record
         temporary = record.with_suffix(".tmp")
+        self._record_again = False
         try:
             record.parent.mkdir(parents=True, exist_ok=True)
             temporary.write_text(json.dumps({"build": wanted, "attempts": attempts, "at": now.strftime(RECORD_TIME)}))
@@ -596,11 +599,12 @@ class Supervisor:
             with contextlib.suppress(OSError):
                 temporary.unlink(missing_ok=True)
             self._unrecorded = (
-                "cannot record a restart to update in the data volume, so the world updates only at its next start: "
-                f"{error.strerror or error}"
+                "cannot record a restart to update in the data volume, so the world restarts to update only once one "
+                f"can be, tried again after each check: {error.strerror or error}"
             )
             self._set_update_failure(self._unrecorded)
             return False
+        self._unrecorded = None
         return True
 
     def _restart_now(

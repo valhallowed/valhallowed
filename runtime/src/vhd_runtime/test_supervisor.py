@@ -2110,6 +2110,11 @@ def test_a_record_that_could_not_be_written_is_tried_again_after_the_next_check(
     assert sup.run() == 0
     assert 1800 <= world.time.now < 1810
     assert json.loads(world.paths.update_record.read_text())["build"] == NEWER
+    # Status kept saying why until the write succeeded.
+    running = [r for r in world.reports if r["state"] == "running"]
+    failures = [cast(dict[str, str], r.get("update", {})).get("failure") for r in running]
+    first = failures.index(next(f for f in failures if f is not None))
+    assert all(f is not None for f in failures[first:])
 
 
 def test_a_check_that_raises_unexpectedly_says_why_and_the_world_runs_on(world: World) -> None:
