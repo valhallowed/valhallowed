@@ -263,7 +263,7 @@ def test_a_steamcmd_that_cannot_reach_steam_says_so(tmp_path: Path) -> None:
         APP_INFO.replace("{build}", "26266951").split('\t\t"branches"')[0],
         APP_INFO.replace("{build}", "build 9"),
         APP_INFO.replace("{build}", "9" * 21),
-        APP_INFO.replace('"public"\n\t\t\t{', '"beta"\n\t\t\t{'),
+        APP_INFO.replace("{build}", "26266951").replace('"public"\n\t\t\t{', '"beta"\n\t\t\t{'),
         APP_INFO.replace("{build}", "26266951").replace('"896660"\n{', '"896660"\n"common"'),
         APP_INFO.replace("{build}", "26266951").replace('"privatebranches"\t\t"1"', "{"),
     ],
@@ -312,5 +312,7 @@ def test_a_query_that_cannot_start_fails_the_check(tmp_path: Path) -> None:
 
 
 def test_a_stop_ends_a_query() -> None:
+    started = time.monotonic()
     with pytest.raises(steam.Stopped):
         steam.query([sys.executable, "-c", "import time; time.sleep(60)"], 120, lambda: True)
+    assert time.monotonic() - started < steam.TERMINATE_TIMEOUT_S

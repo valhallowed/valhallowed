@@ -452,7 +452,7 @@ class Supervisor:
             self._checked_at = self.clock.now()
             self._checking = self.checker.submit(
                 steam.public_build,
-                self.paths.steamcmd / "steamcmd.sh",
+                self.paths.steamcmd / steam.STEAMCMD_SCRIPT,
                 self.paths.app_info_cache,
                 self.query_steamcmd,
                 lambda: self._stop or self._watched,

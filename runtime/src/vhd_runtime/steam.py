@@ -22,6 +22,7 @@ from urllib.request import urlopen
 
 STEAMCMD_URL = "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz"
 SERVER_APP_ID = 896660
+STEAMCMD_SCRIPT = "steamcmd.sh"
 INSTALL_ATTEMPTS = 3
 DOWNLOAD_TIMEOUT_S = 60
 INSTALL_TIMEOUT_S = 3600
@@ -53,7 +54,7 @@ class InstallFailed(Exception):
 
 
 class CheckFailed(Exception):
-    """SteamCMD named no public build of the dedicated server; the message says why."""
+    """The check of Steam's public game build failed; the message says why."""
 
 
 class Response(Protocol):
@@ -129,7 +130,7 @@ def ensure_steamcmd(directory: Path, fetch: Fetch = fetch) -> Path:
     """SteamCMD in directory, downloaded from Valve on the first start. The archive is
     unpacked beside the directory and moved into place whole, so an interrupted download
     never leaves a SteamCMD that looks installed."""
-    script = directory / "steamcmd.sh"
+    script = directory / STEAMCMD_SCRIPT
     if script.exists():
         return script
     partial = directory.with_name(f"{directory.name}.partial")
@@ -162,7 +163,7 @@ def server_build(install_dir: Path) -> str | None:
     text = manifest.read_text()
     flags = re.search(r'^\s*"StateFlags"\s+"(\d+)"', text, re.MULTILINE)
     build = re.search(r'^\s*"buildid"\s+"(\d+)"', text, re.MULTILINE)
-    if flags is None or flags.group(1) != FULLY_INSTALLED or build is None:
+    if flags is None or flags.group(1) != FULLY_INSTALLED or build is None or not BUILD_ID.fullmatch(build.group(1)):
         return None
     return build.group(1)
 
