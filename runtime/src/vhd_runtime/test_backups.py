@@ -322,6 +322,52 @@ def test_prune_counts_no_import_whose_record_cannot_be_read_or_breaks_its_contra
     assert backups.prune(kept_in(store), keep=1, keep_daily=0, now=NOW) == ([name[3], name[0]], None)
 
 
+def test_prune_reads_each_record_once_and_forgets_the_backups_it_no_longer_holds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = tmp_path / "backups"
+    store.mkdir()
+    times = [NOW - timedelta(hours=hours) for hours in (2, 1, 0)]
+    backed_up(store, tmp_path, dict.fromkeys(times, "runtime"))
+    name = [when.strftime(backups.NAME_FORMAT) for when in times]
+    read: list[str] = []
+    imported = backups._imported
+
+    def counting(backup: Path, contract: Any) -> bool | None:
+        read.append(backup.name)
+        return imported(backup, contract)
+
+    monkeypatch.setattr(backups, "_imported", counting)
+    assert backups.prune(kept_in(store), keep=3, keep_daily=0, now=NOW) == ([name[2], name[1], name[0]], None)
+    assert backups.prune(kept_in(store), keep=2, keep_daily=0, now=NOW) == ([name[2], name[1]], None)
+    assert read == [name[2], name[1], name[0]]
+    backups.prune(kept_in(store), keep=2, keep_daily=0, now=NOW)
+    assert set(backups._IMPORTS[store]) == {name[2], name[1]}
+
+
+def test_prune_reads_a_record_again_while_it_cannot_be_read_at_all(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = tmp_path / "backups"
+    store.mkdir()
+    times = [NOW - timedelta(hours=hours) for hours in (2, 1, 0)]
+    backed_up(store, tmp_path, dict(zip(times, ["import", "import", "runtime"], strict=True)))
+    name = [when.strftime(backups.NAME_FORMAT) for when in times]
+    read_text = Path.read_text
+
+    def failing(path: Path, *args: Any, **kwargs: Any) -> str:
+        if path == store / name[1] / backups.RECORD:
+            raise OSError(5, "Input/output error")
+        return read_text(path, *args, **kwargs)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(Path, "read_text", failing)
+        backups.prune(kept_in(store), keep=3, keep_daily=0, now=NOW)
+    assert name[1] not in backups._IMPORTS[store]
+    # Read now, it is the newest import, and the older one prunes.
+    assert backups.prune(kept_in(store), keep=1, keep_daily=0, now=NOW) == ([name[2], name[1]], None)
+
+
 def test_prune_keeps_the_newest_import_beside_the_backup_a_restore_asks_for(tmp_path: Path) -> None:
     store = tmp_path / "backups"
     store.mkdir()

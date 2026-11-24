@@ -76,6 +76,10 @@ RESERVE = 1 << 30
 # ahead would otherwise stay newest, and drag every later name after it.
 AHEAD = timedelta(days=1)
 
+# Whether each backup's record says an import took it, by backups folder and backup name, as pruning
+# last found it (_newest_import).
+_IMPORTS: dict[Path, dict[str, bool]] = {}
+
 OK_FILE = re.compile(r"^_main\.([0-9]+)\.ok$")
 # The .chunks file, as the game writes it (Game facts): little-endian 42, the save's objects, the
 # chunks it names, then each chunk's index, size, version and objects.
@@ -513,7 +517,7 @@ def prune(place: Place, keep: int, keep_daily: int, now: datetime) -> tuple[list
     kept = set(held[:keep])
     if place.spare in held:
         kept.add(place.spare)
-    imported = next((name for name in held if _imported(backups, name, place.contract)), None)
+    imported = _newest_import(backups, held, place.contract)
     if imported is not None:
         kept.add(imported)
     days: dict[str, str] = {}
@@ -537,17 +541,46 @@ def prune(place: Place, keep: int, keep_daily: int, now: datetime) -> tuple[list
 def _record(backups: Path, name: str, contract: Draft202012Validator) -> dict[str, object] | None:
     """A backup's record, or None if it cannot be read or breaks its contract."""
     try:
-        record = json.loads((backups / name / RECORD).read_text())
+        return _checked(json.loads((backups / name / RECORD).read_text()), contract)
     except (OSError, ValueError):
         return None
+
+
+def _checked(record: object, contract: Draft202012Validator) -> dict[str, object] | None:
     if not isinstance(record, dict) or generation.breach(contract, record) is not None:
         return None
     return record
 
 
-def _imported(backups: Path, name: str, contract: Draft202012Validator) -> bool:
-    """Whether a backup's record says an import took it. A record that cannot be read says nothing."""
-    record = _record(backups, name, contract)
+def _newest_import(backups: Path, held: list[str], contract: Draft202012Validator) -> str | None:
+    """The newest of the held backups whose record says an import took it. A record never changes
+    once its backup is named, so each verdict is kept for the process, for the names still held
+    alone, and a record is read again only while it cannot be read at all."""
+    listed = set(held)
+    known = {name: verdict for name, verdict in _IMPORTS.get(backups, {}).items() if name in listed}
+    _IMPORTS[backups] = known
+    for name in held:
+        if name not in known:
+            verdict = _imported(backups / name, contract)
+            if verdict is None:
+                continue
+            known[name] = verdict
+        if known[name]:
+            return name
+    return None
+
+
+def _imported(backup: Path, contract: Draft202012Validator) -> bool | None:
+    """Whether a backup's record says an import took it: False for a record that is no JSON or breaks
+    its contract, which says nothing, and None for one that cannot be read now."""
+    try:
+        text = (backup / RECORD).read_text()
+    except OSError:
+        return None
+    try:
+        record = _checked(json.loads(text), contract)
+    except ValueError:
+        return False
     return record is not None and record.get("source") == "import"
 
 
