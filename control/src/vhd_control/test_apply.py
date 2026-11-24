@@ -767,7 +767,7 @@ def test_a_runtime_waiting_for_an_empty_world_still_needs_confirmation_after_a_l
 def test_a_second_apply_while_one_runs_is_refused(setup: Setup) -> None:
     with (setup.volume / ".apply.lock").open("a") as held:
         fcntl.flock(held, fcntl.LOCK_EX)
-        with pytest.raises(Refused, match="another vhd apply is running"):
+        with pytest.raises(Refused, match="another vhd apply, vhd import or vhd export is running"):
             setup.apply()
 
 

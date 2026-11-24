@@ -19,6 +19,8 @@ from vhd_control.reconcile import last_port, reconcile
 from vhd_control.schemas import Schemas
 from vhd_control.status import StatusBook
 from vhd_control.store import Store
+from vhd_control.transfer import Refused as TransferRefused
+from vhd_control.transfer import Transfer
 
 
 def main(argv: list[str] | None = None, out: TextIO = sys.stdout) -> int:
@@ -31,6 +33,18 @@ def main(argv: list[str] | None = None, out: TextIO = sys.stdout) -> int:
     restore = commands.add_parser("restore", help="restore one of a world's backups, once no players are online")
     restore.add_argument("world", help="the world's save name")
     restore.add_argument("backup", help="the backup's name, as vhd backups lists it")
+    imported = commands.add_parser(
+        "import", help="keep a 1.0+ save from the install folder as a backup of a world, and restore it"
+    )
+    imported.add_argument("world", help="the world's save name")
+    imported.add_argument(
+        "path", help="the folder, relative to the install folder, that holds only the save folder, named for the world"
+    )
+    exported = commands.add_parser(
+        "export", help="copy one of a world's backups into the install folder, in the layout the game reads"
+    )
+    exported.add_argument("world", help="the world's save name")
+    exported.add_argument("backup", nargs="?", help="the backup's name, as vhd backups lists it; the newest by default")
     apply = commands.add_parser("apply", help="bring the install's containers in line with its manifest")
     apply.add_argument(
         "--disconnect-players", action="store_true", help="apply even where it restarts a world players may be in"
@@ -65,10 +79,27 @@ def main(argv: list[str] | None = None, out: TextIO = sys.stdout) -> int:
                 hostname=os.environ.get("HOSTNAME", ""),
                 out=out,
             ).run(args.disconnect_players)
+        elif args.command in ("import", "export"):
+            transfer = Transfer(
+                install=layout.INSTALL,
+                generations=layout.GENERATIONS,
+                schemas=schemas,
+                docker=Cli(),
+                hostname=os.environ.get("HOSTNAME", ""),
+                out=out,
+            )
+            if args.command == "import":
+                transfer.import_save(args.world, args.path)
+            else:
+                transfer.export_backup(args.world, args.backup)
         else:
             daemon(schemas)
     except (InvalidSettings, Refused, DockerError, client.Unreachable, client.Refused, NoSuchWorld) as error:
         print(f"vhd {args.command}: {error}", file=sys.stderr)
+        return 1
+    except TransferRefused as error:
+        # The game runtime image's reason is a container's words: printable text alone reaches a terminal.
+        print(f"vhd {args.command}: {_printable(str(error))}", file=sys.stderr)
         return 1
     return 0
 

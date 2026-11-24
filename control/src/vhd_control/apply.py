@@ -1,9 +1,10 @@
 """vhd apply: bring the install's containers in line with its manifest (G13).
 
-The one place that holds Docker's socket, for its run alone. Two rules shape it: restarting a
-world that may have players online takes the server manager's confirmation, and
-.vhd/compose.json names what Compose last ran successfully, so a failed or interrupted run
-leaves both the install and the next run's players check as they were.
+It holds Docker's socket for its run alone, as vhd import and vhd export do, which share its lock
+and what it learns of the host. Two rules shape it: restarting a world that may have players online
+takes the server manager's confirmation, and .vhd/compose.json names what Compose last ran
+successfully, so a failed or interrupted run leaves both the install and the next run's players
+check as they were.
 """
 
 import fcntl
@@ -400,13 +401,15 @@ class Apply:
 
 @contextmanager
 def only_run(generations: Path) -> Iterator[None]:
-    """Hold vhd apply's own lock for the whole run, so two never interleave. Unlike the volume's
-    lock it is not waited for: a second vhd apply is refused at once."""
+    """Hold vhd apply's own lock for the whole run, so no two of vhd apply, vhd import and vhd export
+    interleave. Unlike the volume's lock it is not waited for: a second is refused at once."""
     with (generations / APPLY_LOCK).open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
-            raise Refused("another vhd apply is running on this install; wait for it to finish") from error
+            raise Refused(
+                "another vhd apply, vhd import or vhd export is running on this install; wait for it to finish"
+            ) from error
         try:
             yield
         finally:
