@@ -273,16 +273,13 @@ class Transfer:
         container is still there. Returns how each such step failed."""
         failed: list[str] = []
         # Held until both steps are tried: a second Ctrl-C must not leave the container behind.
-        held = signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
-        try:
+        with _stops_held():
             for args in (["stop", "--timeout", str(STOP_GRACE_S), name], ["rm", "--force", name]):
                 try:
                     self.docker.output(args)
                 except DockerError as error:
                     if self._there(name):
                         failed.append(str(error))
-        finally:
-            signal.pthread_sigmask(signal.SIG_SETMASK, held)
         return failed
 
     def _there(self, name: str) -> bool:
@@ -343,6 +340,16 @@ def _stopped_as_interrupted() -> Iterator[None]:
 
 def _interrupt(signum: int, frame: FrameType | None) -> NoReturn:
     raise KeyboardInterrupt
+
+
+@contextmanager
+def _stops_held() -> Iterator[None]:
+    """What stops vhd waits until the block ends, and stops it then."""
+    held = signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
+    try:
+        yield
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, held)
 
 
 def _in_manifest(settings: Settings, world: str) -> None:
@@ -487,7 +494,13 @@ def _remove(made: list[Path]) -> None:
 
 def _give(target: Path, made_as: tuple[int, int], owner: tuple[int, int]) -> None:
     """Give what the export wrote to the install folder's owner, never through a link: the folder is
-    opened as the one vhd made, or not at all, and walked by descriptor. Raises OSError."""
+    opened as the one vhd made, or not at all, and walked by descriptor. A stop waits until it is
+    all given, so no export is left half given. Raises OSError."""
+    with _stops_held():
+        _give_held(target, made_as, owner)
+
+
+def _give_held(target: Path, made_as: tuple[int, int], owner: tuple[int, int]) -> None:
     top = os.open(target, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         info = os.fstat(top)

@@ -692,6 +692,26 @@ def test_the_export_folder_is_the_runtime_users_while_the_container_writes_it_th
     ]
 
 
+def test_an_export_stopped_while_vhd_gives_it_away_is_given_whole_then_stops(
+    transfers: Transfers, chowns: list[tuple[str, int, int]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The chowns fixture's recorder, which takes what os.chown takes.
+    given: Callable[..., None] = os.chown
+
+    def chown(path: object, uid: int, gid: int, **kwargs: object) -> None:
+        # Only the walk passes a descriptor: the first of what the export wrote.
+        if kwargs:
+            os.kill(os.getpid(), signal.SIGTERM)
+        given(path, uid, gid, **kwargs)
+
+    monkeypatch.setattr(os, "chown", chown)
+    with pytest.raises(KeyboardInterrupt):
+        transfers.export_backup()
+    # The export's folder's three, then everything in it and the folder itself.
+    assert [name for name, _, _ in chowns[3:-1]] == ["worlds_local", "Meadowfold", "_main.41.ok"]
+    assert chowns[-1][0] == chowns[2][0]
+
+
 def test_a_refused_export_removes_what_vhd_made(transfers: Transfers) -> None:
     transfers.docker.act = lambda args: (
         1,
