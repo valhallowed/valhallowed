@@ -541,6 +541,19 @@ def test_an_interrupted_import_stops_its_container_too(transfers: Transfers) -> 
     assert transfers.restores() == {}
 
 
+def test_an_import_stopped_before_it_asks_for_its_restore_names_the_backup_it_kept(
+    transfers: Transfers, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def interrupt(self: Store, state: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(Store, "save", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        transfers.import_save()
+    said = transfers.out.getvalue()
+    assert f"is kept as backup {BACKUP}, but vhd did not finish asking for its restore" in said
+
+
 def test_a_vhd_stopped_by_sigterm_stops_its_actions_container_and_removes_what_it_made(transfers: Transfers) -> None:
     before = signal.getsignal(signal.SIGTERM)
 

@@ -145,10 +145,20 @@ class Transfer:
             ]
             result = self._act(host, "import", world, mounts, [])
             restore = Restore(secrets.token_hex(16), result["backup"])
-            with store.locked():
-                state = store.load()
-                state.restores[cid] = restore
-                store.save(state)
+            try:
+                with store.locked():
+                    state = store.load()
+                    state.restores[cid] = restore
+                    store.save(state)
+            except BaseException:
+                # Whatever stopped it, the backup is kept, and the server manager needs its name.
+                print(
+                    f"vhd import: {world}'s save {_save(result)} is kept as backup {result['backup']}, but vhd did "
+                    "not finish asking for its restore. vhd status says whether it is asked for; if not, vhd import "
+                    "again asks for one, keeping the save as a new backup.",
+                    file=self.out,
+                )
+                raise
             started = cid in (state.applied or {})
         then = (
             "The world's runtime restores it once no players are online, or now with vhd apply --disconnect-players; "
