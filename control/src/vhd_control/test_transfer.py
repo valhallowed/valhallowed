@@ -126,6 +126,8 @@ class TransferDocker(FakeDocker):
 class Transfers(Setup):
     def __init__(self, root: Path) -> None:
         super().__init__(root)
+        # Whatever the runner's umask: an import takes only a way its owner alone can change.
+        self.install.chmod(0o755)
         self.docker: TransferDocker = TransferDocker(self.install)
         (self.install / "backups" / MEADOWFOLD).mkdir(parents=True)
         save = self.install / "incoming" / "Meadowfold"
@@ -311,6 +313,20 @@ def test_an_import_refuses_a_folder_outside_or_unfit_before_anything_runs(
         transfers.import_save(path=path)
     assert transfers.docker.runs == []
     assert transfers.docker.prepared == []
+
+
+@pytest.mark.parametrize("mode", [0o775, 0o757, 0o777])
+def test_an_import_refuses_an_install_folder_others_could_change_before_docker_mounts_it(
+    transfers: Transfers, mode: int
+) -> None:
+    # Whoever may write the install folder may put a link in place of the path's first part.
+    transfers.install.chmod(mode)
+    with pytest.raises(
+        TransferRefused,
+        match=r"^the install folder can be changed by others than its owner; .*: chmod go-w \.$",
+    ):
+        transfers.import_save()
+    assert transfers.docker.runs == []
 
 
 @pytest.mark.parametrize("mode", [0o775, 0o757, 0o777])

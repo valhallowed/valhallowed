@@ -370,8 +370,15 @@ def _folder(install: Path, parts: tuple[str, ...], path: str) -> Path:
     """The folder in vhd's view of the install folder, once no part of the way to it is a link,
     since Docker's mount would follow one wherever it points, and each part is a folder only the
     install folder's owner or root can change. vhd checks the way before Docker mounts it, not at
-    once; that holds because no one else can put a link in its place meanwhile."""
-    owner = install.stat().st_uid
+    once; that holds because no one else can put a link in its place meanwhile, which takes the
+    install folder itself being writable by its owner alone too: its first part is an entry in it."""
+    top = install.stat()
+    owner = top.st_uid
+    if top.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise Refused(
+            "the install folder can be changed by others than its owner; make it writable by its owner alone, "
+            "as, from the install folder: chmod go-w ."
+        )
     folder = install
     for part in parts:
         folder /= part
