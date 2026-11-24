@@ -69,6 +69,9 @@ class TransferDocker(FakeDocker):
         # The game runtime image's user: by default whoever runs the tests, so ownership can change.
         self.user = (os.getuid(), os.getgid())
         self.runs: list[tuple[list[str], float]] = []
+        # What the image says its user is, in place of self.user's ids: text, or a failure.
+        self.who: str | DockerError | None = None
+        self.asked_who: list[int] = []
         self.stopped: list[list[str]] = []
         # The stop's steps that fail, and whether the container is still there when one does.
         self.failing: set[str] = set()
@@ -82,6 +85,12 @@ class TransferDocker(FakeDocker):
 
     def output(self, args: list[str]) -> str:
         if args[0] == "run" and WHO in args:
+            # How many commands had streamed, pulls among them, when the image was asked its user.
+            self.asked_who.append(len(self.streamed))
+            if isinstance(self.who, DockerError):
+                raise self.who
+            if self.who is not None:
+                return self.who
             uid, gid = self.user
             return f"{uid}\n{gid}\n{gid}\n"
         if args[0] in ("stop", "rm"):
@@ -752,6 +761,36 @@ def test_an_export_whose_result_names_another_backup_than_the_one_asked_for_is_r
         TransferRefused, match=f"asked for backup {BACKUP}, and the game runtime image copied 20261124T091500Z"
     ):
         transfers.export_backup(backup=BACKUP)
+    assert not (transfers.install / "exports").exists()
+
+
+@pytest.mark.parametrize("command", ["import", "export"])
+def test_the_game_runtime_image_is_pulled_first_when_the_host_lacks_it(transfers: Transfers, command: str) -> None:
+    transfers.docker.missing = {IMAGES["game-runtime"]}
+    transfers.import_save() if command == "import" else transfers.export_backup()
+    assert transfers.docker.streamed == [["pull", IMAGES["game-runtime"]]]
+    # Pulled before the image is first asked anything.
+    assert transfers.docker.asked_who == [1]
+
+
+@pytest.mark.parametrize(
+    ("who", "reason"),
+    [
+        (DockerError("docker run: Unable to find image"), "Unable to find image"),
+        ("vhd\nvhd\nvhd\n", "invalid literal"),
+        ("10001\n10001\n", "not enough values"),
+        ("", "not enough values"),
+    ],
+)
+@pytest.mark.parametrize("command", ["import", "export"])
+def test_an_image_whose_user_cannot_be_told_is_refused_before_anything_is_made(
+    transfers: Transfers, command: str, who: str | DockerError, reason: str
+) -> None:
+    transfers.docker.who = who
+    with pytest.raises(TransferRefused, match=f"cannot tell which user the game runtime image runs as .*{reason}"):
+        transfers.import_save() if command == "import" else transfers.export_backup()
+    assert transfers.docker.runs == []
+    assert not any(MAKE_BACKUP_FOLDERS in args for args in transfers.docker.prepared)
     assert not (transfers.install / "exports").exists()
 
 
