@@ -2,13 +2,24 @@
 that run alone, never the control plane (G13)."""
 
 import subprocess
-from typing import Protocol
+import sys
+import threading
+from collections import deque
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import IO, Protocol, TextIO
+
+from vhd_control.text import printable
 
 # Where the control plane's image installs the docker CLI and its Compose plugin.
 DOCKER = "/usr/local/bin/docker"
 TIMEOUT_S = 120
 # Pulling an image can take a while on a slow link.
 STREAM_TIMEOUT_S = 1800
+# What vhd keeps of a one-off container's standard error for its own words: the last lines, each
+# read at most this long.
+ERROR_LINES = 5
+LINE_MAX = 1 << 16
 
 
 class DockerError(Exception):
@@ -19,17 +30,31 @@ class DockerTimeout(DockerError):
     """A docker command did not finish in time. Its CLI is killed; a container it started is not."""
 
 
+@dataclass(frozen=True)
+class Ran:
+    """A one-off container's exit status, its standard output, and the last lines of its standard
+    error, printable, which the server manager saw as they came."""
+
+    status: int
+    output: str
+    errors: tuple[str, ...]
+
+
 class Docker(Protocol):
     def output(self, args: list[str]) -> str: ...
     def stream(self, args: list[str]) -> None: ...
 
 
 class OneOff(Docker, Protocol):
-    def run(self, args: list[str], timeout_s: float) -> tuple[int, str]: ...
+    def run(self, args: list[str], timeout_s: float) -> Ran: ...
 
 
 class Cli:
-    """The docker CLI in the control plane's image, its Compose plugin included."""
+    """The docker CLI in the control plane's image, its Compose plugin included. err: where a
+    one-off container's standard error goes, the server manager's terminal unless told otherwise."""
+
+    def __init__(self, err: TextIO | None = None) -> None:
+        self._err = err
 
     def output(self, args: list[str]) -> str:
         try:
@@ -51,18 +76,45 @@ class Cli:
         if result.returncode != 0:
             raise DockerError(f"docker {' '.join(args)} exited with {result.returncode}")
 
-    def run(self, args: list[str], timeout_s: float) -> tuple[int, str]:
-        """A command's exit status and standard output, whatever the status; its standard error goes
-        straight to the server manager. Raises DockerTimeout after timeout_s."""
-        try:
-            result = subprocess.run(  # noqa: S603 - docker, with arguments vhd built
-                [DOCKER, *args],
-                stdout=subprocess.PIPE,
-                encoding="utf-8",
-                errors="replace",
-                timeout=timeout_s,
-                check=False,
-            )
-        except subprocess.TimeoutExpired as error:
-            raise DockerTimeout(f"docker {' '.join(args)} did not finish within {timeout_s:g} s") from error
-        return result.returncode, result.stdout
+    def run(self, args: list[str], timeout_s: float) -> Ran:
+        """Run a command whatever its exit status, its standard error passed on line by line as
+        printable text: a container's words, which may name a file whose name holds a terminal's
+        escapes. Raises DockerTimeout after timeout_s, having killed the command."""
+        err = self._err or sys.stderr
+        output: list[str] = []
+        errors: deque[str] = deque(maxlen=ERROR_LINES)
+        with subprocess.Popen(  # noqa: S603 - docker, with arguments vhd built
+            [DOCKER, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace"
+        ) as process:
+            stdout, stderr = process.stdout, process.stderr
+            if stdout is None or stderr is None:
+                raise DockerError("docker gave vhd no pipes to read")
+            readers = [
+                threading.Thread(target=_read, args=(stdout, output.append)),
+                threading.Thread(target=_relay, args=(stderr, err, errors)),
+            ]
+            for reader in readers:
+                reader.start()
+            try:
+                status = process.wait(timeout=timeout_s)
+            except subprocess.TimeoutExpired as error:
+                process.kill()
+                raise DockerTimeout(f"docker {' '.join(args)} did not finish within {timeout_s:g} s") from error
+            except BaseException:
+                process.kill()
+                raise
+            finally:
+                for reader in readers:
+                    reader.join()
+        return Ran(status, "".join(output), tuple(errors))
+
+
+def _read(stream: IO[str], keep: Callable[[str], None]) -> None:
+    keep(stream.read())
+
+
+def _relay(stream: IO[str], err: TextIO, kept: deque[str]) -> None:
+    for line in iter(lambda: stream.readline(LINE_MAX), ""):
+        shown = printable(line.rstrip("\n"))
+        kept.append(shown)
+        print(shown, file=err, flush=True)

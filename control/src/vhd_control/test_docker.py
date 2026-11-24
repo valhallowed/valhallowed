@@ -1,9 +1,12 @@
+import io
 import subprocess
+import time
 from typing import Any
 
 import pytest
 
-from vhd_control.docker import Cli, DockerError, DockerTimeout
+from vhd_control import docker
+from vhd_control.docker import Cli, DockerError, DockerTimeout, Ran
 
 
 def test_a_docker_command_that_never_finishes_is_a_docker_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -15,21 +18,36 @@ def test_a_docker_command_that_never_finishes_is_a_docker_error(monkeypatch: pyt
         Cli().output(["ps"])
     with pytest.raises(DockerError, match="did not finish"):
         Cli().stream(["compose", "up"])
-    with pytest.raises(DockerTimeout, match="did not finish within 1800 s"):
-        Cli().run(["run", "image"], 1800)
 
 
-def test_a_one_off_container_gives_its_exit_status_and_output_whatever_the_status(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    seen: list[dict[str, Any]] = []
+@pytest.fixture
+def shell(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The docker CLI's place taken by a shell, so a one-off's arguments are a script."""
+    monkeypatch.setattr(docker, "DOCKER", "/bin/sh")
 
-    def run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        seen.append(kwargs)
-        return subprocess.CompletedProcess(args, 1, stdout='{"outcome": "refused"}\n')
 
-    monkeypatch.setattr(subprocess, "run", run)
-    assert Cli().run(["run", "image"], 1800) == (1, '{"outcome": "refused"}\n')
-    # Its standard error is the server manager's to read; the output is decoded whatever it holds.
-    assert seen[0]["stdout"] == subprocess.PIPE and "stderr" not in seen[0]
-    assert seen[0]["errors"] == "replace" and seen[0]["timeout"] == 1800
+@pytest.mark.usefixtures("shell")
+def test_a_one_off_container_gives_its_status_and_output_and_passes_its_errors_on_as_printable_text() -> None:
+    err = io.StringIO()
+    script = "printf 'out\\n'; printf 'a\\033[31mred\\n' >&2; printf 'second\\n' >&2; exit 3"
+
+    ran = Cli(err).run(["-c", script], 5)
+
+    assert ran == Ran(3, "out\n", ("a?[31mred", "second"))
+    assert err.getvalue() == "a?[31mred\nsecond\n"
+
+
+@pytest.mark.usefixtures("shell")
+def test_a_one_off_keeps_only_its_last_error_lines_and_reads_output_that_is_no_text() -> None:
+    script = "for n in 1 2 3 4 5 6 7; do echo line $n >&2; done; printf '\\377\\n'"
+    ran = Cli(io.StringIO()).run(["-c", script], 5)
+    assert ran.errors == tuple(f"line {n}" for n in range(3, 8))
+    assert ran.output == "�\n"
+
+
+@pytest.mark.usefixtures("shell")
+def test_a_one_off_that_outlasts_its_timeout_is_killed() -> None:
+    started = time.monotonic()
+    with pytest.raises(DockerTimeout, match=r"did not finish within 0\.2 s"):
+        Cli(io.StringIO()).run(["-c", "exec sleep 30"], 0.2)
+    assert time.monotonic() - started < 10

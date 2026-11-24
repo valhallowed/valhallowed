@@ -13,7 +13,7 @@ import pytest
 from vhd_control import cli, layout
 from vhd_control.apply import MAKE_BACKUP_FOLDERS, Refused
 from vhd_control.daemon import Daemon
-from vhd_control.docker import DockerError, DockerTimeout
+from vhd_control.docker import DockerError, DockerTimeout, Ran
 from vhd_control.reconcile import Restore
 from vhd_control.status import StatusBook
 from vhd_control.store import Store
@@ -83,9 +83,10 @@ class TransferDocker(FakeDocker):
             return ""
         return super().output(args)
 
-    def run(self, args: list[str], timeout_s: float) -> tuple[int, str]:
+    def run(self, args: list[str], timeout_s: float) -> Ran:
         self.runs.append((args, timeout_s))
-        return self.act(args)
+        status, output = self.act(args)
+        return Ran(status, output, ())
 
     def own_view(self, host_path: str) -> Path:
         """Where a host path under the install folder is in the tests' own view of it."""

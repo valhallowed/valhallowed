@@ -19,6 +19,7 @@ from vhd_control.reconcile import last_port, reconcile
 from vhd_control.schemas import Schemas
 from vhd_control.status import StatusBook
 from vhd_control.store import Store
+from vhd_control.text import printable
 from vhd_control.transfer import Refused as TransferRefused
 from vhd_control.transfer import Transfer
 
@@ -99,7 +100,7 @@ def main(argv: list[str] | None = None, out: TextIO = sys.stdout) -> int:
         return 1
     except TransferRefused as error:
         # The game runtime image's reason is a container's words: printable text alone reaches a terminal.
-        print(f"vhd {args.command}: {_printable(str(error))}", file=sys.stderr)
+        print(f"vhd {args.command}: {printable(str(error))}", file=sys.stderr)
         return 1
     return 0
 
@@ -121,11 +122,11 @@ def show_backups(status: dict[str, Any], world: str, out: TextIO, now: datetime 
         return
     for name in backups["names"]:
         age = _age_of(name, now)
-        print(_printable(name) if age is None else f"{_printable(name)}, {age} old", file=out)
+        print(printable(name) if age is None else f"{printable(name)}, {age} old", file=out)
     if not backups["names"]:
         print(f"{world}: no backup yet", file=out)
     if "failure" in backups:
-        print(f"{world}: backups: {_printable(backups['failure'])}", file=out)
+        print(f"{world}: backups: {printable(backups['failure'])}", file=out)
 
 
 def validate(schemas: Schemas, out: TextIO) -> None:
@@ -165,7 +166,7 @@ def show_status(status: dict[str, Any], out: TextIO, now: datetime | None = None
             line += f", {report['players']} player(s)"
         if "reason" in report:
             # A runtime faces players; its words reach a terminal only as printable text.
-            line += f" ({_printable(report['reason'])})"
+            line += f" ({printable(report['reason'])})"
         if "backups" in report:
             line += _backups(report["backups"], now)
         line += _restore(world.get("restore"), report.get("restore"))
@@ -180,7 +181,7 @@ def show_status(status: dict[str, Any], out: TextIO, now: datetime | None = None
         if "accepted" in report:
             line += f", {report['accepted']} event(s) taken, {report['dropped']} dropped"
         if "reason" in report:
-            line += f" ({_printable(report['reason'])})"
+            line += f" ({printable(report['reason'])})"
         if "pending" in service:
             line += f"; generation {service['pending']['generation']} waits for {service['pending']['waits_for']}"
         print(line, file=out)
@@ -197,7 +198,7 @@ def _backups(backups: dict[str, Any], now: datetime) -> str:
         if age is not None:
             text += f", the newest {age} old"
     if "failure" in backups:
-        text += f" (backups: {_printable(backups['failure'])})"
+        text += f" (backups: {printable(backups['failure'])})"
     return text
 
 
@@ -211,7 +212,7 @@ def _restore(kept: dict[str, str] | None, acted: dict[str, str] | None) -> str:
         outcome = "under way" if acted["outcome"] == "restoring" else acted["outcome"]
         text += f"; restore {outcome}"
         if "reason" in acted:
-            text += f" ({_printable(acted['reason'])})"
+            text += f" ({printable(acted['reason'])})"
     return text
 
 
@@ -232,10 +233,6 @@ def _age(seconds: float) -> str:
         if whole >= 2 * size:
             return f"{whole // size}{unit}"
     return f"{whole}s"
-
-
-def _printable(text: str) -> str:
-    return "".join(c if c.isprintable() else "?" for c in text)
 
 
 def daemon(schemas: Schemas) -> None:

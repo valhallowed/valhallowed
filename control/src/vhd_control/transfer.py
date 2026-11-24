@@ -211,7 +211,7 @@ class Transfer:
             *mounts, host.images[GAME_RUNTIME_IMAGE], action, world, *more,
         ]  # fmt: skip
         try:
-            status, output = self.docker.run(args, TIMEOUT_S)
+            ran = self.docker.run(args, TIMEOUT_S)
         except DockerTimeout as error:
             self._stop(name)
             kept = (
@@ -225,7 +225,7 @@ class Transfer:
             with contextlib.suppress(DockerError):
                 self._stop(name)
             raise
-        return self._result(action, world, status, output)
+        return self._result(action, world, ran.status, ran.output)
 
     def _stop(self, name: str) -> None:
         """Stop the container: a SIGTERM, which the action answers by removing what it wrote and
