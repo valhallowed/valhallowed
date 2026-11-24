@@ -359,29 +359,38 @@ def test_a_path_any_character_may_hold_reaches_docker_whole(transfers: Transfers
 
 
 @pytest.mark.parametrize(
-    ("status", "output", "reason"),
+    ("status", "output", "reason", "kept"),
     [
-        (1, refused("import", "the save folder holds no complete save: no _main.<n>.ok"), "^the save folder holds no"),
-        (0, refused("import", "a reason\u0085with a control"), "a reason\u0085with a control"),
-        (125, "", "gave vhd import no result, and exited with 125"),
-        (1, "not json\n", "a result that is no JSON"),
+        (
+            1,
+            refused("import", "the save folder holds no complete save: no _main.<n>.ok"),
+            "^the save folder holds no",
+            False,
+        ),
+        (0, refused("import", "a reason\u0085with a control"), "a reason\u0085with a control", False),
+        (1, "", "gave vhd import no result, and exited with 1", True),
+        (1, "not json\n", "a result that is no JSON", True),
         (
             0,
             json.dumps({"contract": 1, "action": "import", "world": "Meadowfold", "outcome": "done"}),
             "breaks its contract",
+            True,
         ),
-        (0, done("import", world="Ashwake"), "is for import of Ashwake"),
-        (0, done("export"), "is for export of Meadowfold"),
-        (1, done("import"), "said vhd import was done, but exited with 1"),
+        (0, done("import", world="Ashwake"), "is for import of Ashwake", True),
+        (0, done("export"), "is for export of Meadowfold", True),
+        (1, done("import"), "said vhd import was done, but exited with 1", True),
     ],
 )
 def test_an_import_whose_result_is_no_done_asks_for_no_restore(
-    transfers: Transfers, status: int, output: str, reason: str
+    transfers: Transfers, status: int, output: str, reason: str, kept: bool
 ) -> None:
     transfers.docker.act = lambda args: (status, output)
-    with pytest.raises(TransferRefused, match=reason):
+    with pytest.raises(TransferRefused, match=reason) as refusal:
         transfers.import_save()
     assert transfers.restores() == {}
+    # Output that breaks the contract, or none, may come from an import that kept its backup (B13).
+    warned = "an import cut short after it named its backup may have kept it, which vhd backups then lists"
+    assert str(refusal.value).endswith(warned) == kept
 
 
 def test_an_import_that_outlasts_its_timeout_is_stopped_with_its_container(transfers: Transfers) -> None:
@@ -405,7 +414,7 @@ def test_a_container_already_gone_is_no_failure_of_the_stop(transfers: Transfers
     transfers.docker.act = hang
     transfers.docker.failing = {"stop", "rm"}
     transfers.docker.there = False
-    with pytest.raises(TransferRefused, match="so vhd stopped it; an import stopped after") as refused:
+    with pytest.raises(TransferRefused, match="so vhd stopped it; an import cut short after") as refused:
         transfers.import_save()
     assert "failed too" not in str(refused.value)
     assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]

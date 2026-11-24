@@ -217,13 +217,10 @@ class Transfer:
             ran = self.docker.run(args, TIMEOUT_S)
         except DockerTimeout as error:
             failed = self._stop(name)
-            kept = (
-                "; an import stopped after it named its backup may have kept it, which vhd backups then lists"
-                if action == "import"
-                else ""
-            )
             left = f"; stopping its container failed too: {'; '.join(failed)}" if failed else ""
-            raise Refused(f"vhd {action} did not finish within {TIMEOUT_S} s, so vhd stopped it{kept}{left}") from error
+            raise Refused(
+                f"vhd {action} did not finish within {TIMEOUT_S} s, so vhd stopped it{_kept(action)}{left}"
+            ) from error
         except BaseException:
             # Whatever stopped vhd, the container must not outlive it.
             self._stop(name)
@@ -260,24 +257,34 @@ class Transfer:
     def _result(self, action: Action, world: str, status: int, output: str) -> dict[str, Any]:
         """The action's result, its last line of output, once it keeps its contract and says done
         with an exit status of 0. Raises Refused with the reason the result gives, or why it counts as
-        refused (B13)."""
+        refused (B13): an import's refusal then says it may have kept its backup all the same."""
+        kept = _kept(action)
         lines = output.strip().splitlines()
         if not lines:
-            raise Refused(f"the game runtime image gave vhd {action} no result, and exited with {status}")
+            raise Refused(f"the game runtime image gave vhd {action} no result, and exited with {status}{kept}")
         try:
             result: Any = json.loads(lines[-1])
         except ValueError as error:
-            raise Refused(f"the game runtime image gave vhd {action} a result that is no JSON: {error}") from error
+            raise Refused(
+                f"the game runtime image gave vhd {action} a result that is no JSON: {error}{kept}"
+            ) from error
         breach = self.schemas.problem(RESULT_CONTRACT, result)
         if breach is not None:
-            raise Refused(f"the game runtime image's result breaks its contract {breach}")
+            raise Refused(f"the game runtime image's result breaks its contract {breach}{kept}")
         if result["action"] != action or result["world"] != world:
-            raise Refused(f"the game runtime image's result is for {result['action']} of {result['world']}")
+            raise Refused(f"the game runtime image's result is for {result['action']} of {result['world']}{kept}")
         if result["outcome"] == "refused":
             raise Refused(str(result["reason"]))
         if status != 0:
-            raise Refused(f"the game runtime image said vhd {action} was done, but exited with {status}")
+            raise Refused(f"the game runtime image said vhd {action} was done, but exited with {status}{kept}")
         return dict(result)
+
+
+def _kept(action: Action) -> str:
+    """What a refusal of an import adds when the action's own word is missing or broken (B13)."""
+    if action != "import":
+        return ""
+    return "; an import cut short after it named its backup may have kept it, which vhd backups then lists"
 
 
 @contextmanager
