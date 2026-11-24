@@ -841,6 +841,7 @@ def test_an_import_whose_result_cannot_be_read_whole_is_refused_as_maybe_kept(tr
     with pytest.raises(TransferRefused, match=r"holds its output open; an import cut short .* may have kept it"):
         transfers.import_save()
     assert transfers.restores() == {}
+    assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]
 
 
 @pytest.mark.parametrize("backup", ["latest", "../20261124T101500Z", "-h", "20261124T101500Z\n"])
