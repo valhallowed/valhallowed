@@ -1,4 +1,5 @@
-"""The runtime's state machine: generation, restore, install, launch, world truth, backups, stop and hold."""
+"""The runtime's state machine: generation, restore, install, launch, world truth, backups, updates, stop and
+hold."""
 
 import json
 import logging
@@ -104,6 +105,12 @@ class Paths:
         return self.data / "map-export"
 
     @property
+    def app_info_cache(self) -> Path:
+        """Where SteamCMD keeps app info, in its Steam folder in its home, which the image makes the
+        data volume (images/game-runtime/Dockerfile)."""
+        return self.data / "Steam" / "appcache" / "appinfo.vdf"
+
+    @property
     def vhd(self) -> Path:
         """The runtime's own records in the data volume."""
         return self.data / "vhd"
@@ -141,12 +148,15 @@ class Supervisor:
     launch: Launch = launch
     fetch: steam.Fetch = steam.fetch
     run_steamcmd: steam.Run = steam.run
+    query_steamcmd: steam.Query = steam.query
     post: status.Post = status.post
     clock: Clock = field(default_factory=Clock)
     jitter: Callable[[float, float], float] = random.uniform
     environ: Mapping[str, str] = field(default_factory=lambda: dict(os.environ))
     # Copies a backup off the supervisor's loop, which keeps reporting and watching the world.
     executor: Executor = field(default_factory=lambda: ThreadPoolExecutor(max_workers=1))
+    # Checks Steam's public game build off the loop, apart from the backups, so neither waits on the other.
+    checker: Executor = field(default_factory=lambda: ThreadPoolExecutor(max_workers=1))
     wall: Callable[[], datetime] = lambda: datetime.now(UTC)
     _stop: bool = field(default=False, init=False)
     _problem: str | None = field(default=None, init=False)
@@ -179,6 +189,14 @@ class Supervisor:
     _done_id: str | None = field(default=None, init=False)
     # The backup a restore asks for, which no turn of the backups prunes until the restore has it.
     _spare: str | None = field(default=None, init=False)
+    # The check of Steam's public game build under way off the loop; when the newest began, on the loop's
+    # clock; the public build checks found, when other than the installed one; and why the newest failed.
+    _checking: Future[str] | None = field(default=None, init=False)
+    _checked_at: float = field(default=0.0, init=False)
+    _update_build: str | None = field(default=None, init=False)
+    _update_failure: str | None = field(default=None, init=False)
+    # Set once the watch of the game ends, so a check under way ends its SteamCMD rather than hold up the exit.
+    _watched: bool = field(default=False, init=False)
     # The contract a backup's record keeps, read from the image at the start, as the reader reads
     # the generation's.
     _record: Draft202012Validator = field(init=False)
@@ -228,7 +246,10 @@ class Supervisor:
             server.environment(self.paths.server, self.environ),
             self.paths.server,
         )
-        return self._watch(process, generation, reporter, save_existed, build)
+        try:
+            return self._watch(process, generation, reporter, save_existed, build)
+        finally:
+            self._watched = True
 
     def _unsaved(self, generation: Generation) -> str | None:
         """Why the world is held rather than launched, if it is: it has no save, its newest restore
@@ -347,6 +368,8 @@ class Supervisor:
         self, process: Process, generation: Generation, reporter: status.Reporter, save_existed: bool, build: str
     ) -> int:
         launched = self.clock.now()
+        # The start's install has just updated the server, so the first check waits a whole interval.
+        self._checked_at = launched
         state, reason = State.LOADING, None
         world: status.WorldStatus | None = None
         next_report = launched
@@ -367,8 +390,10 @@ class Supervisor:
             due = self._due(newer) if newer is not None else None
             # Until the restart, the stop's backup and every turn before it keep the backup asked for.
             self._spare = due.backup if due is not None else None
-            if newer is not None and self._may_restart(state, newer, current):
-                return self._shut_down(process, state, self._why_restart(newer, due), generation, reporter)
+            self._check_update(generation, build, running=state in (State.RUNNING, State.UNVERIFIED))
+            why = self._restart_now(state, generation, newer, current, build)
+            if why is not None:
+                return self._shut_down(process, state, why, generation, reporter)
             previous = state
             if state in (State.LOADING, State.UNVERIFIED) and fresh is not None:
                 state, reason = self._on_report(process, generation.world, fresh.objects, save_existed)
@@ -407,15 +432,75 @@ class Supervisor:
         moment it would stop the game. A held world has no game. A generation the server manager
         confirmed goes now, cutting a load short by a kill, which saves nothing. Anything else
         waits for a current report of no players, so no load ends without that confirmation."""
-        if state is State.HELD or newer.disconnect_players:
-            return True
-        if state in (State.RUNNING, State.UNVERIFIED) and world is not None and world.players == 0:
+        if state is State.HELD or newer.disconnect_players or _empty(state, world):
             return True
         if self._waiting != newer.number:
             players = "unknown" if world is None or state is State.LOADING else str(world.players)
             _log.info("generation %d waits for an empty world; players %s", newer.number, players)
             self._waiting = newer.number
         return False
+
+    def _check_update(self, generation: Generation, build: str, *, running: bool) -> None:
+        """Note a check of Steam's public game build that has finished, and while the game runs start
+        the next once the update policy's interval, as it stands now, has passed since the last began.
+        Under either policy: at-start only never restarts for what a check finds."""
+        if self._checking is not None:
+            if not self._checking.done():
+                return
+            self._checked(self._checking, generation, build)
+        if running and self.clock.now() >= self._checked_at + generation.updates.every_s:
+            self._checked_at = self.clock.now()
+            self._checking = self.checker.submit(
+                steam.public_build,
+                self.paths.steamcmd / "steamcmd.sh",
+                self.paths.app_info_cache,
+                self.query_steamcmd,
+                lambda: self._stop or self._watched,
+            )
+
+    def _checked(self, checking: Future[str], generation: Generation, build: str) -> None:
+        """Take in a finished check. A check is an observation: one that fails says why in status, keeps
+        the build an earlier one found, and never stops the world."""
+        self._checking = None
+        try:
+            public = checking.result()
+        except steam.Stopped:
+            return
+        except steam.CheckFailed as error:
+            self._update_failed(str(error))
+            return
+        except Exception as error:
+            self._update_failed(f"the check stopped on an unexpected error: {type(error).__name__}: {error}")
+            return
+        self._update_failure = None
+        found = None if public == build else public
+        if found is not None and found != self._update_build:
+            when = "once no players are online" if generation.updates.policy == "when-empty" else "at its next start"
+            _log.info("game build %s is out, build %s is installed; the world updates %s", found, build, when)
+        self._update_build = found
+
+    def _update_failed(self, why: str) -> None:
+        if why != self._update_failure:
+            _log.error("the check for a newer game build failed: %s", why)
+        self._update_failure = _reason(why)
+
+    def _restart_now(
+        self,
+        state: State,
+        generation: Generation,
+        newer: Generation | None,
+        world: status.WorldStatus | None,
+        build: str,
+    ) -> str | None:
+        """Why the game restarts now, if it does: for a newer generation that takes a restart, by its
+        gate; or under the when-empty policy, for the build a check found, by the final players check,
+        for a current report of no players. A generation's confirmation is for that generation's change
+        alone, never for an update."""
+        if newer is not None and self._may_restart(state, newer, world):
+            return self._why_restart(newer, self._due(newer))
+        if self._update_build is not None and generation.updates.policy == "when-empty" and _empty(state, world):
+            return f"game build {self._update_build} is out; restarting to update from {build}"
+        return None
 
     def _on_report(self, process: Process, world: str, objects: int, save_existed: bool) -> tuple[State, str | None]:
         """World truth on the plugin's first report: run the world, or hold it if it loaded empty."""
@@ -594,12 +679,19 @@ class Supervisor:
         return report
 
     def _report(self, reporter: status.Reporter, report: status.RuntimeStatus) -> None:
-        """Send a report, with the world's backups and its newest restore."""
+        """Send a report, with the world's backups, its newest restore and what checks of Steam found."""
         backed_up = self._backups_status()
         if backed_up is not None:
             report["backups"] = backed_up
         if self._restore_report is not None:
             report["restore"] = self._restore_report
+        update: status.Update = {}
+        if self._update_build is not None:
+            update["build"] = self._update_build
+        if self._update_failure is not None:
+            update["failure"] = self._update_failure
+        if update:
+            report["update"] = update
         self._last_report = report
         reporter.send(report)
 
@@ -846,6 +938,11 @@ class Supervisor:
             return None
         self._problem = None
         return generation
+
+
+def _empty(state: State, world: status.WorldStatus | None) -> bool:
+    """Whether the game runs a world a current report says no player is on."""
+    return state in (State.RUNNING, State.UNVERIFIED) and world is not None and world.players == 0
 
 
 def _kill(process: Process) -> None:

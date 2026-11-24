@@ -330,17 +330,25 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   (Restart gating is shared), and `vhd apply` counts one its runtime has not
   acted on as a restart, so an apply while it waits for an empty world asks for
   `--disconnect-players`, which confirms it.
-- **Updates.** Under the default update policy, a runtime compares its
-  installed game build with Steam's newest public build every 15 minutes, and
-  restarts its world to update once no players are online, by its own final
-  players check. The game refuses a player whose game is another version
-  (§ Game facts), so a world that updated only when it started would refuse
-  every updated player after a game patch until someone restarted it. The stop
-  backs the save up, as every clean stop does, so an update that damages a
-  world leaves the save from before it, and world truth holds a world the
-  update stops from loading. Under the `at-start` policy, a world updates only
-  when it next starts. Status names the installed build, and the newer one
-  while it waits.
+- **Updates.** Every start updates the dedicated server, under either update
+  policy. While the game runs, a runtime compares its installed game build with
+  Steam's public build, read from SteamCMD's app info (§ Game facts), every 15
+  minutes unless the manifest says otherwise. It removes SteamCMD's cached app
+  info before each check, since whether SteamCMD answers from that cache once
+  Steam has a newer build is not known. Under the default update policy, a
+  runtime whose check finds a public build other than its own, newer or one
+  Steam went back to, restarts its world to update once no players are online,
+  by its own final players check; the server manager's confirmation of a
+  generation confirms that generation's change, never an update. The game
+  refuses a player whose game is another version (§ Game facts), so a world
+  that updated only when it started would refuse every updated player after a
+  game patch until someone restarted it. The stop backs the save up, as every
+  clean stop does, so an update that damages a world leaves the save from
+  before it, and world truth holds a world the update stops from loading.
+  Under the `at-start` policy, a world still checks, but updates only when it
+  next starts. Status names the installed build, the other one while it waits,
+  and why the newest check failed; a check is an observation, so one that fails
+  keeps the build an earlier one found and changes nothing else.
 - **Capabilities are independent.** Telemetry, in-game commands, chat relay,
   assistant, web map and sign-in each switch on separately and declare what
   they depend on. A failure in one degrades that capability only.

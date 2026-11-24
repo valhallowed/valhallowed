@@ -18,7 +18,7 @@ from vhd_runtime import backups, generation, restore, status, steam, supervisor,
 from vhd_runtime.generation import Reader, validator
 from vhd_runtime.supervisor import Clock, Paths, Supervisor
 from vhd_runtime.test_backups import RECORD, write_save
-from vhd_runtime.test_steam import STEAMCMD, Download
+from vhd_runtime.test_steam import APP_INFO, NO_CONNECTION, STEAMCMD, Download
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "contracts"
 STATUS_URL = "http://control-plane:9457/status"
@@ -146,6 +146,11 @@ class World:
         self.launches: list[list[str]] = []
         self.reports: list[dict[str, object]] = []
         self.steamcmd_runs: list[list[str]] = []
+        # Steam's public game build, as a check finds it: the installed one unless a test says otherwise,
+        # and None for a Steam SteamCMD cannot reach. When each check ran, and what it could ask about a stop.
+        self.public: str | None = "25909431"
+        self.checks: list[float] = []
+        self.check_stopping: list[steam.Stopping] = []
 
     def generation(
         self,
@@ -159,6 +164,8 @@ class World:
         every_s: int = 3600,
         restore: str | None = None,
         restore_id: str = RESTORE_ID,
+        policy: str = "when-empty",
+        update_every_s: int = 900,
     ) -> None:
         """Write a generation, and unless told not to, its secrets, as the control plane does."""
         if secrets:
@@ -169,7 +176,7 @@ class World:
             "world": {"name": "Meadowfold", "port": 2456},
             "plugin": {"status_interval_s": 5, "intake_url": "http://intake:9458/events"},
             "backups": {"every_s": every_s, "keep": keep, "keep_daily": keep_daily},
-            "updates": {"policy": "when-empty", "every_s": 900},
+            "updates": {"policy": policy, "every_s": update_every_s},
             "status_url": STATUS_URL,
         }
         if disconnect:
@@ -246,17 +253,33 @@ class World:
             reader=Reader(self.paths.generation, CONTRACTS),
             launch=launch,
             run_steamcmd=run_steamcmd or self.run_steamcmd,
+            query_steamcmd=self.query_steamcmd,
             fetch=fetch or steam.fetch,
             jitter=lambda low, high: high,
             post=post,
             clock=Clock(now=lambda: self.time.now, sleep=self.time.sleep),
             environ={},
             executor=Immediate(),
+            checker=Immediate(),
             wall=self.now,
         )
 
     def run_steamcmd(self, command: list[str], timeout: float, stopping: steam.Stopping) -> None:
         self.steamcmd_runs.append(command)
+
+    def query_steamcmd(self, command: list[str], timeout: float, stopping: steam.Stopping) -> str:
+        self.checks.append(self.time.now)
+        self.check_stopping.append(stopping)
+        return NO_CONNECTION if self.public is None else APP_INFO.replace("{build}", self.public)
+
+    def updates(self) -> list[object]:
+        """The update each report names, a repeated one counted once."""
+        seen: list[object] = []
+        for report in self.reports:
+            update = report.get("update")
+            if not seen or seen[-1] != update:
+                seen.append(update)
+        return seen
 
     def install_server(self) -> None:
         """An installed dedicated server, as SteamCMD leaves its app manifest."""
@@ -1025,6 +1048,7 @@ def test_the_largest_report_fits_the_status_listener() -> None:
         "state": "unverified",
         "reason": longest,
         "game_build": "9" * 12,
+        "update": {"build": "9" * 20, "failure": longest},
         "objects": 2**31,
         "players": 2**31,
         "backups": {"names": ["20261118T204012Z"] * supervisor.BACKUP_NAMES_MAX, "failure": longest},
@@ -1810,3 +1834,137 @@ def test_a_new_world_with_no_restore_is_not_held(world: World) -> None:
     # It has no record of a restore: a missing record holds nothing.
     assert not place_of(world).done.exists()
     assert len(world.launches) == 1 and not held_without_save(world)
+
+
+NEWER = "26266951"
+
+
+def test_a_running_world_checks_steam_on_its_policys_interval_and_finds_nothing_newer(world: World) -> None:
+    world.generation(1)
+    sup = world.supervisor()
+    world.plugin_running(10, players=lambda: 2)
+    world.stop_at(2000, sup)
+
+    assert sup.run() == 0
+    assert [round(t) for t in world.checks] == [900, 1800]
+    assert world.updates() == [None]
+
+
+def test_no_check_runs_while_the_world_loads(world: World) -> None:
+    world.generation(1, update_every_s=300)
+    sup = world.supervisor()
+    world.plugin_running(10, start=600)
+    world.stop_at(700, sup)
+
+    assert sup.run() == 0
+    assert len(world.checks) == 1
+    assert world.checks[0] >= 600
+
+
+def test_a_newer_build_restarts_an_empty_world_after_a_save_it_backs_up(world: World) -> None:
+    world.generation(1)
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.time.at(100, lambda: world.game_saves(1))
+    world.process.on_interrupt = lambda: world.game_saves(2)
+
+    assert sup.run() == 0
+    assert world.process.signals == [signal.SIGINT]
+    assert 900 <= world.time.now < 910
+    assert world.backed_up() == [1, 2]
+    assert world.reports[-1]["game_build"] == "25909431"
+    assert world.reports[-1]["update"] == {"build": NEWER}
+
+
+def test_a_newer_build_waits_while_players_are_online(world: World) -> None:
+    world.generation(1)
+    world.public = NEWER
+    online = [2]
+    sup = world.supervisor()
+    world.plugin_running(10, players=lambda: online[0])
+    world.time.at(1500, lambda: online.__setitem__(0, 0))
+
+    assert sup.run() == 0
+    assert world.process.signals == [signal.SIGINT]
+    assert 1500 <= world.time.now < 1510
+    assert any(r.get("update") == {"build": NEWER} and r.get("players") == 2 for r in world.reports)
+
+
+def test_a_generations_confirmation_never_updates_a_world_with_players_online(world: World) -> None:
+    world.generation(1, disconnect=True)
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10, players=lambda: 2)
+    world.stop_at(1500, sup)
+
+    assert sup.run() == 0
+    assert world.time.now >= 1500
+
+
+def test_under_at_start_a_newer_build_is_named_and_waits_for_the_next_start(world: World) -> None:
+    world.generation(1, policy="at-start")
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.stop_at(2500, sup)
+
+    assert sup.run() == 0
+    assert world.time.now >= 2500
+    assert world.updates() == [None, {"build": NEWER}]
+
+
+def test_a_policy_changed_to_when_empty_restarts_a_world_a_build_waits_for(world: World) -> None:
+    world.generation(1, policy="at-start")
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.time.at(1200, lambda: world.generation(2, policy="when-empty"))
+
+    assert sup.run() == 0
+    assert world.process.signals == [signal.SIGINT]
+    assert 1200 <= world.time.now < 1210
+
+
+def test_an_unverified_world_never_restarts_for_a_build_with_its_players_unknown(world: World) -> None:
+    world.generation(1)
+    world.public = NEWER
+    sup = world.supervisor()
+    world.stop_at(2500, sup)
+
+    assert sup.run() == 0
+    assert world.time.now >= 2500
+    assert world.states() == ["installing", "loading", "unverified"]
+    assert world.reports[-1]["update"] == {"build": NEWER}
+
+
+def test_a_failed_check_says_why_and_keeps_the_build_found_before_until_one_succeeds(world: World) -> None:
+    world.generation(1, policy="at-start", update_every_s=300)
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.time.at(400, lambda: setattr(world, "public", None))
+    # Steam takes the newer build back: the installed one is the public one again.
+    world.time.at(700, lambda: setattr(world, "public", "25909431"))
+    world.stop_at(1000, sup)
+
+    assert sup.run() == 0
+    failed = "SteamCMD named no public game build: FAILED (No Connection)"
+    assert world.updates() == [None, {"build": NEWER}, {"build": NEWER, "failure": failed}, None]
+
+
+def test_a_check_is_told_to_stop_once_the_watch_ends_for_a_restart(world: World) -> None:
+    world.generation(1, update_every_s=300)
+    sup = world.supervisor()
+    world.plugin_running(10)
+    during: list[bool] = []
+    world.time.at(400, lambda: during.append(world.check_stopping[0]()))
+    world.time.at(500, lambda: world.generation(2, password="hearth-and-horn"))
+
+    assert sup.run() == 0
+    assert during == [False]
+    assert world.check_stopping[0]()
+
+
+def test_the_app_info_cache_is_in_steamcmds_steam_folder_in_its_home_the_data_volume() -> None:
+    assert Paths().app_info_cache == Path("/data/Steam/appcache/appinfo.vdf")

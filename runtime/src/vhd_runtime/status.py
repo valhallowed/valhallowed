@@ -44,6 +44,14 @@ class Restore(TypedDict):
     reason: NotRequired[str]
 
 
+class Update(TypedDict, total=False):
+    """What the runtime's checks of Steam's public game build found: a build other than the installed
+    one, which the world installs at its next start, and why the newest check failed."""
+
+    build: str
+    failure: str
+
+
 class RuntimeStatus(TypedDict):
     """One status report, as contracts/game-runtime.status.schema.json defines it."""
 
@@ -53,6 +61,7 @@ class RuntimeStatus(TypedDict):
     state: str
     reason: NotRequired[str]
     game_build: NotRequired[str]
+    update: NotRequired[Update]
     objects: NotRequired[int]
     players: NotRequired[int]
     backups: NotRequired[Backups]
