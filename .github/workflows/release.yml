@@ -19,7 +19,8 @@ concurrency:
 jobs:
   promote:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # Room for accept.sh, as ci.yml's accept job has.
+    timeout-minutes: 60
     permissions:
       actions: read
       contents: read

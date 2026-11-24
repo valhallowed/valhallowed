@@ -130,8 +130,10 @@ jobs:
   accept:
     needs: publish
     runs-on: ubuntu-24.04
-    # accept.sh waits up to 20 minutes for the world, and prints why on a failure.
-    timeout-minutes: 40
+    # accept.sh waits up to 20 minutes for the world, and its checks up to 17
+    # more (scripts/accept-85-world-render.sh counts them); it prints why on a
+    # failure.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
