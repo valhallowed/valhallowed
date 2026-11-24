@@ -26,7 +26,7 @@ objects_of() {
 }
 
 if ! exported=$(timeout 300 "${cli[@]}" run --rm vhd export "$ACCEPT_WORLD_NAME" 2>&1) ||
-  [[ ! $exported =~ is\ in\ (exports/$ACCEPT_WORLD_NAME/[^/]+)/worlds_local/$ACCEPT_WORLD_NAME, ]]; then
+  [[ ! $exported =~ is\ in\ (exports/"$ACCEPT_WORLD_NAME"/[^/]+)/worlds_local/"$ACCEPT_WORLD_NAME", ]]; then
   echo "accept: vhd export $ACCEPT_WORLD_NAME did not export its newest backup: $exported" >&2
   exit 1
 fi
@@ -38,7 +38,8 @@ install=$(mktemp -d)
 trap '"$root/scripts/accept-teardown.sh" "$project" "$install"' EXIT
 imported=(docker compose -p "$project" -f "$install/compose.yaml")
 "$root/scripts/accept-install.sh" "$ACCEPT_INSTALL/compose.yaml" "$install" "$ACCEPT_WORLD_NAME" "$world_port" "$web_map_port"
-cp -R "$from/worlds_local" "$install/worlds_local"
+# -p keeps each file's modification time, which the import takes as when the save was completed.
+cp -Rp "$from/worlds_local" "$install/worlds_local"
 chmod -R u+rwX,go+rX,go-w "$install/worlds_local"
 
 if ! said=$(timeout 300 "${imported[@]}" run --rm vhd import "$ACCEPT_WORLD_NAME" worlds_local 2>&1) ||
