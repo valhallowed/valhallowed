@@ -1,7 +1,9 @@
 import io
+import signal
 import subprocess
 import time
-from typing import Any
+from collections.abc import Callable
+from typing import IO, Any
 
 import pytest
 
@@ -78,3 +80,20 @@ def test_a_one_off_killed_while_a_process_it_left_holds_its_pipes_still_ends(mon
         Cli(io.StringIO()).run(["-c", "sleep 8 & exec sleep 30"], 0.2)
     # Both readers are held, and READ_AFTER_S bounds them together, not each in turn.
     assert time.monotonic() - started < 3.5
+
+
+@pytest.mark.usefixtures("shell")
+def test_a_one_offs_readers_take_no_signal(monkeypatch: pytest.MonkeyPatch) -> None:
+    masks: list[set[int | signal.Signals]] = []
+    read = docker._read
+
+    def reading(stream: IO[str], keep: Callable[[str], None]) -> None:
+        masks.append(signal.pthread_sigmask(signal.SIG_BLOCK, []))
+        read(stream, keep)
+
+    monkeypatch.setattr(docker, "_read", reading)
+    before = signal.pthread_sigmask(signal.SIG_BLOCK, [])
+    Cli(io.StringIO()).run(["-c", "true"], 5)
+    assert {signal.SIGINT, signal.SIGTERM} <= masks[0]
+    assert signal.pthread_sigmask(signal.SIG_BLOCK, []) == before
+

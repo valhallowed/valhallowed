@@ -1,6 +1,7 @@
 """The Docker CLI, which vhd runs for vhd apply, vhd import and vhd export: it holds the socket for
 that run alone, never the control plane (G13)."""
 
+import signal
 import subprocess
 import sys
 import threading
@@ -99,8 +100,14 @@ class Cli:
             threading.Thread(target=_read, args=(stdout, output.append), daemon=True),
             threading.Thread(target=_relay, args=(stderr, err, errors), daemon=True),
         ]
-        for reader in readers:
-            reader.start()
+        # A thread takes its signal mask from the one starting it. With every signal blocked in the
+        # readers, the main thread alone takes a stop, so where it holds one (transfer.py), it waits.
+        held = signal.pthread_sigmask(signal.SIG_BLOCK, signal.valid_signals())
+        try:
+            for reader in readers:
+                reader.start()
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, held)
         try:
             status = process.wait(timeout=timeout_s)
         except subprocess.TimeoutExpired as error:
