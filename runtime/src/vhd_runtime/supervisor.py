@@ -508,6 +508,8 @@ class Supervisor:
             self._set_update_failure(f"the check stopped on an unexpected error: {type(error).__name__}: {error}")
             return
         found = None if public == build else public
+        # A record that could not be written is tried again at the next empty moment.
+        self._unrecorded = None
         if found is not None and found != self._update_build:
             when = "once no players are online" if generation.updates.policy == "when-empty" else "at its next start"
             _log.info("game build %s is out, build %s is installed; the world updates %s", found, build, when)
@@ -564,7 +566,8 @@ class Supervisor:
             began = datetime.strptime(at, RECORD_TIME).replace(tzinfo=UTC)
         except ValueError:
             return None
-        return Missed(wanted, attempts, began)
+        # No later than now, so a clock that ran ahead at the restart cannot stall the next past the wait.
+        return Missed(wanted, attempts, min(began, self.wall()))
 
     def _restart_to_update(self, state: State, generation: Generation, world: status.WorldStatus | None) -> bool:
         """Whether to restart now for the build a check found: under the when-empty policy, by the final
@@ -584,12 +587,14 @@ class Supervisor:
                 return False
             attempts = missed.attempts + 1
         record = self.paths.update_record
+        temporary = record.with_suffix(".tmp")
         try:
             record.parent.mkdir(parents=True, exist_ok=True)
-            temporary = record.with_suffix(".tmp")
             temporary.write_text(json.dumps({"build": wanted, "attempts": attempts, "at": now.strftime(RECORD_TIME)}))
             temporary.replace(record)
         except OSError as error:
+            with contextlib.suppress(OSError):
+                temporary.unlink(missing_ok=True)
             self._unrecorded = (
                 "cannot record a restart to update in the data volume, so the world updates only at its next start: "
                 f"{error.strerror or error}"

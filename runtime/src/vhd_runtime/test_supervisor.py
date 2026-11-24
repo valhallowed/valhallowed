@@ -2050,6 +2050,38 @@ def test_steam_going_back_to_the_installed_build_forgets_the_record(world: World
     assert not world.paths.update_record.exists()
 
 
+def test_under_at_start_a_missed_build_waits_for_the_next_start(world: World) -> None:
+    world.paths.update_record.parent.mkdir(parents=True)
+    world.paths.update_record.write_text(json.dumps(missed(NEWER, 1, START)))
+    world.generation(1, policy="at-start")
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.stop_at(1000, sup)
+
+    assert sup.run() == 0
+    waits = (
+        f"the restart to update at 2026-11-18 20:00 UTC did not install game build {NEWER}; the world takes it at "
+        "its next start"
+    )
+    assert world.updates() == [None, {"build": NEWER, "failure": waits}]
+
+
+def test_a_record_time_ahead_of_the_clock_delays_the_next_restart_no_more_than_the_wait(world: World) -> None:
+    world.paths.update_record.parent.mkdir(parents=True)
+    world.paths.update_record.write_text(json.dumps(missed(NEWER, 1, START + timedelta(days=30))))
+    world.generation(1, update_every_s=900)
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+    # The plugin's reports end at 3030 s; keep the world counted empty until the wait has passed.
+    for when in range(3030, 4000, 5):
+        world.time.at(when, lambda: world.plugin_reports(10))
+
+    assert sup.run() == 0
+    assert 3600 <= world.time.now < 3610
+
+
 def test_a_restart_to_update_that_cannot_be_recorded_is_not_made(world: World) -> None:
     world.paths.update_record.mkdir(parents=True)
     world.generation(1)
@@ -2064,6 +2096,20 @@ def test_a_restart_to_update_that_cannot_be_recorded_is_not_made(world: World) -
     update = cast(dict[str, str], world.reports[-1]["update"])
     assert update["build"] == NEWER
     assert update["failure"].startswith("cannot record a restart to update in the data volume")
+    assert not world.paths.update_record.with_suffix(".tmp").exists()
+
+
+def test_a_record_that_could_not_be_written_is_tried_again_after_the_next_check(world: World) -> None:
+    world.paths.update_record.mkdir(parents=True)
+    world.generation(1)
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.time.at(1000, world.paths.update_record.rmdir)
+
+    assert sup.run() == 0
+    assert 1800 <= world.time.now < 1810
+    assert json.loads(world.paths.update_record.read_text())["build"] == NEWER
 
 
 def test_a_check_that_raises_unexpectedly_says_why_and_the_world_runs_on(world: World) -> None:
