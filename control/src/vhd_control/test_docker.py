@@ -97,3 +97,9 @@ def test_a_one_offs_readers_take_no_signal(monkeypatch: pytest.MonkeyPatch) -> N
     assert {signal.SIGINT, signal.SIGTERM} <= masks[0]
     assert signal.pthread_sigmask(signal.SIG_BLOCK, []) == before
 
+
+@pytest.mark.usefixtures("shell")
+def test_a_one_off_whose_output_a_process_it_left_holds_open_is_no_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(docker, "READ_AFTER_S", 0.5)
+    with pytest.raises(DockerError, match=r"ended, but a process it left holds its output open$"):
+        Cli(io.StringIO()).run(["-c", "sleep 8 & echo out"], 5)

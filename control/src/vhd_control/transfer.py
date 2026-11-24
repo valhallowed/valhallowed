@@ -266,6 +266,11 @@ class Transfer:
             raise Refused(
                 f"vhd {action} did not finish within {TIMEOUT_S} s, so vhd stopped it{_kept(action)}{left}"
             ) from error
+        except DockerError as error:
+            # The container ended; its result did not reach vhd whole.
+            raise Refused(
+                f"vhd {action} cannot read the game runtime image's result: {error}{_kept(action)}"
+            ) from error
         except BaseException:
             # Whatever stopped vhd, the container must not outlive it.
             self._stop(name)

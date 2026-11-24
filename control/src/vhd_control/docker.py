@@ -84,7 +84,8 @@ class Cli:
     def run(self, args: list[str], timeout_s: float) -> Ran:
         """Run a command whatever its exit status, its standard error passed on line by line as
         printable text: a container's words, which may name a file whose name holds a terminal's
-        escapes. Raises DockerTimeout after timeout_s, having killed the command."""
+        escapes. Raises DockerTimeout after timeout_s, having killed the command, and DockerError
+        when its output cannot be read whole."""
         err = self._err or sys.stderr
         output: list[str] = []
         errors: deque[str] = deque(maxlen=ERROR_LINES)
@@ -125,6 +126,8 @@ class Cli:
                 stdout.close()
                 stderr.close()
             process.wait()
+        if any(reader.is_alive() for reader in readers):
+            raise DockerError(f"docker {' '.join(args)} ended, but a process it left holds its output open")
         return Ran(status, "".join(output), tuple(errors))
 
 

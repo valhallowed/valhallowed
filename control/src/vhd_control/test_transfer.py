@@ -830,6 +830,16 @@ def test_a_container_docker_cannot_run_is_refused_with_dockers_reason_and_an_imp
     assert not (transfers.install / "exports").exists()
 
 
+def test_an_import_whose_result_cannot_be_read_whole_is_refused_as_maybe_kept(transfers: Transfers) -> None:
+    def held(args: list[str]) -> tuple[int, str]:
+        raise DockerError("docker run ended, but a process it left holds its output open")
+
+    transfers.docker.act = held
+    with pytest.raises(TransferRefused, match=r"holds its output open; an import cut short .* may have kept it"):
+        transfers.import_save()
+    assert transfers.restores() == {}
+
+
 @pytest.mark.parametrize("backup", ["latest", "../20261124T101500Z", "-h", "20261124T101500Z\n"])
 def test_an_export_refuses_what_is_no_backups_name_before_anything_runs(transfers: Transfers, backup: str) -> None:
     with pytest.raises(TransferRefused, match="is no backup's name; vhd backups Meadowfold lists them"):
