@@ -4,11 +4,12 @@ game runtime's image (Game runtimes, Restore, import and export share one path).
 vhd runs the image's import or export action (runtime/src/vhd_runtime/transfer.py) in a one-off
 container it starts with the server manager's access to Docker, sandboxed, since the action needs
 nothing more: as the image's own user, with no capability and no network, a read-only root, bounded
-memory and processes, and a timeout. The action's last line on standard output is its result (B13), which
-vhd checks against its contract: output that breaks it, or none, counts as refused. An import's
-backup is then restored like any other: vhd writes its restore into the control plane's state, as
-the control API's restore does, so the running control plane hands it at its next pass, and a world
-with no container yet gets it in its first generation, so its first start loads it.
+memory and processes, and a timeout. The action's last line on standard output is its result
+(B13), which vhd checks against its contract: output that breaks it, or none, counts as refused.
+An import's backup is then restored like any other: vhd writes the same restore record the control
+API's restore writes into the control plane's state, without waiting for the world's runtime to
+report the backup, so the running control plane hands it at its next pass, and a world with no
+container yet gets it in its first generation, so its first start loads it.
 
     <install folder>/<path>/                    the folder given to vhd import, holding only the save
                                                 folder, named for the world; mounted read-only
