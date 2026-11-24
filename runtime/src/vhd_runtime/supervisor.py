@@ -1,6 +1,7 @@
 """The runtime's state machine: generation, restore, install, launch, world truth, backups, updates, stop and
 hold."""
 
+import contextlib
 import json
 import logging
 import os
@@ -116,6 +117,11 @@ class Paths:
         return self.data / "vhd"
 
     @property
+    def update_record(self) -> Path:
+        """The game build the runtime last restarted its world to update to, kept in the data volume."""
+        return self.vhd / "update.json"
+
+    @property
     def last_objects(self) -> Path:
         """The object count the runtime last saw its world hold, kept in the data volume."""
         return self.vhd / "last-objects.json"
@@ -195,6 +201,10 @@ class Supervisor:
     _checked_at: float = field(default=0.0, init=False)
     _update_build: str | None = field(default=None, init=False)
     _update_failure: str | None = field(default=None, init=False)
+    # The build the last restart to update was for, when this start's install did not reach it: no
+    # restart is made for it again, so a download that keeps failing never restarts an empty world
+    # every interval.
+    _unreached: str | None = field(default=None, init=False)
     # Set once the watch of the game ends, so a check under way ends its SteamCMD rather than hold up the exit.
     _watched: bool = field(default=False, init=False)
     # The contract a backup's record keeps, read from the image at the start, as the reader reads
@@ -370,6 +380,7 @@ class Supervisor:
         launched = self.clock.now()
         # The start's install has just updated the server, so the first check waits a whole interval.
         self._checked_at = launched
+        self._unreached = self._update_unreached(build)
         state, reason = State.LOADING, None
         world: status.WorldStatus | None = None
         next_report = launched
@@ -443,7 +454,7 @@ class Supervisor:
     def _check_update(self, generation: Generation, build: str, *, running: bool) -> None:
         """Note a check of Steam's public game build that has finished, and while the game runs start
         the next once the update policy's interval, as it stands now, has passed since the last began.
-        Under either policy: at-start only never restarts for what a check finds."""
+        Checks run under either policy; only when-empty restarts for what one finds."""
         if self._checking is not None:
             if not self._checking.done():
                 return
@@ -478,11 +489,55 @@ class Supervisor:
             when = "once no players are online" if generation.updates.policy == "when-empty" else "at its next start"
             _log.info("game build %s is out, build %s is installed; the world updates %s", found, build, when)
         self._update_build = found
+        if found is None and self._unreached is not None:
+            # Steam went back to the installed build: a later restart for the other one may succeed.
+            with contextlib.suppress(OSError):
+                self.paths.update_record.unlink(missing_ok=True)
+            self._unreached = None
+        elif found is not None and found == self._unreached:
+            self._update_failed(
+                f"the last restart to update did not install game build {found}; the world takes it at its next "
+                "start, and restarts for it no more"
+            )
 
     def _update_failed(self, why: str) -> None:
+        why = _reason(why)
         if why != self._update_failure:
-            _log.error("the check for a newer game build failed: %s", why)
-        self._update_failure = _reason(why)
+            _log.error("the check for another game build failed: %s", why)
+        self._update_failure = why
+
+    def _update_unreached(self, build: str) -> str | None:
+        """The build the last restart to update was for, if this start's install did not reach it. A
+        record that cannot be read names none, which costs at most one more restart."""
+        record = self.paths.update_record
+        try:
+            wanted = json.loads(record.read_text()).get("build")
+        except (OSError, ValueError, AttributeError):
+            return None
+        if wanted == build:
+            with contextlib.suppress(OSError):
+                record.unlink(missing_ok=True)
+            return None
+        return wanted if isinstance(wanted, str) else None
+
+    def _restart_to_update(self, state: State, generation: Generation, world: status.WorldStatus | None) -> bool:
+        """Whether to restart now for the build a check found: under the when-empty policy, by the final
+        players check, for a current report of no players, and not for a build the last restart to update
+        did not install. The build is recorded first, so the next start can tell whether it got it."""
+        wanted = self._update_build
+        if wanted is None or wanted == self._unreached or generation.updates.policy != "when-empty":
+            return False
+        if not _empty(state, world):
+            return False
+        record = self.paths.update_record
+        try:
+            record.parent.mkdir(parents=True, exist_ok=True)
+            temporary = record.with_suffix(".tmp")
+            temporary.write_text(json.dumps({"build": wanted}))
+            temporary.replace(record)
+        except OSError as error:
+            _log.warning("cannot record the build this restart updates to: %s", error)
+        return True
 
     def _restart_now(
         self,
@@ -493,12 +548,11 @@ class Supervisor:
         build: str,
     ) -> str | None:
         """Why the game restarts now, if it does: for a newer generation that takes a restart, by its
-        gate; or under the when-empty policy, for the build a check found, by the final players check,
-        for a current report of no players. A generation's confirmation is for that generation's change
-        alone, never for an update."""
+        gate; or for the build a check found, by _restart_to_update. A generation's confirmation is for
+        that generation's change alone, never for an update."""
         if newer is not None and self._may_restart(state, newer, world):
             return self._why_restart(newer, self._due(newer))
-        if self._update_build is not None and generation.updates.policy == "when-empty" and _empty(state, world):
+        if self._restart_to_update(state, generation, world):
             return f"game build {self._update_build} is out; restarting to update from {build}"
         return None
 
@@ -665,9 +719,10 @@ class Supervisor:
         self._next_backup = now if tended.backup is not None else now + BACKUP_CHECK_S
 
     def _backup_failed(self, why: str) -> None:
+        why = _reason(why)
         if why != self._backup_failure:
             _log.error("backups: %s", why)
-        self._backup_failure = _reason(why)
+        self._backup_failure = why
 
     def _backups_status(self) -> status.Backups | None:
         """The backups for the status report, None until the folder has been listed or has failed."""

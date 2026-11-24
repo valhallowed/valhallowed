@@ -5,8 +5,10 @@ import os
 import shutil
 import signal
 import subprocess
+import threading
+import time
 from collections.abc import Callable
-from concurrent.futures import Executor, Future
+from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, TypeVar, cast
@@ -1968,3 +1970,106 @@ def test_a_check_is_told_to_stop_once_the_watch_ends_for_a_restart(world: World)
 
 def test_the_app_info_cache_is_in_steamcmds_steam_folder_in_its_home_the_data_volume() -> None:
     assert Paths().app_info_cache == Path("/data/Steam/appcache/appinfo.vdf")
+
+
+def test_a_restart_to_update_records_the_build_it_is_for(world: World) -> None:
+    world.generation(1)
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+
+    assert sup.run() == 0
+    assert json.loads(world.paths.update_record.read_text()) == {"build": NEWER}
+
+
+def test_a_start_that_did_not_install_the_build_restarts_no_more_for_it_and_says_why(world: World) -> None:
+    world.paths.update_record.parent.mkdir(parents=True)
+    world.paths.update_record.write_text(json.dumps({"build": NEWER}))
+    world.generation(1)
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+    # A build after it is restarted for as any other.
+    world.time.at(1000, lambda: setattr(world, "public", "26300000"))
+
+    assert sup.run() == 0
+    assert 1800 <= world.time.now < 1810
+    failed = (
+        f"the last restart to update did not install game build {NEWER}; the world takes it at its next start, "
+        "and restarts for it no more"
+    )
+    assert world.updates() == [None, {"build": NEWER, "failure": failed}, {"build": "26300000"}]
+
+
+def test_a_start_that_installed_the_build_forgets_the_record(world: World) -> None:
+    world.paths.update_record.parent.mkdir(parents=True)
+    world.paths.update_record.write_text(json.dumps({"build": "25909431"}))
+    world.generation(1)
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.stop_at(100, sup)
+
+    assert sup.run() == 0
+    assert not world.paths.update_record.exists()
+
+
+def test_steam_going_back_to_the_installed_build_forgets_the_record(world: World) -> None:
+    world.paths.update_record.parent.mkdir(parents=True)
+    world.paths.update_record.write_text(json.dumps({"build": NEWER}))
+    world.generation(1, policy="at-start")
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.stop_at(1000, sup)
+
+    assert sup.run() == 0
+    assert not world.paths.update_record.exists()
+
+
+def test_a_check_that_raises_unexpectedly_says_why_and_the_world_runs_on(world: World) -> None:
+    world.generation(1, update_every_s=300)
+    sup = world.supervisor()
+
+    def query(command: list[str], timeout: float, stopping: steam.Stopping) -> str:
+        raise RuntimeError("no room for the answer")
+
+    sup.query_steamcmd = query
+    world.plugin_running(10)
+    world.stop_at(1000, sup)
+
+    assert sup.run() == 0
+    assert world.time.now >= 1000
+    failed = "the check stopped on an unexpected error: RuntimeError: no room for the answer"
+    assert world.updates() == [None, {"failure": failed}]
+
+
+def test_a_stop_ends_a_check_under_way_before_the_game_has_stopped(world: World) -> None:
+    world.generation(1, update_every_s=300)
+    sup = world.supervisor()
+    sup.checker = ThreadPoolExecutor(max_workers=1)
+    asked, stopped = threading.Event(), threading.Event()
+    seen_asked: list[bool] = []
+
+    def query(command: list[str], timeout: float, stopping: steam.Stopping) -> str:
+        asked.set()
+        deadline = time.monotonic() + 10
+        while not stopping() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        if stopping():
+            stopped.set()
+        raise steam.Stopped("stop requested while SteamCMD ran")
+
+    sup.query_steamcmd = query
+    world.plugin_running(10)
+    # The loop keeps watching the world while the check is under way.
+    world.time.at(305, lambda: seen_asked.append(asked.wait(10)))
+    world.stop_at(400, sup)
+    # The game's stop comes before the watch ends, so only the stop request can have ended the check by then.
+    seen_at_stop: list[bool] = []
+    world.process.on_interrupt = lambda: seen_at_stop.append(stopped.wait(10))
+
+    assert sup.run() == 0
+    sup.checker.shutdown(wait=True)
+    assert world.time.now >= 400
+    assert seen_asked == [True]
+    assert seen_at_stop == [True]
+    assert world.updates() == [None]

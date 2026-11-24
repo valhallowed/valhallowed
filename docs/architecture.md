@@ -339,14 +339,17 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   runtime whose check finds a public build other than its own, newer or one
   Steam went back to, restarts its world to update once no players are online,
   by its own final players check; the server manager's confirmation of a
-  generation confirms that generation's change, never an update. The game
-  refuses a player whose game is another version (§ Game facts), so a world
-  that updated only when it started would refuse every updated player after a
-  game patch until someone restarted it. The stop backs the save up, as every
-  clean stop does, so an update that damages a world leaves the save from
-  before it, and world truth holds a world the update stops from loading.
-  Under the `at-start` policy, a world still checks, but updates only when it
-  next starts. Status names the installed build, the other one while it waits,
+  generation confirms that generation's change, never an update. It records in
+  its data volume the build it restarts for, and a start whose install did not
+  reach that build, as when Steam's download fails, makes it restart for that
+  build no more and say so in status, so an empty world is not restarted every
+  interval for a download that keeps failing. The game refuses a player whose
+  game is another version (§ Game facts), so a world that updated only when it
+  started would refuse every updated player after a game patch until someone
+  restarted it. The stop backs the save up, as every clean stop does, so an
+  update that damages a world leaves the save from before it, and world truth
+  holds a world the update stops from loading. Under the `at-start` policy, a
+  world still checks, but updates only when it next starts. Status names the installed build, the other one while it waits,
   and why the newest check failed; a check is an observation, so one that fails
   keeps the build an earlier one found and changes nothing else.
 - **Capabilities are independent.** Telemetry, in-game commands, chat relay,
