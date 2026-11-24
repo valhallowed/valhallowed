@@ -229,9 +229,9 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   and that restore may wait unhanded behind another change to the world for as
   long as that change waits. One per world, so it bounds what it keeps; once a
   later import exists, the older one prunes like any other. How often and how
-  many are
-  defaults the manifest can change, each count at most 100, so a status names at
-  most 200 backups. Backups live in a `backups` folder in the install folder, a
+  many are defaults the manifest can change, each count at most 100, so a status
+  names at most 202 backups: the counts' 200, the backup a restore asks for and
+  the newest import. Backups live in a `backups` folder in the install folder, a
   folder for each world that only its runtime mounts, and the one-off container
   an import or an export runs in. A Docker volume would go, with the world it
   protects, on `docker compose down -v`; a folder stays, and the server manager
@@ -241,11 +241,11 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   it names it: where it cannot, as on some network mounts, an import refuses,
   and a start, and the next import, remove an import's copy without the lock
   once nothing in it has changed for more than an hour, since a lock that fails
-  may fail only for now while an import copies. A runtime
-  reports the names of its world's backups, newest first, each the time it was
-  taken in UTC, and why it could not take or keep one; the control plane learns
-  them from there, so it mounts no world's backups, and `vhd status` shows how
-  many there are and the newest one's age. Each backup carries its record
+  may fail only for now while an import copies. A runtime reports the names of
+  its world's backups, newest first, each the time it was taken in UTC, and why
+  it could not take or keep one; the control plane learns them from there, so it
+  mounts no world's backups, and `vhd status` shows how many there are and the
+  newest one's age. Each backup carries its record
   ([`game-runtime.backup`](../contracts/game-runtime.backup.schema.json)): the
   save it holds, its object count, and each file's size and SHA-256, which a
   restore and an export check before they use the files, and whether the runtime
