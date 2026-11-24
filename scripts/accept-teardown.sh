@@ -3,7 +3,8 @@
 # whatever a run of it left, a failed first apply included: everything its
 # Compose project labels, then its folder. The worlds' backup folders belong to
 # root and the game runtime's user, so vhd, which runs as root, removes them
-# before the install folder goes. It runs from an exit trap, so it never fails.
+# before the install folder goes. It runs from an exit trap, so once given its
+# arguments it never fails.
 set -uo pipefail
 
 [[ $# -eq 2 ]] || { echo "usage: $0 PROJECT INSTALL" >&2; exit 2; }

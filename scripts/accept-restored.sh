@@ -3,7 +3,9 @@
 # restore ID ended, and, for one done, that the world is past installing and
 # loading, then print the world's entry of the control plane's status (see
 # accept-status.sh). Fails, saying why, when WAIT_S passes first, or when the
-# world's container stops or restarts while it waits.
+# world's container stops or restarts while it waits. WAIT_S is checked between
+# polls, and a poll whose status read hangs takes up to 65 s, so the wait may
+# run past it by that much.
 set -euo pipefail
 
 [[ $# -eq 5 ]] || { echo "usage: $0 PROJECT INSTALL WORLD ID WAIT_S" >&2; exit 2; }
