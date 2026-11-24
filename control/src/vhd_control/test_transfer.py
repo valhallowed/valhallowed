@@ -545,6 +545,10 @@ def test_an_interrupted_import_stops_its_container_too(transfers: Transfers) -> 
         transfers.import_save()
     assert [args[0] for args in transfers.docker.stopped] == ["stop", "rm"]
     assert transfers.restores() == {}
+    assert transfers.out.getvalue() == (
+        "vhd import of Meadowfold was stopped; an import cut short after it named its backup may have kept it, "
+        "which vhd backups then lists.\n"
+    )
 
 
 def test_an_import_stopped_before_it_asks_for_its_restore_names_the_backup_it_kept(

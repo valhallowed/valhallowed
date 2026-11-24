@@ -143,7 +143,12 @@ class Transfer:
                 *_mount(source, IMPORT_FOLDER, read_only=True),
                 *_mount(posixpath.join(backups, cid), layout.BACKUPS, read_only=False),
             ]
-            result = self._act(host, "import", world, mounts, [])
+            try:
+                result = self._act(host, "import", world, mounts, [])
+            except KeyboardInterrupt:
+                # Stopped as the container ended or vhd read its result, the import may have kept its backup.
+                print(f"vhd import of {world} was stopped{_kept('import')}.", file=self.out)
+                raise
             try:
                 restore = Restore(secrets.token_hex(16), result["backup"])
                 with store.locked():
