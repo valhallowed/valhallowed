@@ -533,6 +533,62 @@ def test_an_export_names_the_backup_it_was_asked_for_and_two_never_share_a_folde
     assert len(list((transfers.install / "exports" / "Meadowfold").iterdir())) == 2
 
 
+@pytest.fixture
+def chowns(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, int, int]]:
+    """Each change of owner vhd makes, by the name or descriptor it names, made in no file."""
+    made: list[tuple[str, int, int]] = []
+
+    def chown(path: object, uid: int, gid: int, **kwargs: object) -> None:
+        made.append((os.path.basename(str(path)), uid, gid))
+
+    def fchown(descriptor: int, uid: int, gid: int) -> None:
+        made.append((os.path.basename(os.readlink(f"/proc/self/fd/{descriptor}")), uid, gid))
+
+    for name in ("chown", "lchown"):
+        monkeypatch.setattr(os, name, chown)
+    monkeypatch.setattr(os, "fchown", fchown)
+    return made
+
+
+def test_an_export_folder_swapped_for_a_link_gives_nothing_away(
+    transfers: Transfers, tmp_path: Path, chowns: list[tuple[str, int, int]]
+) -> None:
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "secret").write_text("not the export's")
+
+    def swap(args: list[str]) -> tuple[int, str]:
+        ran = transfers.docker.done(args)
+        target = transfers.docker.own_view(mounts(args)["/export"]["source"])
+        target.rename(target.with_name("moved"))
+        target.symlink_to(elsewhere)
+        return ran
+
+    transfers.docker.act = swap
+    with pytest.raises(TransferRefused, match="vhd could not give it to the install folder's owner"):
+        transfers.export_backup()
+    assert not any(name in ("elsewhere", "secret") for name, _, _ in chowns)
+
+
+def test_an_export_folder_swapped_for_another_folder_gives_nothing_away(
+    transfers: Transfers, chowns: list[tuple[str, int, int]]
+) -> None:
+    before: list[int] = []
+
+    def swap(args: list[str]) -> tuple[int, str]:
+        ran = transfers.docker.done(args)
+        target = transfers.docker.own_view(mounts(args)["/export"]["source"])
+        target.rename(target.with_name("moved"))
+        target.mkdir()
+        before.append(len(chowns))
+        return ran
+
+    transfers.docker.act = swap
+    with pytest.raises(TransferRefused, match="the export's folder, was replaced while the export ran"):
+        transfers.export_backup()
+    assert [len(chowns)] == before
+
+
 def test_the_export_folder_is_the_runtime_users_while_the_container_writes_it(transfers: Transfers) -> None:
     owners: list[tuple[int, int]] = []
 

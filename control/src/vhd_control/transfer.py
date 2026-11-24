@@ -180,7 +180,7 @@ class Transfer:
                     f"there is no backup of {world} yet: the install folder holds no {seen.relative_to(self.install)}"
                 )
             user = self._user(host)
-            target, made = _export_folder(self.install, world, host.owner, user)
+            target, made, made_as = _export_folder(self.install, world, host.owner, user)
             try:
                 mounts = [
                     *_mount(folder, layout.BACKUPS, read_only=True),
@@ -196,7 +196,7 @@ class Transfer:
                 raise
             shown = posixpath.join(*target.relative_to(self.install).parts, "worlds_local", world)
             try:
-                _give(target, host.owner)
+                _give(target, made_as, host.owner)
             except OSError as error:
                 raise Refused(
                     f"the backup is in {shown}, but vhd could not give it to the install folder's owner: "
@@ -414,9 +414,12 @@ def _may(info: os.stat_result, user: _User, *, folders: bool) -> bool:
     return bits & needed == needed
 
 
-def _export_folder(install: Path, world: str, owner: tuple[int, int], user: _User) -> tuple[Path, list[Path]]:
+def _export_folder(
+    install: Path, world: str, owner: tuple[int, int], user: _User
+) -> tuple[Path, list[Path], tuple[int, int]]:
     """A new folder for this export, exports/<world>/<when>, which the image's user may write: the
-    folder, and what vhd made for it, newest first, which a refusal removes."""
+    folder, what vhd made for it, newest first, which a refusal removes, and the folder's device
+    and inode, which tell it from anything put in its place."""
     made: list[Path] = []
     try:
         folder = install
@@ -444,13 +447,14 @@ def _export_folder(install: Path, world: str, owner: tuple[int, int], user: _Use
             raise Refused(f"{folder.relative_to(install)} already holds this second's exports; try again")
         made.insert(0, target)
         os.chown(target, user.uid, user.gid)
+        info = target.lstat()
     except OSError as error:
         _remove(made)
         raise Refused(f"cannot make the export's folder in the install folder: {error.strerror or error}") from error
     except Refused:
         _remove(made)
         raise
-    return target, made
+    return target, made, (info.st_dev, info.st_ino)
 
 
 def _remove(made: list[Path]) -> None:
@@ -458,12 +462,22 @@ def _remove(made: list[Path]) -> None:
         shutil.rmtree(folder, ignore_errors=True)
 
 
-def _give(target: Path, owner: tuple[int, int]) -> None:
-    """Give what the export wrote to the install folder's owner, never through a link."""
-    os.lchown(target, *owner)
-    for root, folders, files in os.walk(target):
-        for name in (*folders, *files):
-            os.lchown(os.path.join(root, name), *owner)
+def _give(target: Path, made_as: tuple[int, int], owner: tuple[int, int]) -> None:
+    """Give what the export wrote to the install folder's owner, never through a link: the folder is
+    opened as the one vhd made, or not at all, and walked by descriptor. Raises OSError."""
+    top = os.open(target, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(top)
+        if (info.st_dev, info.st_ino) != made_as:
+            raise Refused(
+                f"{target.name}, the export's folder, was replaced while the export ran; vhd gave nothing away"
+            )
+        os.fchown(top, *owner)
+        for _, folders, files, folder in os.fwalk(".", dir_fd=top):
+            for name in (*folders, *files):
+                os.chown(name, *owner, dir_fd=folder, follow_symlinks=False)
+    finally:
+        os.close(top)
 
 
 def _mount(source: str, target: PurePosixPath, *, read_only: bool = False) -> list[str]:
