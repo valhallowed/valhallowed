@@ -144,8 +144,8 @@ class Transfer:
                 *_mount(posixpath.join(backups, cid), layout.BACKUPS, read_only=False),
             ]
             result = self._act(host, "import", world, mounts, [])
-            restore = Restore(secrets.token_hex(16), result["backup"])
             try:
+                restore = Restore(secrets.token_hex(16), result["backup"])
                 with store.locked():
                     state = store.load()
                     state.restores[cid] = restore
@@ -194,6 +194,7 @@ class Transfer:
                     f"there is no backup of {world} yet: the install folder holds no {seen.relative_to(self.install)}"
                 )
             user = self._user(host)
+            giving = False
             target, made, made_as = _export_folder(self.install, world, host.owner, user)
             try:
                 mounts = [
@@ -205,22 +206,27 @@ class Transfer:
                     raise Refused(
                         f"vhd export asked for backup {backup}, and the game runtime image copied {result['backup']}"
                     )
+                shown = posixpath.join(*target.relative_to(self.install).parts, "worlds_local", world)
+                # A stop waits until the export is given whole and said where it is: none is left half given.
+                with _stops_held():
+                    giving = True
+                    try:
+                        _give(target, made_as, host.owner)
+                    except OSError as error:
+                        raise Refused(
+                            f"the backup is in {shown}, but vhd could not give it to the install folder's owner: "
+                            f"{error.strerror or error}"
+                        ) from error
+                    print(
+                        f"vhd export: {world}'s backup {result['backup']}, save {_save(result)}, is in {shown}, in "
+                        "the layout the game reads.",
+                        file=self.out,
+                    )
             except BaseException:
-                _remove(made)
+                # Until vhd gives it away, an export is the runtime's user's, and nothing of it is kept.
+                if not giving:
+                    _remove(made)
                 raise
-            shown = posixpath.join(*target.relative_to(self.install).parts, "worlds_local", world)
-            try:
-                _give(target, made_as, host.owner)
-            except OSError as error:
-                raise Refused(
-                    f"the backup is in {shown}, but vhd could not give it to the install folder's owner: "
-                    f"{error.strerror or error}"
-                ) from error
-        print(
-            f"vhd export: {world}'s backup {result['backup']}, save {_save(result)}, is in {shown}, in the layout "
-            "the game reads.",
-            file=self.out,
-        )
 
     def _fits(self, document: str, at: tuple[str, ...], value: str) -> bool:
         """Whether value meets the schema at that place in a document the release ships, and is
@@ -509,13 +515,7 @@ def _remove(made: list[Path]) -> None:
 
 def _give(target: Path, made_as: tuple[int, int], owner: tuple[int, int]) -> None:
     """Give what the export wrote to the install folder's owner, never through a link: the folder is
-    opened as the one vhd made, or not at all, and walked by descriptor. A stop waits until it is
-    all given, so no export is left half given. Raises OSError."""
-    with _stops_held():
-        _give_held(target, made_as, owner)
-
-
-def _give_held(target: Path, made_as: tuple[int, int], owner: tuple[int, int]) -> None:
+    opened as the one vhd made, or not at all, and walked by descriptor. Raises OSError."""
     top = os.open(target, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         info = os.fstat(top)

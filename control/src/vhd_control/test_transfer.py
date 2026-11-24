@@ -729,6 +729,9 @@ def test_an_export_stopped_while_vhd_gives_it_away_is_given_whole_then_stops(
     # The export's folder's three, then everything in it and the folder itself.
     assert [name for name, _, _ in chowns[3:-1]] == ["worlds_local", "Meadowfold", "_main.41.ok"]
     assert chowns[-1][0] == chowns[2][0]
+    # Kept, and said where.
+    assert "vhd export: Meadowfold's backup" in transfers.out.getvalue()
+    assert (transfers.install / "exports" / "Meadowfold" / chowns[2][0]).is_dir()
 
 
 def test_a_refused_export_removes_what_vhd_made(transfers: Transfers) -> None:
