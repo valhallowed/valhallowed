@@ -64,6 +64,8 @@ STOP_GRACE_S = 60
 # A copy in 1 MiB blocks and a contract check need little of either.
 MEMORY = "512m"
 PIDS = 64
+# Where a backup's name is defined: the restore a generation carries names one.
+BACKUP_NAME = ("contracts/game-runtime.generation.schema.json", ("properties", "restore", "properties", "backup"))
 # What docker run exits with when Docker itself fails, before the container runs.
 DOCKER_FAILED = 125
 # What stops vhd itself: a Ctrl-C, or the SIGTERM tini forwards when Docker stops vhd's container.
@@ -164,6 +166,8 @@ class Transfer:
         created one."""
         if not self._fits("schema/manifest.schema.json", ("$defs", "save_name"), world):
             raise Refused(f"{world} is no save name: 1 to 64 letters, digits, spaces, hyphens and underscores")
+        if backup is not None and not self._fits(BACKUP_NAME[0], BACKUP_NAME[1], backup):
+            raise Refused(f"{backup} is no backup's name; vhd backups {world} lists them")
         host = inspect_host(self.docker, self.hostname, self.install, "export")
         with _stopped_as_interrupted(), only_run(self.generations):
             mounted = Store(self.generations).load().backups_applied
@@ -183,6 +187,10 @@ class Transfer:
                     *_mount(posixpath.join(host.install, *target.relative_to(self.install).parts), EXPORT_FOLDER),
                 ]
                 result = self._act(host, "export", world, mounts, [] if backup is None else [backup])
+                if backup is not None and result["backup"] != backup:
+                    raise Refused(
+                        f"vhd export asked for backup {backup}, and the game runtime image copied {result['backup']}"
+                    )
             except BaseException:
                 _remove(made)
                 raise
@@ -201,11 +209,12 @@ class Transfer:
         )
 
     def _fits(self, document: str, at: tuple[str, ...], value: str) -> bool:
-        """Whether value meets the schema at that place in a document the release ships."""
+        """Whether value meets the schema at that place in a document the release ships, and is
+        printable: a pattern's $ also matches before a final newline in Python, and no name holds one."""
         schema: Any = self.schemas.document(document)
         for key in at:
             schema = schema[key]
-        return Draft202012Validator(schema).is_valid(value)
+        return value.isprintable() and Draft202012Validator(schema).is_valid(value)
 
     def _user(self, host: Host) -> _User:
         """The game runtime image's own user, as the image says, so its Dockerfile alone names the uid.

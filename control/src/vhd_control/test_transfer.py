@@ -596,7 +596,7 @@ def test_an_export_takes_a_world_the_manifest_dropped_from_where_its_container_m
     assert args[-2:] == ["export", "Hollowmere"]
 
 
-@pytest.mark.parametrize("world", ["../Meadowfold", "-x", "", "Meadow/fold"])
+@pytest.mark.parametrize("world", ["../Meadowfold", "-x", "", "Meadow/fold", "Meadowfold\n"])
 def test_an_export_refuses_what_is_no_save_name_before_anything_runs(transfers: Transfers, world: str) -> None:
     with pytest.raises(TransferRefused, match="is no save name"):
         transfers.export_backup(world=world)
@@ -629,6 +629,22 @@ def test_a_container_docker_cannot_start_is_refused_with_dockers_reason_and_no_k
     )
     with pytest.raises(TransferRefused, match="for vhd export: docker: Error response"):
         transfers.export_backup()
+    assert not (transfers.install / "exports").exists()
+
+
+@pytest.mark.parametrize("backup", ["latest", "../20261124T101500Z", "-h", "20261124T101500Z\n"])
+def test_an_export_refuses_what_is_no_backups_name_before_anything_runs(transfers: Transfers, backup: str) -> None:
+    with pytest.raises(TransferRefused, match="is no backup's name; vhd backups Meadowfold lists them"):
+        transfers.export_backup(backup=backup)
+    assert transfers.docker.runs == []
+
+
+def test_an_export_whose_result_names_another_backup_than_the_one_asked_for_is_refused(transfers: Transfers) -> None:
+    transfers.docker.act = lambda args: (0, done("export", backup="20261124T091500Z"))
+    with pytest.raises(
+        TransferRefused, match=f"asked for backup {BACKUP}, and the game runtime image copied 20261124T091500Z"
+    ):
+        transfers.export_backup(backup=BACKUP)
     assert not (transfers.install / "exports").exists()
 
 
