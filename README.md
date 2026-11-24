@@ -57,8 +57,8 @@ replaces is kept until the restored one loads, and put back if it loads empty.
 before then replaces the restore.
 
 To bring a 1.0+ world in, add it to the manifest, put its save folder, named for
-its save name, alone in a folder of the install folder, readable by others, such
-as `incoming/<save name>/`, and run:
+its save name, alone in a folder of the install folder, readable by others and
+writable by you alone, such as `incoming/<save name>/`, and run:
 
 ```bash
 docker compose run --rm vhd import <save name> incoming
@@ -66,8 +66,15 @@ docker compose run --rm vhd import <save name> incoming
 
 The save is checked, kept as a backup and restored like one; a world that has
 not started yet loads it at its first start, once `vhd apply` creates it.
-`vhd export <save name> [<backup>]` copies a backup, the newest by default, into
-a folder of its own in `exports/<save name>/`, in the layout the game reads.
+
+To copy a backup out, the newest unless you name one, run:
+
+```bash
+docker compose run --rm vhd export <save name> [<backup>]
+```
+
+It lands in `exports/<save name>/<time>/`, in the layout the game reads, with
+`<time>` the export's own time in UTC.
 
 ## A held world
 
