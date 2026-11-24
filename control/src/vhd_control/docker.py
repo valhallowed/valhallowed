@@ -114,7 +114,15 @@ def _read(stream: IO[str], keep: Callable[[str], None]) -> None:
 
 
 def _relay(stream: IO[str], err: TextIO, kept: deque[str]) -> None:
+    """Pass each line on to err and keep it. Once err takes no more, as a closed pipe does, the
+    lines are still read and kept: a command whose standard error no one read would block on it."""
+    shown_to: TextIO | None = err
     for line in iter(lambda: stream.readline(LINE_MAX), ""):
         shown = printable(line.rstrip("\n"))
         kept.append(shown)
-        print(shown, file=err, flush=True)
+        if shown_to is None:
+            continue
+        try:
+            print(shown, file=shown_to, flush=True)
+        except (OSError, ValueError):
+            shown_to = None

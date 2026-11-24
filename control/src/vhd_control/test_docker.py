@@ -45,6 +45,23 @@ def test_a_one_off_keeps_only_its_last_error_lines_and_reads_output_that_is_no_t
     assert ran.output == "�\n"
 
 
+class ClosedPipe(io.StringIO):
+    def write(self, text: str) -> int:
+        raise BrokenPipeError(32, "Broken pipe")
+
+
+@pytest.mark.usefixtures("shell")
+def test_a_one_off_whose_errors_reach_a_closed_pipe_still_runs_to_its_end() -> None:
+    # Far more than a pipe holds: a relay that stopped reading would leave the command blocked.
+    script = "i=0; while [ $i -lt 400 ]; do printf '%0512d\\n' $i >&2; i=$((i + 1)); done; echo out; exit 4"
+
+    ran = Cli(ClosedPipe()).run(["-c", script], 10)
+
+    assert ran.status == 4
+    assert ran.output == "out\n"
+    assert ran.errors[-1] == f"{399:0512d}"
+
+
 @pytest.mark.usefixtures("shell")
 def test_a_one_off_that_outlasts_its_timeout_is_killed() -> None:
     started = time.monotonic()
