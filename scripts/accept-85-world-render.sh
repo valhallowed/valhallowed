@@ -33,8 +33,9 @@ WATER_MAX=0.95
 # the sampling itself), and the web map polls the export every 5 s. 360 s is
 # several times that. accept.sh's callers leave room for its 20-minute wait;
 # the tightest is ci.yml's accept job at 40 minutes (release.yml's promote has
-# 45, ci.yml's build and nightly's game 90), and 20 + 6 minutes fits all of them
-# with the other checks' time to spare.
+# 45, ci.yml's build and nightly's game 90). This wait, accept-97's restore (4)
+# and accept-99's import (7) bring the waits to 20 + 6 + 4 + 7 = 37 minutes,
+# which fits all of them with the other checks' few minutes to spare.
 wait_s=360
 
 tmp=$(mktemp -d)
