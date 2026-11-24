@@ -590,6 +590,18 @@ What any design here must respect about the game.
   unless told otherwise.
 - The server refuses a client on another game version. A server that has not
   updated refuses every player whose game has.
+- Steam names each build of the dedicated server by a build id, and SteamCMD
+  reads the public one without downloading it:
+  `+login anonymous +app_info_update 1 +app_info_print 896660 +quit` prints the
+  app's info as KeyValues text, and the `buildid` under `depots`, `branches`,
+  `public` is the build `+app_update 896660` installs, which the install's
+  `steamapps/appmanifest_896660.acf` then records as its own `buildid`. Other
+  branches sit beside `public`, such as `default_old`, the previous stable
+  build. Measured in November 2026, the answer took 5 to 7 seconds once
+  SteamCMD had updated itself; with no network, SteamCMD printed no app info
+  and exited with code 5 after 80 to 140 seconds. SteamCMD can keep app info in
+  `appcache/appinfo.vdf` in its Steam folder, `~/Steam`; whether it answers
+  from there once Steam has published a newer build was not seen.
 - A world's server uses its port and the next one, over UDP; the server's own
   start script asks for its port through port+2 to be forwarded. Worlds that
   share a host need ranges that do not overlap.
