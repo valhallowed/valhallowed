@@ -447,8 +447,9 @@ def make_backup_folders(docker: Docker, host: Host, folder: str, child_ids: Iter
     before Docker mounts it: Docker makes a missing bind source as root, where the runtime could not
     write. One one-off container of the game runtime's image makes them all, as root with only the
     capabilities that takes, and gives each to the image's own user by name, so the uid is written
-    in the Dockerfile alone. Docker makes the backups folder itself when it is missing. Safe to
-    repeat. Raises DockerError."""
+    in the Dockerfile alone. Docker makes the backups folder itself when it is missing, which is why
+    this mount is --volume, not the --mount that refuses a missing source; the manifest schema keeps
+    the colon --volume reserves out of the folder's path. Safe to repeat. Raises DockerError."""
     docker.output(
         [
             "run", "--rm", "--pull", "never", "--network", "none", "--user", "0", "--entrypoint", "sh",
