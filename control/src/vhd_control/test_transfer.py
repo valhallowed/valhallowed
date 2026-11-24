@@ -75,6 +75,8 @@ class TransferDocker(FakeDocker):
         self.there = True
         self.listed: list[list[str]] = []
         self.on_stop: Callable[[list[str]], None] = lambda args: None
+        # The last lines of the action's standard error.
+        self.errors: tuple[str, ...] = ()
         # What the action's container does with its arguments: its exit status and output.
         self.act: Callable[[list[str]], tuple[int, str]] = self.done
 
@@ -96,7 +98,7 @@ class TransferDocker(FakeDocker):
     def run(self, args: list[str], timeout_s: float) -> Ran:
         self.runs.append((args, timeout_s))
         status, output = self.act(args)
-        return Ran(status, output, ())
+        return Ran(status, output, self.errors)
 
     def own_view(self, host_path: str) -> Path:
         """Where a host path under the install folder is in the tests' own view of it."""
@@ -116,6 +118,7 @@ class Transfers(Setup):
     def __init__(self, root: Path) -> None:
         super().__init__(root)
         self.docker: TransferDocker = TransferDocker(self.install)
+        (self.install / "backups" / MEADOWFOLD).mkdir(parents=True)
         save = self.install / "incoming" / "Meadowfold"
         save.mkdir(parents=True)
         (save / "_main.41.ok").write_text("ok")
@@ -517,7 +520,7 @@ def test_an_export_copies_the_newest_backup_into_a_folder_of_its_own_for_the_ins
     shown = f"exports/Meadowfold/{target.name}/worlds_local/Meadowfold"
     assert f"vhd export: Meadowfold's backup {BACKUP}, save 41 (1234 objects" in transfers.out.getvalue()
     assert f"is in {shown}, in the layout the game reads" in transfers.out.getvalue()
-    # No world's backups folder is made for an export: a missing one is the action's refusal.
+    # No world's backups folder is made for an export: one that is missing holds no backup.
     assert not any(MAKE_BACKUP_FOLDERS in args for args in transfers.docker.prepared)
 
 
@@ -598,6 +601,34 @@ def test_an_export_refuses_what_is_no_save_name_before_anything_runs(transfers: 
     with pytest.raises(TransferRefused, match="is no save name"):
         transfers.export_backup(world=world)
     assert transfers.docker.runs == []
+    assert not (transfers.install / "exports").exists()
+
+
+def test_an_export_of_a_world_with_no_backups_folder_yet_is_refused_before_anything_runs(
+    transfers: Transfers,
+) -> None:
+    (transfers.install / "backups" / MEADOWFOLD).rmdir()
+    with pytest.raises(
+        TransferRefused, match=f"no backup of Meadowfold yet: the install folder holds no backups/{MEADOWFOLD}$"
+    ):
+        transfers.export_backup()
+    assert transfers.docker.runs == []
+    assert not (transfers.install / "exports").exists()
+
+
+def test_a_container_docker_cannot_start_is_refused_with_dockers_reason_and_no_kept_backup(
+    transfers: Transfers,
+) -> None:
+    transfers.docker.errors = ("docker: Error response from daemon: invalid mount config for type bind",)
+    transfers.docker.act = lambda args: (125, "")
+    with pytest.raises(TransferRefused) as refused:
+        transfers.import_save()
+    assert str(refused.value) == (
+        "Docker could not start the game runtime image for vhd import: "
+        "docker: Error response from daemon: invalid mount config for type bind"
+    )
+    with pytest.raises(TransferRefused, match="for vhd export: docker: Error response"):
+        transfers.export_backup()
     assert not (transfers.install / "exports").exists()
 
 

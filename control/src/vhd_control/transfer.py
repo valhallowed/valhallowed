@@ -64,6 +64,8 @@ STOP_GRACE_S = 60
 # A copy in 1 MiB blocks and a contract check need little of either.
 MEMORY = "512m"
 PIDS = 64
+# What docker run exits with when Docker itself fails, before the container runs.
+DOCKER_FAILED = 125
 # What stops vhd itself: a Ctrl-C, or the SIGTERM tini forwards when Docker stops vhd's container.
 STOP_SIGNALS = {signal.SIGINT, signal.SIGTERM}
 # What the image's own user is, as the image says: its uid, its primary gid, and every gid it holds.
@@ -166,11 +168,18 @@ class Transfer:
         with _stopped_as_interrupted(), only_run(self.generations):
             mounted = Store(self.generations).load().backups_applied
             backups = backups_folder(mounted or manifest.load(self.install, self.schemas).backups.path, host)
+            folder = posixpath.join(backups, child_id(world))
+            seen = _in_view(self.install, host.install, folder)
+            # Docker would only fail to mount it. One outside the install folder vhd cannot see.
+            if seen is not None and not seen.is_dir():
+                raise Refused(
+                    f"there is no backup of {world} yet: the install folder holds no {seen.relative_to(self.install)}"
+                )
             user = self._user(host)
             target, made = _export_folder(self.install, world, host.owner, user)
             try:
                 mounts = [
-                    *_mount(posixpath.join(backups, child_id(world)), layout.BACKUPS, read_only=True),
+                    *_mount(folder, layout.BACKUPS, read_only=True),
                     *_mount(posixpath.join(host.install, *target.relative_to(self.install).parts), EXPORT_FOLDER),
                 ]
                 result = self._act(host, "export", world, mounts, [] if backup is None else [backup])
@@ -238,6 +247,10 @@ class Transfer:
             # Whatever stopped vhd, the container must not outlive it.
             self._stop(name)
             raise
+        if ran.status == DOCKER_FAILED:
+            # The container never ran, so the action kept nothing.
+            why = "; ".join(ran.errors) or "it gave no reason"
+            raise Refused(f"Docker could not start the game runtime image for vhd {action}: {why}")
         return self._result(action, world, ran.status, ran.output)
 
     def _stop(self, name: str) -> list[str]:
@@ -319,6 +332,13 @@ def _interrupt(signum: int, frame: FrameType | None) -> NoReturn:
 def _in_manifest(settings: Settings, world: str) -> None:
     if world not in (each.name for each in settings.worlds):
         raise Refused(f"the manifest has no world {world}; add it as [world.{world}] first")
+
+
+def _in_view(install: Path, host_install: str, host_path: str) -> Path | None:
+    """Where a host path is in vhd's view of the install folder, or None outside it."""
+    if posixpath.commonpath([host_path, host_install]) != host_install:
+        return None
+    return install.joinpath(*PurePosixPath(posixpath.relpath(host_path, host_install)).parts)
 
 
 def _relative(path: str) -> tuple[str, ...]:
