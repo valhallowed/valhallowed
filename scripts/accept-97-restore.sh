@@ -6,7 +6,9 @@
 # backup's restore with vhd restore; and starts the world with vhd apply, as a
 # server manager does. The world's runtime must report the restore done and
 # the world running, so world truth passed the restored save, with the
-# plugin's object count equal to the backup record's. The world keeps running
+# plugin's object count equal to the backup record's, and the save must hold
+# the backup's files again, byte for byte, in the same container accept.sh
+# started. The world keeps running
 # for the checks after this one. See accept.sh for the ACCEPT_ variables.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -22,7 +24,7 @@ wait_s=240
 # reads them. -I and the working directory /, so nothing in the world's data
 # volume is imported. Prints the newest backup's name, its object count and the
 # chunk it removed from the save.
-picked=$(docker run --rm -i --label "com.docker.compose.project=$ACCEPT_PROJECT" --network none \
+picked=$(timeout 60 docker run --rm -i --label "com.docker.compose.project=$ACCEPT_PROJECT" --network none \
   --cap-drop ALL --security-opt no-new-privileges:true --volumes-from "$ACCEPT_WORLD" -w / \
   --entrypoint python3 "$image" -I - "$ACCEPT_WORLD_NAME" <<'PY'
 import json, re, sys
@@ -62,6 +64,8 @@ if ! asked=$(timeout 60 "${cli[@]}" run --rm vhd restore "$ACCEPT_WORLD_NAME" "$
   exit 1
 fi
 id=${BASH_REMATCH[1]}
+container=$(docker inspect --format '{{.Id}}' "$ACCEPT_WORLD") ||
+  { echo "accept: cannot inspect $ACCEPT_WORLD" >&2; exit 1; }
 # vhd apply's own wait for the containers is 300 s.
 if ! applied=$(timeout 360 "${cli[@]}" run --rm vhd apply 2>&1); then
   echo "accept: vhd apply did not start the world for restore $id:" >&2
@@ -78,9 +82,27 @@ if [[ $state != running || $outcome != "done" || $counted != "$objects" ]]; then
   docker logs --tail 40 "$ACCEPT_WORLD" >&2 || true
   exit 1
 fi
-# The checks after this one find the world as accept.sh named it.
-if [[ $(docker inspect --format '{{.State.Status}}' "$ACCEPT_WORLD" 2>/dev/null) != running ]]; then
-  echo "accept: the world runs again, but not in $ACCEPT_WORLD: vhd apply replaced its container" >&2
+# A restore changes no container: vhd apply only starts the stopped one, and its runtime restores.
+if [[ $(docker inspect --format '{{.Id}}' "$ACCEPT_WORLD" 2>/dev/null) != "$container" ]]; then
+  echo "accept: the world runs again, but vhd apply replaced its container for restore $id" >&2
+  exit 1
+fi
+# The save is the backup's again, the removed chunk among its files. The game
+# rewrites no file of a complete save in place (Game facts).
+if ! timeout 60 docker exec -i "$ACCEPT_WORLD" python3 -I - "$ACCEPT_WORLD_NAME" "$backup" <<'PY'
+import hashlib, json, sys
+from pathlib import Path
+
+world, backup = sys.argv[1:]
+saves = Path("/data/saves/worlds_local") / world
+for entry in json.loads((Path("/backups") / backup / "backup.json").read_text())["files"]:
+    path = saves / entry["name"]
+    if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != entry["sha256"]:
+        print(f"accept: the restored save's {entry['name']} is not {backup}'s", file=sys.stderr)
+        sys.exit(1)
+PY
+then
+  echo "accept: restore $id left the world's save other than $backup's files" >&2
   exit 1
 fi
 echo "accept: restore $id brought back $backup's $objects objects, and world truth passed the world"
