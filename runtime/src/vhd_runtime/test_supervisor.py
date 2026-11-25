@@ -2003,7 +2003,8 @@ def test_a_build_the_last_restart_did_not_install_is_restarted_for_again_after_i
         f"the restart to update at 2026-11-18 19:20 UTC did not install game build {NEWER}; the world tries again "
         "once empty after 2026-11-18 20:20 UTC"
     )
-    assert world.updates() == [None, {"build": NEWER, "failure": waits}]
+    # The last word, once the restart is recorded, no longer says it waits.
+    assert world.updates() == [None, {"build": NEWER, "failure": waits}, {"build": NEWER}]
 
 
 def test_each_restart_that_misses_the_build_doubles_the_wait_up_to_a_day() -> None:
@@ -2099,7 +2100,9 @@ def test_a_restart_to_update_that_cannot_be_recorded_is_not_made(world: World) -
     assert not world.paths.update_record.with_suffix(".tmp").exists()
 
 
-def test_a_record_that_could_not_be_written_is_tried_again_after_the_next_check(world: World) -> None:
+def test_a_record_that_could_not_be_written_is_tried_again_after_the_next_check(
+    world: World, caplog: pytest.LogCaptureFixture
+) -> None:
     world.paths.update_record.mkdir(parents=True)
     world.generation(1)
     world.public = NEWER
@@ -2110,11 +2113,32 @@ def test_a_record_that_could_not_be_written_is_tried_again_after_the_next_check(
     assert sup.run() == 0
     assert 1800 <= world.time.now < 1810
     assert json.loads(world.paths.update_record.read_text())["build"] == NEWER
-    # Status kept saying why until the write succeeded.
-    running = [r for r in world.reports if r["state"] == "running"]
+    # Status kept saying why until the write succeeded; the last word, after it, is the stop's report.
+    running = [r for r in world.reports[:-1] if r["state"] == "running"]
     failures = [cast(dict[str, str], r.get("update", {})).get("failure") for r in running]
     first = failures.index(next(f for f in failures if f is not None))
     assert all(f is not None for f in failures[first:])
+    assert caplog.text.count("game update: cannot record a restart to update") == 1
+    # The last word after the restart names no failure: the record was written.
+    assert "failure" not in cast(dict[str, str], world.reports[-1]["update"])
+
+
+def test_a_record_not_written_is_forgotten_once_steam_goes_back_to_the_installed_build(world: World) -> None:
+    world.paths.update_record.mkdir(parents=True)
+    world.generation(1, update_every_s=300)
+    world.public = NEWER
+    sup = world.supervisor()
+    # Empty at the 300 s check, whose restart cannot be recorded; players online after.
+    world.plugin_running(10, players=lambda: 0 if world.time.now < 310 else 2)
+    world.time.at(400, lambda: setattr(world, "public", "25909431"))
+    world.time.at(700, lambda: setattr(world, "public", "26300000"))
+    world.stop_at(1000, sup)
+
+    assert sup.run() == 0
+    unrecorded = cast(dict[str, str], world.updates()[1])
+    assert unrecorded["build"] == NEWER
+    assert unrecorded["failure"].startswith("cannot record a restart to update")
+    assert world.updates()[2:] == [None, {"build": "26300000"}]
 
 
 def test_a_check_that_raises_unexpectedly_says_why_and_the_world_runs_on(world: World) -> None:

@@ -516,18 +516,21 @@ class Supervisor:
             when = "once no players are online" if generation.updates.policy == "when-empty" else "at its next start"
             _log.info("game build %s is out, build %s is installed; the world updates %s", found, build, when)
         self._update_build = found
-        if found is None and self._missed is not None:
-            # Steam went back to the installed build: a restart for the other one need not wait.
-            with contextlib.suppress(OSError):
-                self.paths.update_record.unlink(missing_ok=True)
-            self._missed = None
+        if found is None:
+            # Steam went back to the installed build: a restart for another need not wait, and a record not
+            # written was for a build no longer wanted.
+            if self._missed is not None:
+                with contextlib.suppress(OSError):
+                    self.paths.update_record.unlink(missing_ok=True)
+                self._missed = None
+            self._unrecorded = None
         self._set_update_failure(self._why_waiting(found, generation))
 
     def _why_waiting(self, found: str | None, generation: Generation) -> str | None:
         """Why the world has not restarted for the build a check found, beyond its players and policy."""
         if found is None:
             return None
-        if self._unrecorded is not None:
+        if self._unrecorded is not None and generation.updates.policy == "when-empty":
             return self._unrecorded
         missed = self._missed
         if missed is None or missed.build != found:
@@ -605,6 +608,7 @@ class Supervisor:
             self._set_update_failure(self._unrecorded)
             return False
         self._unrecorded = None
+        self._set_update_failure(None)
         return True
 
     def _restart_now(
