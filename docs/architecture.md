@@ -571,7 +571,8 @@ What any design here must respect about the game.
   only this file, which looks like a save. A complete save restored beside it
   still loads, and the server's next save removes it.
 - A new world counts no objects when it first loads, and its real count about
-  30 seconds later. A world loaded from a save counts its objects at once.
+  30 seconds later. A world loaded from a save counts its objects at once,
+  exactly as many as the save's `.chunks` file counts.
 - A 1.0+ save is complete once its `_main.<n>.ok` exists. The server writes a
   save's chunks, then `_main.<n>.db2` and `_main.<n>.fwl2`, and the `.ok`
   last, only when all of them were written. Each chunk a save writes goes to a
