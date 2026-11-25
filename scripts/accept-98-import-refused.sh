@@ -39,7 +39,7 @@ for path in sorted(backups.iterdir()):
     elif not path.name.startswith("."):
         try:
             record = json.loads((path / "backup.json").read_text())
-        except FileNotFoundError:
+        except (FileNotFoundError, NotADirectoryError):
             continue
         if record.get("source") == "import":
             print("imported", path.name)
