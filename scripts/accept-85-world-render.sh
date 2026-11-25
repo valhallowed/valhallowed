@@ -31,10 +31,14 @@ WATER_MAX=0.95
 # The plugin exports 60 s after the world loads, which is about when the plugin
 # reports it, then samples 1000 rows with a 10 ms pause after each (10 s and
 # the sampling itself), and the web map polls the export every 5 s. 360 s is
-# several times that. accept.sh's callers leave room for its 20-minute wait;
-# the tightest is ci.yml's accept job at 40 minutes (release.yml's promote has
-# 45, ci.yml's build and nightly's game 90), and 20 + 6 minutes fits all of them
-# with the other checks' time to spare.
+# several times that. The waits add up to 20 (accept.sh's for the world) + 6
+# (this one) + 4 (accept-97's restore) + 7 (accept-99's import) = 37 minutes.
+# The pull before them, vhd's own commands and the other checks take a few
+# more, so a run that passes at every wait's limit takes about 42. The
+# tightest callers, ci.yml's accept job and release.yml's promote, have 60
+# minutes, ci.yml's build and nightly's game 90. A command that hangs until its
+# own timeout fails its check instead; those timeouts, stacked across every
+# check, could outlast the job, which then ends without the check's reason.
 wait_s=360
 
 tmp=$(mktemp -d)

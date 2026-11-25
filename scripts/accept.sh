@@ -34,22 +34,10 @@ wait_s=1200
 install=$(mktemp -d)
 cli=(docker compose -p "$project" -f "$install/compose.yaml")
 
-# Whatever a run left, a failed first apply included: everything the project labels.
 label="label=com.docker.compose.project=$project"
-# The worlds' backup folders belong to root and the game runtime's user, so vhd,
-# which runs as root, removes them before the install folder goes.
-trap '"${cli[@]}" run --rm --entrypoint rm vhd -rf /install/backups >/dev/null 2>&1 || true
-  "${cli[@]}" --profile tools down --volumes --remove-orphans >/dev/null 2>&1 || true
-  docker ps -aq --filter "$label" | xargs -r docker rm --force >/dev/null 2>&1 || true
-  docker volume ls -q --filter "$label" | xargs -r docker volume rm --force >/dev/null 2>&1 || true
-  docker network ls -q --filter "$label" | xargs -r docker network rm >/dev/null 2>&1 || true
-  rm -rf "$install"' EXIT
+trap '"$root/scripts/accept-teardown.sh" "$project" "$install"' EXIT
 
-cp "$compose_file" "$install/compose.yaml"
-printf 'schema = 1\n\n[world.%s]\nport = %d\n\n[web_map]\nport = %d\n' \
-  "$world_name" "$world_port" "$web_map_port" > "$install/manifest.toml"
-chmod 755 "$install"
-chmod 644 "$install"/*
+"$root/scripts/accept-install.sh" "$compose_file" "$install" "$world_name" "$world_port" "$web_map_port"
 
 "${cli[@]}" run --rm --pull "$pull" vhd apply
 applied=$SECONDS

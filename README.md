@@ -119,7 +119,11 @@ can take up to 20 minutes. A telemetry batch sent from the world's container,
 and the session the plugin starts when the world loads, must reach the database;
 a synthetic player sent the same way must come back from the web map's
 `GET /api/players`, and show as a marker on its page in a headless browser with
-no error and no content security policy violation. It uses ports away from the
+no error and no content security policy violation. The world must stop with a
+save and back it up, come back from that backup through `vhd restore` once its
+save is damaged, and refuse an incomplete `vhd import` with its save left as it
+was; its `vhd export`, imported into a second install before that install's
+first `vhd apply`, must load there with its objects. It uses ports away from the
 defaults, so it never meets an install on them.
 
 ```bash

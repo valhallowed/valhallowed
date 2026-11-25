@@ -206,10 +206,10 @@ Owns ingress, reconcile, child lifecycle, operator actions and status.
   the plugin's BepInEx config, are never edited by hand.
 - **World truth gates saving.** A world that fails world truth is stopped
   before its first autosave, so an empty world never saves over the real one,
-  and status says why. Until a save parser can count a save's objects, world
-  truth compares the plugin's count with what the runtime last saw the world
-  hold: a world that held objects, or had a save and no count, fails when it
-  loads empty or when the plugin never reports it.
+  and status says why. World truth compares the plugin's count with what the
+  runtime last saw the world hold, which a restore sets to the count its
+  backup's `.chunks` file gives: a world that held objects, or had a save and
+  no count, fails when it loads empty or when the plugin never reports it.
 - **Hold.** An action that replaces a world's files, such as a restore, which an
   import ends in, puts its runtime on hold: the game is not running while the
   files change. A runtime replaces them when it starts, before it installs or
@@ -571,7 +571,8 @@ What any design here must respect about the game.
   only this file, which looks like a save. A complete save restored beside it
   still loads, and the server's next save removes it.
 - A new world counts no objects when it first loads, and its real count about
-  30 seconds later. A world loaded from a save counts its objects at once.
+  30 seconds later. A world loaded from a save counts its objects at once,
+  exactly as many as the save's `.chunks` file counts.
 - A 1.0+ save is complete once its `_main.<n>.ok` exists. The server writes a
   save's chunks, then `_main.<n>.db2` and `_main.<n>.fwl2`, and the `.ok`
   last, only when all of them were written. Each chunk a save writes goes to a
