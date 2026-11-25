@@ -5,8 +5,10 @@ import os
 import shutil
 import signal
 import subprocess
+import threading
+import time
 from collections.abc import Callable
-from concurrent.futures import Executor, Future
+from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, TypeVar, cast
@@ -18,7 +20,7 @@ from vhd_runtime import backups, generation, restore, status, steam, supervisor,
 from vhd_runtime.generation import Reader, validator
 from vhd_runtime.supervisor import Clock, Paths, Supervisor
 from vhd_runtime.test_backups import RECORD, write_save
-from vhd_runtime.test_steam import STEAMCMD, Download
+from vhd_runtime.test_steam import APP_INFO, NO_CONNECTION, STEAMCMD, Download
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "contracts"
 STATUS_URL = "http://control-plane:9457/status"
@@ -146,6 +148,11 @@ class World:
         self.launches: list[list[str]] = []
         self.reports: list[dict[str, object]] = []
         self.steamcmd_runs: list[list[str]] = []
+        # Steam's public game build, as a check finds it: the installed one unless a test says otherwise,
+        # and None for a Steam SteamCMD cannot reach. When each check ran, and what it could ask about a stop.
+        self.public: str | None = "25909431"
+        self.checks: list[float] = []
+        self.check_stopping: list[steam.Stopping] = []
 
     def generation(
         self,
@@ -159,6 +166,8 @@ class World:
         every_s: int = 3600,
         restore: str | None = None,
         restore_id: str = RESTORE_ID,
+        policy: str = "when-empty",
+        update_every_s: int = 900,
     ) -> None:
         """Write a generation, and unless told not to, its secrets, as the control plane does."""
         if secrets:
@@ -169,7 +178,7 @@ class World:
             "world": {"name": "Meadowfold", "port": 2456},
             "plugin": {"status_interval_s": 5, "intake_url": "http://intake:9458/events"},
             "backups": {"every_s": every_s, "keep": keep, "keep_daily": keep_daily},
-            "updates": {"policy": "when-empty", "every_s": 900},
+            "updates": {"policy": policy, "every_s": update_every_s},
             "status_url": STATUS_URL,
         }
         if disconnect:
@@ -246,17 +255,33 @@ class World:
             reader=Reader(self.paths.generation, CONTRACTS),
             launch=launch,
             run_steamcmd=run_steamcmd or self.run_steamcmd,
+            query_steamcmd=self.query_steamcmd,
             fetch=fetch or steam.fetch,
             jitter=lambda low, high: high,
             post=post,
             clock=Clock(now=lambda: self.time.now, sleep=self.time.sleep),
             environ={},
             executor=Immediate(),
+            checker=Immediate(),
             wall=self.now,
         )
 
     def run_steamcmd(self, command: list[str], timeout: float, stopping: steam.Stopping) -> None:
         self.steamcmd_runs.append(command)
+
+    def query_steamcmd(self, command: list[str], timeout: float, stopping: steam.Stopping) -> str:
+        self.checks.append(self.time.now)
+        self.check_stopping.append(stopping)
+        return NO_CONNECTION if self.public is None else APP_INFO.replace("{build}", self.public)
+
+    def updates(self) -> list[object]:
+        """The update each report names, a repeated one counted once."""
+        seen: list[object] = []
+        for report in self.reports:
+            update = report.get("update")
+            if not seen or seen[-1] != update:
+                seen.append(update)
+        return seen
 
     def install_server(self) -> None:
         """An installed dedicated server, as SteamCMD leaves its app manifest."""
@@ -1024,7 +1049,8 @@ def test_the_largest_report_fits_the_status_listener() -> None:
         "world": "M" * 64,
         "state": "unverified",
         "reason": longest,
-        "game_build": "9" * 12,
+        "game_build": "9" * 20,
+        "update": {"build": "9" * 20, "failure": longest},
         "objects": 2**31,
         "players": 2**31,
         "backups": {"names": ["20261118T204012Z"] * supervisor.BACKUP_NAMES_MAX, "failure": longest},
@@ -1810,3 +1836,357 @@ def test_a_new_world_with_no_restore_is_not_held(world: World) -> None:
     # It has no record of a restore: a missing record holds nothing.
     assert not place_of(world).done.exists()
     assert len(world.launches) == 1 and not held_without_save(world)
+
+
+NEWER = "26266951"
+
+
+def test_a_running_world_checks_steam_on_its_policys_interval_and_finds_nothing_newer(world: World) -> None:
+    world.generation(1)
+    sup = world.supervisor()
+    world.plugin_running(10, players=lambda: 2)
+    world.stop_at(2000, sup)
+
+    assert sup.run() == 0
+    assert [round(t) for t in world.checks] == [900, 1800]
+    assert world.updates() == [None]
+
+
+def test_no_check_runs_while_the_world_loads(world: World) -> None:
+    world.generation(1, update_every_s=300)
+    sup = world.supervisor()
+    world.plugin_running(10, start=600)
+    world.stop_at(700, sup)
+
+    assert sup.run() == 0
+    assert len(world.checks) == 1
+    assert world.checks[0] >= 600
+
+
+def test_a_newer_build_restarts_an_empty_world_after_a_save_it_backs_up(world: World) -> None:
+    world.generation(1)
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.time.at(100, lambda: world.game_saves(1))
+    world.process.on_interrupt = lambda: world.game_saves(2)
+
+    assert sup.run() == 0
+    assert world.process.signals == [signal.SIGINT]
+    assert 900 <= world.time.now < 910
+    assert world.backed_up() == [1, 2]
+    assert world.reports[-1]["game_build"] == "25909431"
+    assert world.reports[-1]["update"] == {"build": NEWER}
+
+
+def test_a_newer_build_waits_while_players_are_online(world: World) -> None:
+    world.generation(1)
+    world.public = NEWER
+    online = [2]
+    sup = world.supervisor()
+    world.plugin_running(10, players=lambda: online[0])
+    world.time.at(1500, lambda: online.__setitem__(0, 0))
+
+    assert sup.run() == 0
+    assert world.process.signals == [signal.SIGINT]
+    assert 1500 <= world.time.now < 1510
+    assert any(r.get("update") == {"build": NEWER} and r.get("players") == 2 for r in world.reports)
+
+
+def test_a_generations_confirmation_never_updates_a_world_with_players_online(world: World) -> None:
+    world.generation(1, disconnect=True)
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10, players=lambda: 2)
+    world.stop_at(1500, sup)
+
+    assert sup.run() == 0
+    assert world.time.now >= 1500
+
+
+def test_under_at_start_a_newer_build_is_named_and_waits_for_the_next_start(world: World) -> None:
+    world.generation(1, policy="at-start")
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.stop_at(2500, sup)
+
+    assert sup.run() == 0
+    assert world.time.now >= 2500
+    assert world.updates() == [None, {"build": NEWER}]
+
+
+def test_a_policy_changed_to_when_empty_restarts_a_world_a_build_waits_for(world: World) -> None:
+    world.generation(1, policy="at-start")
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.time.at(1200, lambda: world.generation(2, policy="when-empty"))
+
+    assert sup.run() == 0
+    assert world.process.signals == [signal.SIGINT]
+    assert 1200 <= world.time.now < 1210
+
+
+def test_an_unverified_world_never_restarts_for_a_build_with_its_players_unknown(world: World) -> None:
+    world.generation(1)
+    world.public = NEWER
+    sup = world.supervisor()
+    world.stop_at(2500, sup)
+
+    assert sup.run() == 0
+    assert world.time.now >= 2500
+    assert world.states() == ["installing", "loading", "unverified"]
+    assert world.reports[-1]["update"] == {"build": NEWER}
+
+
+def test_a_failed_check_says_why_and_keeps_the_build_found_before_until_one_succeeds(world: World) -> None:
+    world.generation(1, policy="at-start", update_every_s=300)
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.time.at(400, lambda: setattr(world, "public", None))
+    # Steam takes the newer build back: the installed one is the public one again.
+    world.time.at(700, lambda: setattr(world, "public", "25909431"))
+    world.stop_at(1000, sup)
+
+    assert sup.run() == 0
+    failed = "SteamCMD named no public game build: FAILED (No Connection)"
+    assert world.updates() == [None, {"build": NEWER}, {"build": NEWER, "failure": failed}, None]
+
+
+def test_a_check_is_told_to_stop_once_the_watch_ends_for_a_restart(world: World) -> None:
+    world.generation(1, update_every_s=300)
+    sup = world.supervisor()
+    world.plugin_running(10)
+    during: list[bool] = []
+    world.time.at(400, lambda: during.append(world.check_stopping[0]()))
+    world.time.at(500, lambda: world.generation(2, password="hearth-and-horn"))
+
+    assert sup.run() == 0
+    assert during == [False]
+    assert world.check_stopping[0]()
+
+
+def test_the_app_info_cache_is_in_steamcmds_steam_folder_in_its_home_the_data_volume() -> None:
+    assert Paths().app_info_cache == Path("/data/Steam/appcache/appinfo.vdf")
+
+
+def missed(build: str, attempts: int, at: datetime) -> dict[str, object]:
+    """A record of a restart to update, as the runtime writes it."""
+    return {"build": build, "attempts": attempts, "at": at.strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+
+def test_a_restart_to_update_records_the_build_it_is_for(world: World) -> None:
+    world.generation(1)
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+
+    assert sup.run() == 0
+    taken = json.loads(world.paths.update_record.read_text())
+    assert taken == missed(NEWER, 1, START + timedelta(seconds=world.time.now // 1))
+
+
+def test_a_build_the_last_restart_did_not_install_is_restarted_for_again_after_its_wait(world: World) -> None:
+    world.paths.update_record.parent.mkdir(parents=True)
+    world.paths.update_record.write_text(json.dumps(missed(NEWER, 1, START - timedelta(minutes=40))))
+    world.generation(1, update_every_s=300)
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+
+    assert sup.run() == 0
+    assert 1200 <= world.time.now < 1210
+    assert json.loads(world.paths.update_record.read_text())["attempts"] == 2
+    waits = (
+        f"the restart to update at 2026-11-18 19:20 UTC did not install game build {NEWER}; the world tries again "
+        "once empty after 2026-11-18 20:20 UTC"
+    )
+    # The last word, once the restart is recorded, no longer says it waits.
+    assert world.updates() == [None, {"build": NEWER, "failure": waits}, {"build": NEWER}]
+
+
+def test_each_restart_that_misses_the_build_doubles_the_wait_up_to_a_day() -> None:
+    waits = [
+        (supervisor.Missed(NEWER, attempts, START).next_at() - START).total_seconds() / 3600 for attempts in range(1, 8)
+    ]
+    assert waits == [1, 2, 4, 8, 16, 24, 24]
+
+
+def test_a_build_after_the_one_missed_is_restarted_for_at_once(world: World) -> None:
+    world.paths.update_record.parent.mkdir(parents=True)
+    world.paths.update_record.write_text(json.dumps(missed(NEWER, 3, START)))
+    world.generation(1)
+    world.public = "26300000"
+    sup = world.supervisor()
+    world.plugin_running(10)
+
+    assert sup.run() == 0
+    assert 900 <= world.time.now < 910
+    assert json.loads(world.paths.update_record.read_text())["attempts"] == 1
+
+
+def test_a_start_that_installed_the_build_forgets_the_record(world: World) -> None:
+    world.paths.update_record.parent.mkdir(parents=True)
+    world.paths.update_record.write_text(json.dumps(missed("25909431", 1, START)))
+    world.generation(1)
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.stop_at(100, sup)
+
+    assert sup.run() == 0
+    assert not world.paths.update_record.exists()
+
+
+def test_steam_going_back_to_the_installed_build_forgets_the_record(world: World) -> None:
+    world.paths.update_record.parent.mkdir(parents=True)
+    world.paths.update_record.write_text(json.dumps(missed(NEWER, 1, START)))
+    world.generation(1, policy="at-start")
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.stop_at(1000, sup)
+
+    assert sup.run() == 0
+    assert not world.paths.update_record.exists()
+
+
+def test_under_at_start_a_missed_build_waits_for_the_next_start(world: World) -> None:
+    world.paths.update_record.parent.mkdir(parents=True)
+    world.paths.update_record.write_text(json.dumps(missed(NEWER, 1, START)))
+    world.generation(1, policy="at-start")
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.stop_at(1000, sup)
+
+    assert sup.run() == 0
+    waits = (
+        f"the restart to update at 2026-11-18 20:00 UTC did not install game build {NEWER}; the world takes it at "
+        "its next start"
+    )
+    assert world.updates() == [None, {"build": NEWER, "failure": waits}]
+
+
+def test_a_record_time_ahead_of_the_clock_delays_the_next_restart_no_more_than_the_wait(world: World) -> None:
+    world.paths.update_record.parent.mkdir(parents=True)
+    world.paths.update_record.write_text(json.dumps(missed(NEWER, 1, START + timedelta(days=30))))
+    world.generation(1, update_every_s=900)
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+    # The plugin's reports end at 3030 s; keep the world counted empty until the wait has passed.
+    for when in range(3030, 4000, 5):
+        world.time.at(when, lambda: world.plugin_reports(10))
+
+    assert sup.run() == 0
+    assert 3600 <= world.time.now < 3610
+
+
+def test_a_restart_to_update_that_cannot_be_recorded_is_not_made(world: World) -> None:
+    world.paths.update_record.mkdir(parents=True)
+    world.generation(1)
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.stop_at(1500, sup)
+
+    assert sup.run() == 0
+    assert world.time.now >= 1500
+    assert world.process.signals == [signal.SIGINT]
+    update = cast(dict[str, str], world.reports[-1]["update"])
+    assert update["build"] == NEWER
+    assert update["failure"].startswith("cannot record a restart to update in the data volume")
+    assert not world.paths.update_record.with_suffix(".tmp").exists()
+
+
+def test_a_record_that_could_not_be_written_is_tried_again_after_the_next_check(
+    world: World, caplog: pytest.LogCaptureFixture
+) -> None:
+    world.paths.update_record.mkdir(parents=True)
+    # Writes fail at the 300, 600 and 900 s checks, and the one after the 1200 s check succeeds.
+    world.generation(1, update_every_s=300)
+    world.public = NEWER
+    sup = world.supervisor()
+    world.plugin_running(10)
+    world.time.at(1000, world.paths.update_record.rmdir)
+
+    assert sup.run() == 0
+    assert 1200 <= world.time.now < 1210
+    assert json.loads(world.paths.update_record.read_text())["build"] == NEWER
+    # Status kept saying why until the write succeeded; the last word, after it, is the stop's report.
+    running = [r for r in world.reports[:-1] if r["state"] == "running"]
+    failures = [cast(dict[str, str], r.get("update", {})).get("failure") for r in running]
+    first = failures.index(next(f for f in failures if f is not None))
+    assert all(f is not None for f in failures[first:])
+    assert caplog.text.count("game update: cannot record a restart to update") == 1
+    # The last word after the restart names no failure: the record was written.
+    assert "failure" not in cast(dict[str, str], world.reports[-1]["update"])
+
+
+def test_a_record_not_written_is_forgotten_once_steam_goes_back_to_the_installed_build(world: World) -> None:
+    world.paths.update_record.mkdir(parents=True)
+    world.generation(1, update_every_s=300)
+    world.public = NEWER
+    sup = world.supervisor()
+    # Empty at the 300 s check, whose restart cannot be recorded; players online after.
+    world.plugin_running(10, players=lambda: 0 if world.time.now < 310 else 2)
+    world.time.at(400, lambda: setattr(world, "public", "25909431"))
+    world.time.at(700, lambda: setattr(world, "public", "26300000"))
+    world.stop_at(1000, sup)
+
+    assert sup.run() == 0
+    unrecorded = cast(dict[str, str], world.updates()[1])
+    assert unrecorded["build"] == NEWER
+    assert unrecorded["failure"].startswith("cannot record a restart to update")
+    assert world.updates()[2:] == [None, {"build": "26300000"}]
+
+
+def test_a_check_that_raises_unexpectedly_says_why_and_the_world_runs_on(world: World) -> None:
+    world.generation(1, update_every_s=300)
+    sup = world.supervisor()
+
+    def query(command: list[str], timeout: float, stopping: steam.Stopping) -> str:
+        raise RuntimeError("no room for the answer")
+
+    sup.query_steamcmd = query
+    world.plugin_running(10)
+    world.stop_at(1000, sup)
+
+    assert sup.run() == 0
+    assert world.time.now >= 1000
+    failed = "the check stopped on an unexpected error: RuntimeError: no room for the answer"
+    assert world.updates() == [None, {"failure": failed}]
+
+
+def test_a_stop_ends_a_check_under_way_before_the_game_has_stopped(world: World) -> None:
+    world.generation(1, update_every_s=300)
+    sup = world.supervisor()
+    sup.checker = ThreadPoolExecutor(max_workers=1)
+    asked, stopped = threading.Event(), threading.Event()
+    seen_asked: list[bool] = []
+
+    def query(command: list[str], timeout: float, stopping: steam.Stopping) -> str:
+        asked.set()
+        deadline = time.monotonic() + 10
+        while not stopping() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        if stopping():
+            stopped.set()
+        raise steam.Stopped("stop requested while SteamCMD ran")
+
+    sup.query_steamcmd = query
+    world.plugin_running(10)
+    # The loop keeps watching the world while the check is under way.
+    world.time.at(305, lambda: seen_asked.append(asked.wait(10)))
+    world.stop_at(400, sup)
+    # The game's stop comes before the watch ends, so only the stop request can have ended the check by then.
+    seen_at_stop: list[bool] = []
+    world.process.on_interrupt = lambda: seen_at_stop.append(stopped.wait(10))
+
+    assert sup.run() == 0
+    sup.checker.shutdown(wait=True)
+    assert world.time.now >= 400
+    assert seen_asked == [True]
+    assert seen_at_stop == [True]
+    assert world.updates() == [None]

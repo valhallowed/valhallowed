@@ -27,7 +27,8 @@ Releases](docs/architecture.md#releases).
 ## Installing
 
 Needs Docker Engine 26 or newer with Compose, on an x86-64 host. In a folder
-of its own:
+of its own, on a path that holds no `:`, which Docker cannot mount and `vhd`
+refuses:
 
 1. Download a release's `compose.yaml`.
 2. Write `manifest.toml`. One world on every default takes two lines; see
@@ -45,6 +46,12 @@ host's Compose would otherwise call the install's own containers orphans of
 Edit either file and the control plane applies the change, keeping a game-server
 restart pending while players are online. A change to the containers themselves,
 such as a new world, port or backups folder, waits for the next `vhd apply`.
+
+Each world updates the game when it starts, and while it runs checks Steam for
+another game build every 15 minutes, or as `updates.every` says. By default it
+restarts to update once no players are online, saving and backing up its world
+first; with `updates.policy = "at-start"` it waits for its next start.
+`vhd status` names each world's game build, and one that waits.
 
 ## Backups and restore
 

@@ -84,6 +84,41 @@ def test_status_names_each_world_its_players_and_what_waits() -> None:
     ]
 
 
+def test_status_names_each_worlds_game_build_one_that_waits_and_why_a_check_failed() -> None:
+    def world(name: str, update: dict[str, str] | None) -> dict[str, object]:
+        report: dict[str, object] = {
+            "contract": 1,
+            "generation": 4,
+            "world": name,
+            "state": "running",
+            "game_build": "25909431",
+            "players": 1,
+        }
+        if update is not None:
+            report["update"] = update
+        return {"published": 4, "state": "running", "report": report, "report_age_s": 1}
+
+    status = {
+        "contract": 2,
+        "generation": 4,
+        "worlds": {
+            "Ashwake": world("Ashwake", None),
+            "Frostmere": world("Frostmere", {"failure": "FAILED (No Connection)\x1b[2J"}),
+            "Meadowfold": world("Meadowfold", {"build": "26266951", "failure": "FAILED (No Connection)"}),
+        },
+        "services": {},
+    }
+    out = io.StringIO()
+    cli.show_status(status, out)
+    assert out.getvalue().splitlines() == [
+        "generation 4",
+        "Ashwake: running, 1 player(s), game build 25909431",
+        "Frostmere: running, 1 player(s), game build 25909431; game update: FAILED (No Connection)?[2J",
+        "Meadowfold: running, 1 player(s), game build 25909431; game build 26266951 waits for an empty world or the"
+        " next start, as the update policy says; game update: FAILED (No Connection)",
+    ]
+
+
 def test_a_refused_manifest_is_reported_with_a_failing_exit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (tmp_path / "manifest.toml").write_text("schema = 2\n")
     monkeypatch.setattr(layout, "INSTALL", tmp_path)

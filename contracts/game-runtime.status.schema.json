@@ -33,7 +33,29 @@
     "game_build": {
       "description": "The dedicated server's build id.",
       "type": "string",
+      "maxLength": 20,
       "pattern": "^[0-9]+$"
+    },
+    "update": {
+      "description": "What the runtime's checks of Steam's public game build found, checking every updates.every_s while the game runs, under either update policy. Absent while no check has found a build other than game_build and the newest check succeeded.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "build": {
+          "description": "Steam's public game build, when a check found it other than game_build: the build the world installs at its next start. Under the when-empty policy the runtime restarts the world for it once no players are online; under at-start it waits for a start. Absent while the installed build is the public one.",
+          "type": "string",
+          "maxLength": 20,
+          "pattern": "^[0-9]+$"
+        },
+        "failure": {
+          "description": "Why the newest check failed, or why the world has not restarted for the build a check found: the last restart to update did not install it and the next waits, or a restart to update cannot be recorded. One line of printable text: vhd status shows it to the server manager. A build an earlier check found still waits while a check fails. Absent while neither holds.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        }
+      }
     },
     "objects": {
       "description": "The loaded world's object count, as the plugin last reported it. Absent while the plugin's report is missing or stale.",

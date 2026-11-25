@@ -104,7 +104,8 @@ the host: LAN, public direct, public with TLS, or game only. Every port in a
 profile is a default the manifest can change.
 
 **Game build** — The Steam build id of the Valheim dedicated server: what the
-plugin is built against, and what a game runtime installs.
+plugin is built against, and what a game runtime installs. Steam's public game
+build is the one it offers every server, which each start installs.
 
 **Game runtime** — A child that runs one world: the Valheim dedicated server,
 BepInEx and the plugin, under its supervisor. It runs what the control plane
@@ -277,7 +278,8 @@ downloads SteamCMD and the dedicated server, starts the server with BepInEx
 and the plugin, stops it with a save, backs its world up, updates the server
 under the update policy, holds, and reports status. It restarts the game for a
 new generation only once it counts no players, unless the server manager
-confirmed the restart.
+confirmed the restart, and for another public game build under the default
+update policy only once it counts no players.
 
 **Telemetry** — What the plugin observes in a world and sends to intake (B2):
 chat, presence, positions and world events. Observations, so a failure drops
@@ -292,8 +294,8 @@ what each owns.
 console; for hosts where a browser is unavailable or unwanted.
 
 **Update policy** — When a world's game runtime updates the dedicated server:
-by default once its world is empty after a newer game build appears, or only
-when it next starts (`at-start`).
+by default once its world is empty after Steam's public game build differs
+from its own, or only when it next starts (`at-start`).
 
 **Valhallowed (VHD)** — The published product: a self-hosted Valheim server
 with the plugin, telemetry, commands and the web map, configured through one

@@ -82,7 +82,7 @@
       "additionalProperties": false,
       "properties": {
         "policy": {
-          "description": "when-empty: a world that finds a newer game build restarts to update once no players are online. at-start: it updates only when it next starts.",
+          "description": "when-empty: a world that finds Steam's public game build other than its own restarts to update once no players are online. at-start: it still checks, and updates only when it next starts.",
           "type": "string",
           "enum": ["when-empty", "at-start"],
           "default": "when-empty",
@@ -90,7 +90,7 @@
           "x-applied-by": "control plane"
         },
         "every": {
-          "description": "How often each world checks Steam for a newer game build: minutes, hours or days, such as 15m, from 5m to 1d.",
+          "description": "How often each world checks Steam's public game build: minutes, hours or days, such as 15m, from 5m to 1d.",
           "$ref": "#/$defs/duration",
           "default": "15m",
           "x-seconds": { "minimum": 300, "maximum": 86400 },
