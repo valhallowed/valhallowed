@@ -2104,14 +2104,15 @@ def test_a_record_that_could_not_be_written_is_tried_again_after_the_next_check(
     world: World, caplog: pytest.LogCaptureFixture
 ) -> None:
     world.paths.update_record.mkdir(parents=True)
-    world.generation(1)
+    # Writes fail at the 300, 600 and 900 s checks, and the one after the 1200 s check succeeds.
+    world.generation(1, update_every_s=300)
     world.public = NEWER
     sup = world.supervisor()
     world.plugin_running(10)
     world.time.at(1000, world.paths.update_record.rmdir)
 
     assert sup.run() == 0
-    assert 1800 <= world.time.now < 1810
+    assert 1200 <= world.time.now < 1210
     assert json.loads(world.paths.update_record.read_text())["build"] == NEWER
     # Status kept saying why until the write succeeded; the last word, after it, is the stop's report.
     running = [r for r in world.reports[:-1] if r["state"] == "running"]
