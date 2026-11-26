@@ -3,8 +3,8 @@
 # own checks validate with the jsonschema its image ships.
 check-jsonschema==0.39.0
 attrs==26.1.0
-certifi==2026.10.23
-charset-normalizer==3.5.2
+certifi==2026.11.20
+charset-normalizer==3.5.3
 click==8.5.1
 idna==3.20
 jsonschema==4.26.0
