@@ -53,7 +53,7 @@ RUN mkdir /bepinex && unzip -q /tmp/bepinex.zip -d /bepinex
 
 # An LTS release; scripts/check-upstream.sh reports a newer one. A new major
 # version moves with the TargetFramework of plugin/test and of refcheck.
-FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:bef136a371963aaa46ec97882845ef6f54dec15728bb4b128b1c2a400ffbc9b4 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:8c6edfb26c85153f236d26efebd9ad349aec403583f343f201ee67838b23658d AS build
 ARG VHD_BUILD=dev
 WORKDIR /src
 COPY plugin/ ./
